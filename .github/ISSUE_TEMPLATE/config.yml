@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & Discussions
+    url: https://github.com/agenticcodingops/terraform-azure-wordpress/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: Terraform Documentation
+    url: https://developer.hashicorp.com/terraform/docs
+    about: Official Terraform documentation
+  - name: Azure Documentation
+    url: https://learn.microsoft.com/en-us/azure/
+    about: Official Azure documentation

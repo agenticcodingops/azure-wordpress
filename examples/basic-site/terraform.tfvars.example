@@ -1,0 +1,18 @@
+# Example terraform.tfvars
+# Copy to terraform.tfvars and fill in your values
+
+project_name = "myproject"
+site_name    = "blog"
+environment  = "nonprod"
+location     = "eastus"
+
+custom_domain = "blog.example.com"
+
+# Azure
+azure_subscription_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Cloudflare
+cloudflare_api_token  = "your-cloudflare-api-token"
+cloudflare_account_id = "your-cloudflare-account-id"
+cloudflare_domain     = "example.com"
+cloudflare_subdomain  = "blog"

@@ -1,0 +1,104 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.6.0"
+
+      - name: Format Check
+        run: tofu fmt -recursive -check -diff
+
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - modules/wordpress-site
+          - modules/shared-infrastructure
+          - modules/app-service
+          - modules/database
+          - modules/storage
+          - modules/key-vault
+          - modules/networking
+          - modules/dns-zones
+          - modules/cloudflare
+          - modules/front-door
+          - modules/monitoring
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.6.0"
+
+      - name: Initialize
+        working-directory: ${{ matrix.module }}
+        run: tofu init -backend=false
+
+      - name: Validate
+        working-directory: ${{ matrix.module }}
+        run: tofu validate
+
+  tfsec:
+    name: TFSec
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          soft_fail: false
+          additional_args: --minimum-severity HIGH
+
+  checkov:
+    name: Checkov
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          quiet: true
+          soft_fail: false
+          skip_check: CKV_TF_1
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check terraform-docs
+        uses: terraform-docs/gh-actions@v1.3.0
+        with:
+          working-dir: modules/wordpress-site,modules/shared-infrastructure,modules/app-service,modules/database,modules/storage,modules/key-vault,modules/networking,modules/dns-zones,modules/cloudflare,modules/front-door,modules/monitoring
+          output-file: README.md
+          fail-on-diff: true

@@ -1,0 +1,44 @@
+# Example terraform.tfvars for multi-site deployment
+# Copy to terraform.tfvars and fill in your values
+
+project_name    = "myproject"
+environment     = "nonprod"
+location        = "eastus"
+app_service_sku = "B1" # Shared across all sites
+
+# Azure
+azure_subscription_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Cloudflare
+cloudflare_api_token  = "your-cloudflare-api-token"
+cloudflare_account_id = "your-cloudflare-account-id"
+cloudflare_domain     = "example.com"
+
+# Multiple WordPress sites on shared infrastructure
+sites = {
+  "main-site" = {
+    custom_domain       = "example.com"
+    subdomain           = "" # apex domain
+    database_sku        = "B_Standard_B2s"
+    database_storage_gb = 100
+  }
+
+  "blog" = {
+    custom_domain       = "blog.example.com"
+    subdomain           = "blog"
+    database_sku        = "B_Standard_B2s"
+    database_storage_gb = 50
+  }
+
+  "docs" = {
+    custom_domain       = "docs.example.com"
+    subdomain           = "docs"
+    database_sku        = "B_Standard_B2s"
+    database_storage_gb = 50
+  }
+}
+
+tags = {
+  Owner       = "DevOps"
+  Environment = "Dev"
+}

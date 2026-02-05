@@ -1,0 +1,128 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the information below.
+
+  - type: input
+    id: terraform-version
+    attributes:
+      label: Terraform/OpenTofu Version
+      description: Output of `tofu version` or `terraform version`
+      placeholder: "v1.6.0"
+    validations:
+      required: true
+
+  - type: input
+    id: module-version
+    attributes:
+      label: Module Version
+      description: Version of terraform-azure-wordpress you're using
+      placeholder: "v1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Affected Module(s)
+      description: Which module(s) are affected?
+      multiple: true
+      options:
+        - wordpress-site
+        - shared-infrastructure
+        - app-service
+        - database
+        - storage
+        - key-vault
+        - networking
+        - dns-zones
+        - cloudflare
+        - front-door
+        - monitoring
+    validations:
+      required: true
+
+  - type: input
+    id: azure-provider-version
+    attributes:
+      label: AzureRM Provider Version
+      description: Version of the azurerm provider
+      placeholder: "4.0.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: Describe the expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: Describe what actually happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Provide steps to reproduce the issue
+      placeholder: |
+        1. Configure module with...
+        2. Run `tofu apply`
+        3. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Terraform Configuration
+      description: Relevant Terraform configuration (remove sensitive values)
+      render: hcl
+      placeholder: |
+        module "wordpress" {
+          source = "..."
+          # your configuration
+        }
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Output / Logs
+      description: Relevant error messages or logs (remove sensitive info)
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other context about the problem
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have removed sensitive information from my configuration and logs
+          required: true

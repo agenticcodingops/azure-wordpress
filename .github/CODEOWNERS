@@ -1,0 +1,15 @@
+# Default owners for everything in the repo
+* @agenticcodingops/maintainers
+
+# Module-specific ownership
+/modules/cloudflare/ @agenticcodingops/maintainers
+/modules/front-door/ @agenticcodingops/maintainers
+/modules/app-service/ @agenticcodingops/maintainers
+/modules/database/ @agenticcodingops/maintainers
+
+# Documentation
+*.md @agenticcodingops/maintainers
+/docs/ @agenticcodingops/maintainers
+
+# CI/CD
+/.github/ @agenticcodingops/maintainers
