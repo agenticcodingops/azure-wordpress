@@ -167,7 +167,8 @@ sequenceDiagram
 
 ```hcl
 module "wordpress_site" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site"
+  # Pin to a release version for stability - see Releases page for latest
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.0.0"
 
   project_name  = "myproject"
   site_name     = "blog"
@@ -185,6 +186,8 @@ module "wordpress_site" {
   }
 }
 ```
+
+> **Version pinning:** Always use `?ref=v<VERSION>` to pin to a specific release. Check the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page for the latest version. See [Versioning](#versioning) for upgrade guidance.
 
 See [examples/](examples/) for complete configurations.
 
@@ -268,7 +271,7 @@ Deploy multiple WordPress sites on a single App Service Plan:
 
 ```hcl
 module "shared" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v1.0.0"
 
   project_name       = "myproject"
   environment        = "nonprod"
@@ -277,7 +280,7 @@ module "shared" {
 }
 
 module "site1" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.0.0"
 
   project_name = "myproject"
   site_name    = "site1"
@@ -318,9 +321,42 @@ module "site1" {
 | azapi | >= 1.12.0 |
 | cloudflare | >= 4.0.0 |
 
+## Versioning
+
+This project uses [Semantic Versioning](https://semver.org/) with automated releases. All modules are versioned together as a single unit.
+
+### Pinning to a Version
+
+Always pin module references to a specific version tag to prevent unexpected changes:
+
+```hcl
+module "wordpress" {
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.0.0"
+  # ...
+}
+```
+
+Available versions are listed on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page.
+
+### Upgrading Versions
+
+1. Check the [CHANGELOG](CHANGELOG.md) for the target version
+2. Look for **BREAKING CHANGES** — these require configuration updates
+3. Update the `?ref=` tag in all module source URLs
+4. Run `terraform init -upgrade` to fetch the new version
+5. Run `terraform plan` to review changes before applying
+
+### Version Guarantees
+
+| Version Change | Guarantee |
+|---|---|
+| **PATCH** (v1.0.0 → v1.0.1) | Bug fixes only. No input/output changes. Safe to upgrade. |
+| **MINOR** (v1.0.0 → v1.1.0) | New features with backward compatibility. Existing configs work unchanged. |
+| **MAJOR** (v1.0.0 → v2.0.0) | Breaking changes. Review CHANGELOG and update your configuration. |
+
 ## Contributing
 
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+Contributions are welcome! Please read our [contributing guidelines](CONTRIBUTING.md) before submitting PRs.
 
 ## License
 

@@ -8,6 +8,14 @@ Deploy a single WordPress site with Cloudflare CDN on Azure.
 2. Cloudflare account with a registered domain
 3. Terraform >= 1.6.0
 
+## Version Pinning
+
+This example pins module sources to a specific release tag (`?ref=v1.0.0`). To use a different version:
+
+1. Check available versions on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page
+2. Update the `?ref=` tag in `main.tf`
+3. Run `terraform init -upgrade` to fetch the new version
+
 ## Quick Start
 
 1. Copy the example variables file:

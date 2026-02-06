@@ -36,6 +36,16 @@ Deploy multiple WordPress sites sharing a single App Service Plan for cost optim
 
 **Savings: ~23% with 3 sites, increases with more sites**
 
+## Version Pinning
+
+This example pins module sources to a specific release tag (`?ref=v1.0.0`). To use a different version:
+
+1. Check available versions on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page
+2. Update the `?ref=` tag for **both** `shared-infrastructure` and `wordpress-site` modules in `main.tf`
+3. Run `terraform init -upgrade` to fetch the new version
+
+> **Important:** Always use the same version tag for all modules to ensure compatibility.
+
 ## Usage
 
 1. Copy and configure variables:
