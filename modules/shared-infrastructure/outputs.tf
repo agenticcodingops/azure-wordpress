@@ -21,6 +21,10 @@ output "app_service_plan_name" {
 }
 
 output "app_service_plan_sku" {
-  description = "SKU of the shared App Service Plan"
-  value       = azurerm_service_plan.shared.sku_name
+  description = "SKU of the shared App Service Plan (uses input variable for plan-time determinism)"
+  # IMPORTANT: Return the input variable, not the resource attribute
+  # azurerm_service_plan.shared.sku_name is unknown at plan time during initial creation,
+  # which causes "count depends on unknown value" errors in downstream modules
+  # that use this value to determine feature availability (e.g., slot support)
+  value = var.app_service_sku
 }
