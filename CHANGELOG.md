@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0](https://github.com/agenticcodingops/azure-wordpress/compare/v1.0.0...v1.1.0) (2026-02-06)
+
+
+### Features
+
+* add release-please automation for semantic versioning ([f2a2068](https://github.com/agenticcodingops/azure-wordpress/commit/f2a206809e32b74ba8aa06031eb87e02d15c3dc9))
+
+
+### Bug Fixes
+
+* **ci:** use PAT token for release-please PR creation ([5e6e8e3](https://github.com/agenticcodingops/azure-wordpress/commit/5e6e8e3405778cffce8a5b6a6a460a5c240a99ef))
+* correct terraform formatting in multi-site example ([3146a6b](https://github.com/agenticcodingops/azure-wordpress/commit/3146a6b4f9337f3ce562677d1280537689f45c00))
+
 ## [Unreleased]
 
 ## [1.0.0] - 2024-01-15
