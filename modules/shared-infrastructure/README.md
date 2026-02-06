@@ -155,3 +155,54 @@ When migrating existing sites to use a shared plan:
 
 - [wordpress-site composition](../../compositions/wordpress-site/README.md) - Uses this module's outputs
 - [Environment configuration](../../environments/) - Example usage in nonprod/production
+
+<!-- BEGIN_TF_DOCS -->
+## Requirements
+
+| Name | Version |
+|------|---------|
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.6.0 |
+| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | >= 4.0.0 |
+
+## Providers
+
+| Name | Version |
+|------|---------|
+| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | >= 4.0.0 |
+
+## Modules
+
+No modules.
+
+## Resources
+
+| Name | Type |
+|------|------|
+| [azurerm_monitor_autoscale_setting.shared](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_autoscale_setting) | resource |
+| [azurerm_resource_group.shared](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/resource_group) | resource |
+| [azurerm_service_plan.shared](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/service_plan) | resource |
+
+## Inputs
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| <a name="input_app_service_sku"></a> [app\_service\_sku](#input\_app\_service\_sku) | App Service Plan SKU (B1 for dev/test, P1v3 for production scale) | `string` | `"B1"` | no |
+| <a name="input_autoscale_max_workers"></a> [autoscale\_max\_workers](#input\_autoscale\_max\_workers) | Maximum number of workers for auto-scaling | `number` | `5` | no |
+| <a name="input_autoscale_min_workers"></a> [autoscale\_min\_workers](#input\_autoscale\_min\_workers) | Minimum number of workers for auto-scaling | `number` | `1` | no |
+| <a name="input_enable_autoscale"></a> [enable\_autoscale](#input\_enable\_autoscale) | Enable auto-scaling for the shared App Service Plan | `bool` | `false` | no |
+| <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
+| <a name="input_location"></a> [location](#input\_location) | Azure region for resources | `string` | n/a | yes |
+| <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |
+| <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources | `map(string)` | `{}` | no |
+| <a name="input_worker_count"></a> [worker\_count](#input\_worker\_count) | Number of workers (instances) for the shared plan | `number` | `1` | no |
+
+## Outputs
+
+| Name | Description |
+|------|-------------|
+| <a name="output_app_service_plan_id"></a> [app\_service\_plan\_id](#output\_app\_service\_plan\_id) | ID of the shared App Service Plan (pass to wordpress-site composition) |
+| <a name="output_app_service_plan_name"></a> [app\_service\_plan\_name](#output\_app\_service\_plan\_name) | Name of the shared App Service Plan |
+| <a name="output_app_service_plan_sku"></a> [app\_service\_plan\_sku](#output\_app\_service\_plan\_sku) | SKU of the shared App Service Plan |
+| <a name="output_resource_group_id"></a> [resource\_group\_id](#output\_resource\_group\_id) | ID of the shared resource group |
+| <a name="output_resource_group_name"></a> [resource\_group\_name](#output\_resource\_group\_name) | Name of the shared resource group |
+<!-- END_TF_DOCS -->

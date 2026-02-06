@@ -21,7 +21,7 @@ body:
     id: module-version
     attributes:
       label: Module Version
-      description: Version of terraform-azure-wordpress you're using
+      description: Version of azure-wordpress you're using
       placeholder: "v1.0.0"
     validations:
       required: true

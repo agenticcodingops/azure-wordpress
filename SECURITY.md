@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-The following versions of terraform-azure-wordpress are currently supported with security updates:
+The following versions of azure-wordpress are currently supported with security updates:
 
 | Version | Supported          |
 | ------- | ------------------ |
@@ -11,7 +11,7 @@ The following versions of terraform-azure-wordpress are currently supported with
 
 ## Reporting a Vulnerability
 
-We take security issues seriously. If you discover a security vulnerability in terraform-azure-wordpress, please report it responsibly.
+We take security issues seriously. If you discover a security vulnerability in azure-wordpress, please report it responsibly.
 
 ### How to Report
 
@@ -19,7 +19,7 @@ We take security issues seriously. If you discover a security vulnerability in t
 
 Instead, report vulnerabilities via one of these methods:
 
-1. **GitHub Security Advisories** (Preferred): Use [GitHub's private vulnerability reporting](https://github.com/agenticcodingops/terraform-azure-wordpress/security/advisories/new)
+1. **GitHub Security Advisories** (Preferred): Use [GitHub's private vulnerability reporting](https://github.com/agenticcodingops/azure-wordpress/security/advisories/new)
 
 2. **Email**: Send details to **hassan.abbas@agenticcodingops.com**
 
@@ -48,7 +48,7 @@ Please include the following information in your report:
 
 ## Security Best Practices for Users
 
-When using terraform-azure-wordpress, follow these security recommendations:
+When using azure-wordpress, follow these security recommendations:
 
 ### Secrets Management
 
@@ -103,8 +103,8 @@ terraform {
 
 Security updates are released as patch versions. Subscribe to:
 
-- [GitHub Releases](https://github.com/agenticcodingops/terraform-azure-wordpress/releases) for notifications
-- [GitHub Security Advisories](https://github.com/agenticcodingops/terraform-azure-wordpress/security/advisories) for vulnerability alerts
+- [GitHub Releases](https://github.com/agenticcodingops/azure-wordpress/releases) for notifications
+- [GitHub Security Advisories](https://github.com/agenticcodingops/azure-wordpress/security/advisories) for vulnerability alerts
 
 ## Acknowledgments
 

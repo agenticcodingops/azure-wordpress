@@ -1,6 +1,6 @@
-# Contributing to terraform-azure-wordpress
+# Contributing to azure-wordpress
 
-Thank you for your interest in contributing to terraform-azure-wordpress! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to azure-wordpress! This document provides guidelines and instructions for contributing.
 
 ## Code of Conduct
 
@@ -19,12 +19,12 @@ This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDU
 1. Fork the repository on GitHub
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/terraform-azure-wordpress.git
-   cd terraform-azure-wordpress
+   git clone https://github.com/YOUR_USERNAME/azure-wordpress.git
+   cd azure-wordpress
    ```
 3. Add the upstream remote:
    ```bash
-   git remote add upstream https://github.com/agenticcodingops/terraform-azure-wordpress.git
+   git remote add upstream https://github.com/agenticcodingops/azure-wordpress.git
    ```
 4. Keep your fork up to date:
    ```bash
@@ -159,10 +159,10 @@ Reviewers will check for:
 
 ## Getting Help
 
-- Open a [Discussion](https://github.com/agenticcodingops/terraform-azure-wordpress/discussions) for questions
+- Open a [Discussion](https://github.com/agenticcodingops/azure-wordpress/discussions) for questions
 - Join our community chat (if available)
 - Review existing issues and PRs for context
 
 ## Recognition
 
-Contributors will be recognized in the project's release notes. Thank you for helping improve terraform-azure-wordpress!
+Contributors will be recognized in the project's release notes. Thank you for helping improve azure-wordpress!

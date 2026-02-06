@@ -35,7 +35,7 @@ data "azurerm_client_config" "current" {}
 # ============================================================================
 
 module "shared" {
-  source = "github.com/agenticcodingops/terraform-azure-wordpress//modules/shared-infrastructure"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure"
 
   project_name    = var.project_name
   environment     = var.environment
@@ -52,7 +52,7 @@ module "shared" {
 
 module "wordpress_sites" {
   for_each = var.sites
-  source   = "github.com/agenticcodingops/terraform-azure-wordpress//modules/wordpress-site"
+  source   = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site"
 
   project_name  = var.project_name
   site_name     = each.key
@@ -63,10 +63,10 @@ module "wordpress_sites" {
 
   # Use shared App Service Plan
   app_service = {
-    plan_id         = module.shared.app_service_plan_id
-    use_shared_plan = true
-    sku_name        = var.app_service_sku
-    always_on       = !startswith(var.app_service_sku, "B") # B-tier doesn't support always_on
+    plan_id           = module.shared.app_service_plan_id
+    use_shared_plan   = true
+    sku_name          = var.app_service_sku
+    always_on         = !startswith(var.app_service_sku, "B") # B-tier doesn't support always_on
     health_check_path = "/wp-includes/images/blank.gif"
   }
   shared_resource_group_name = module.shared.resource_group_name

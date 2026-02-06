@@ -68,5 +68,5 @@ jobs:
 
       - name: Release notification
         run: |
-          echo "Released terraform-azure-wordpress ${{ steps.version.outputs.VERSION }}"
-          echo "View at: https://github.com/agenticcodingops/terraform-azure-wordpress/releases/tag/${{ steps.version.outputs.VERSION }}"
+          echo "Released azure-wordpress ${{ steps.version.outputs.VERSION }}"
+          echo "View at: https://github.com/agenticcodingops/azure-wordpress/releases/tag/${{ steps.version.outputs.VERSION }}"

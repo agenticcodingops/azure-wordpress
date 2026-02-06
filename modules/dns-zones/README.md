@@ -84,3 +84,44 @@ The module enforces these validations at plan time:
 | Variable | Rule | Error Message |
 |----------|------|---------------|
 | `site_name` | `^[a-z0-9-]+$` | Site name must contain only lowercase letters, numbers, and hyphens |
+
+<!-- BEGIN_TF_DOCS -->
+## Requirements
+
+No requirements.
+
+## Providers
+
+| Name | Version |
+|------|---------|
+| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | n/a |
+
+## Modules
+
+No modules.
+
+## Resources
+
+| Name | Type |
+|------|------|
+| [azurerm_private_dns_zone.mysql](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/private_dns_zone) | resource |
+| [azurerm_private_dns_zone_virtual_network_link.mysql](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/private_dns_zone_virtual_network_link) | resource |
+
+## Inputs
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |
+| <a name="input_resource_group_name"></a> [resource\_group\_name](#input\_resource\_group\_name) | Name of the resource group | `string` | n/a | yes |
+| <a name="input_site_name"></a> [site\_name](#input\_site\_name) | Site name used for resource naming (lowercase, hyphens only) | `string` | n/a | yes |
+| <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources | `map(string)` | `{}` | no |
+| <a name="input_vnet_id"></a> [vnet\_id](#input\_vnet\_id) | ID of the VNet to link the private DNS zone | `string` | n/a | yes |
+
+## Outputs
+
+| Name | Description |
+|------|-------------|
+| <a name="output_mysql_dns_zone_id"></a> [mysql\_dns\_zone\_id](#output\_mysql\_dns\_zone\_id) | ID of the MySQL private DNS zone |
+| <a name="output_mysql_dns_zone_link_id"></a> [mysql\_dns\_zone\_link\_id](#output\_mysql\_dns\_zone\_link\_id) | ID of the VNet link to MySQL DNS zone |
+| <a name="output_mysql_dns_zone_name"></a> [mysql\_dns\_zone\_name](#output\_mysql\_dns\_zone\_name) | Name of the MySQL private DNS zone |
+<!-- END_TF_DOCS -->

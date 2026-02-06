@@ -31,7 +31,7 @@ data "azurerm_client_config" "current" {}
 
 # Deploy WordPress site
 module "wordpress" {
-  source = "github.com/agenticcodingops/terraform-azure-wordpress//modules/wordpress-site"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site"
 
   project_name  = var.project_name
   site_name     = var.site_name

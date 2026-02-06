@@ -167,7 +167,7 @@ sequenceDiagram
 
 ```hcl
 module "wordpress_site" {
-  source = "github.com/agenticcodingops/terraform-azure-wordpress//modules/wordpress-site"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site"
 
   project_name  = "myproject"
   site_name     = "blog"
@@ -268,7 +268,7 @@ Deploy multiple WordPress sites on a single App Service Plan:
 
 ```hcl
 module "shared" {
-  source = "github.com/agenticcodingops/terraform-azure-wordpress//modules/shared-infrastructure"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure"
 
   project_name       = "myproject"
   environment        = "nonprod"
@@ -277,7 +277,7 @@ module "shared" {
 }
 
 module "site1" {
-  source = "github.com/agenticcodingops/terraform-azure-wordpress//modules/wordpress-site"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site"
 
   project_name = "myproject"
   site_name    = "site1"

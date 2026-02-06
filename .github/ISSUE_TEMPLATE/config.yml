@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions & Discussions
-    url: https://github.com/agenticcodingops/terraform-azure-wordpress/discussions
+    url: https://github.com/agenticcodingops/azure-wordpress/discussions
     about: Ask questions and discuss ideas with the community
   - name: Terraform Documentation
     url: https://developer.hashicorp.com/terraform/docs

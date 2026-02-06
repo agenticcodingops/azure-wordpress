@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Initial release of terraform-azure-wordpress
+- Initial release of azure-wordpress
 
 #### Core Modules
 - **wordpress-site** - Complete WordPress deployment composition module
@@ -44,5 +44,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cost optimization guide
 - CDN comparison matrix
 
-[Unreleased]: https://github.com/agenticcodingops/terraform-azure-wordpress/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/agenticcodingops/terraform-azure-wordpress/releases/tag/v1.0.0
+[Unreleased]: https://github.com/agenticcodingops/azure-wordpress/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/agenticcodingops/azure-wordpress/releases/tag/v1.0.0
