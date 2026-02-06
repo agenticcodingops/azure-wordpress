@@ -124,6 +124,39 @@ docs(readme): update architecture diagram
 refactor(app-service): simplify identity configuration
 ```
 
+### Versioning
+
+This project uses [Semantic Versioning](https://semver.org/) (`vMAJOR.MINOR.PATCH`) with automated releases via [release-please](https://github.com/googleapis/release-please).
+
+**How conventional commits map to version bumps:**
+
+| Commit Prefix | Version Bump | Terraform Examples |
+|---|---|---|
+| `fix:` | **PATCH** (1.0.0 → 1.0.1) | Fix variable defaults, correct validation rules, documentation updates |
+| `feat:` | **MINOR** (1.0.0 → 1.1.0) | Add variables with defaults, add new outputs, add optional resources |
+| `feat!:` or `BREAKING CHANGE:` footer | **MAJOR** (1.0.0 → 2.0.0) | Remove/rename variables or outputs, change variable types, remove resources |
+
+**Release process:**
+
+1. Merge PRs to `main` using conventional commit messages
+2. Release-please automatically creates/updates a Release PR with the bumped version and updated CHANGELOG
+3. A maintainer reviews and merges the Release PR when ready to cut a release
+4. Release-please creates the git tag (e.g., `v1.1.0`) and GitHub Release automatically
+5. Consumers pin to the new version: `source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.1.0"`
+
+**Breaking change examples:**
+
+```
+feat!: remove deprecated cdn_enabled variable
+
+BREAKING CHANGE: The cdn_enabled variable has been removed.
+Use the cloudflare.enabled field instead.
+```
+
+```
+refactor!: rename database_name output to mysql_database_name
+```
+
 ### Pull Request Process
 
 1. **Create a PR** against the `main` branch
