@@ -97,7 +97,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check terraform-docs
-        uses: terraform-docs/gh-actions@v1.3.0
+        uses: terraform-docs/gh-actions@v1.4.1
         with:
           working-dir: modules/wordpress-site,modules/shared-infrastructure,modules/app-service,modules/database,modules/storage,modules/key-vault,modules/networking,modules/dns-zones,modules/cloudflare,modules/front-door,modules/monitoring
           output-file: README.md
