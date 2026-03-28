@@ -164,12 +164,12 @@ No modules.
 | <a name="input_resource_group_name"></a> [resource\_group\_name](#input\_resource\_group\_name) | Name of the resource group | `string` | n/a | yes |
 | <a name="input_site_name"></a> [site\_name](#input\_site\_name) | Site name used for resource naming (lowercase, hyphens only) | `string` | n/a | yes |
 | <a name="input_sku_name"></a> [sku\_name](#input\_sku\_name) | App Service Plan SKU (P1v3 recommended for production) | `string` | `"P1v3"` | no |
-| <a name="input_storage_access_key_secret_uri"></a> [storage\_access\_key\_secret\_uri](#input\_storage\_access\_key\_secret\_uri) | Key Vault secret URI for storage access key (versionless) | `string` | n/a | yes |
-| <a name="input_storage_account_name"></a> [storage\_account\_name](#input\_storage\_account\_name) | Storage account name for media uploads | `string` | n/a | yes |
-| <a name="input_storage_container_name"></a> [storage\_container\_name](#input\_storage\_container\_name) | Storage container name for media uploads | `string` | n/a | yes |
 | <a name="input_staging_always_on"></a> [staging\_always\_on](#input\_staging\_always\_on) | Keep the staging slot always loaded (set to false to save cost) | `bool` | `false` | no |
 | <a name="input_staging_app_settings_override"></a> [staging\_app\_settings\_override](#input\_staging\_app\_settings\_override) | App settings to override in the staging slot (merged on top of production settings) | `map(string)` | `{}` | no |
 | <a name="input_sticky_connection_string_names"></a> [sticky\_connection\_string\_names](#input\_sticky\_connection\_string\_names) | Connection string names to mark as sticky (slot-specific, not swapped) | `list(string)` | `[]` | no |
+| <a name="input_storage_access_key_secret_uri"></a> [storage\_access\_key\_secret\_uri](#input\_storage\_access\_key\_secret\_uri) | Key Vault secret URI for storage access key (versionless) | `string` | n/a | yes |
+| <a name="input_storage_account_name"></a> [storage\_account\_name](#input\_storage\_account\_name) | Storage account name for media uploads | `string` | n/a | yes |
+| <a name="input_storage_container_name"></a> [storage\_container\_name](#input\_storage\_container\_name) | Storage container name for media uploads | `string` | n/a | yes |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources | `map(string)` | `{}` | no |
 | <a name="input_use_shared_plan"></a> [use\_shared\_plan](#input\_use\_shared\_plan) | Set to true when using a shared App Service Plan. This avoids plan-time unknown value issues. | `bool` | `false` | no |
 | <a name="input_worker_count"></a> [worker\_count](#input\_worker\_count) | Number of workers (instances) | `number` | `1` | no |
