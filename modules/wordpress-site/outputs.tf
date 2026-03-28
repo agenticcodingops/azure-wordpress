@@ -68,6 +68,11 @@ output "staging_slot_hostname" {
   value       = module.app_service.staging_slot_hostname
 }
 
+output "staging_slot_principal_id" {
+  description = "Staging slot managed identity principal ID"
+  value       = module.app_service.staging_slot_principal_id
+}
+
 # Key Vault outputs
 output "key_vault_id" {
   description = "Key Vault ID"
@@ -88,6 +93,11 @@ output "storage_account_name" {
 output "storage_blob_endpoint" {
   description = "Storage blob endpoint"
   value       = module.storage.primary_blob_endpoint
+}
+
+output "storage_additional_container_names" {
+  description = "Additional storage container names created"
+  value       = module.storage.additional_container_names
 }
 
 # Monitoring outputs

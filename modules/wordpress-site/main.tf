@@ -234,12 +234,13 @@ module "database" {
   db_subnet_id        = module.networking.db_subnet_id
   private_dns_zone_id = module.dns_zones.mysql_dns_zone_id
 
-  sku_name               = local.db_config.sku_name
-  storage_size_gb        = local.db_config.storage_size_gb
-  storage_iops           = local.db_config.storage_iops
-  backup_retention_days  = local.db_config.backup_retention_days
-  geo_redundant_backup   = local.db_config.geo_redundant_backup
-  high_availability_mode = local.db_config.high_availability_mode
+  sku_name                  = local.db_config.sku_name
+  storage_size_gb           = local.db_config.storage_size_gb
+  storage_iops              = local.db_config.storage_iops
+  backup_retention_days     = local.db_config.backup_retention_days
+  geo_redundant_backup      = local.db_config.geo_redundant_backup
+  high_availability_mode    = local.db_config.high_availability_mode
+  storage_auto_grow_enabled = coalesce(var.database.storage_auto_grow_enabled, true)
 
   # Allow burstable SKUs for cost optimization (user choice)
   enforce_production_sku = false
@@ -265,6 +266,16 @@ module "storage" {
   environment         = var.environment
   location            = var.location
   resource_group_name = azurerm_resource_group.main.name
+
+  additional_containers           = var.storage.additional_containers
+  versioning_enabled              = var.storage.versioning_enabled
+  blob_delete_retention_days      = var.storage.blob_delete_retention_days
+  container_delete_retention_days = var.storage.container_delete_retention_days
+  lifecycle_policy_enabled        = var.storage.lifecycle_policy_enabled
+  lifecycle_cool_tier_days        = var.storage.lifecycle_cool_tier_days
+  lifecycle_version_delete_days   = var.storage.lifecycle_version_delete_days
+  lifecycle_snapshot_delete_days  = var.storage.lifecycle_snapshot_delete_days
+  lifecycle_prefix_match          = var.storage.lifecycle_prefix_match
 
   tags = local.common_tags
 
@@ -346,6 +357,13 @@ module "app_service" {
 
   app_insights_connection_string_secret_uri = try(module.key_vault.secret_versionless_uris["appinsights-connection"], "")
 
+  # Staging and extra settings
+  extra_app_settings             = coalesce(var.app_service.extra_app_settings, {})
+  extra_sticky_app_setting_names = coalesce(var.app_service.extra_sticky_app_setting_names, [])
+  sticky_connection_string_names = coalesce(var.app_service.sticky_connection_string_names, [])
+  staging_app_settings_override  = coalesce(var.app_service.staging_app_settings_override, {})
+  staging_always_on              = coalesce(var.app_service.staging_always_on, false)
+
   # CDN provider configuration - controls IP restrictions
   # NOTE: front_door_id is NOT passed here to avoid circular dependency
   # The azapi_update_resource below updates IP restrictions after Front Door is created
@@ -368,6 +386,25 @@ resource "azurerm_key_vault_access_policy" "app_service_update" {
   key_vault_id = module.key_vault.id
   tenant_id    = var.tenant_id
   object_id    = module.app_service.principal_id
+
+  secret_permissions = [
+    "Get",
+    "List"
+  ]
+
+  depends_on = [
+    module.key_vault,
+    module.app_service
+  ]
+}
+
+# Key Vault access policy for staging slot managed identity
+resource "azurerm_key_vault_access_policy" "staging_slot" {
+  count = module.app_service.staging_slot_principal_id != null ? 1 : 0
+
+  key_vault_id = module.key_vault.id
+  tenant_id    = var.tenant_id
+  object_id    = module.app_service.staging_slot_principal_id
 
   secret_permissions = [
     "Get",

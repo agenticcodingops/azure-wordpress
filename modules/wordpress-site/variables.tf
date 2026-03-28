@@ -57,12 +57,30 @@ variable "wordpress_version" {
 variable "database" {
   description = "Database configuration"
   type = object({
-    sku_name               = optional(string, "GP_Standard_D2ds_v4")
-    storage_size_gb        = optional(number, 100)
-    storage_iops           = optional(number, 700)
-    backup_retention_days  = optional(number, 7)
-    geo_redundant_backup   = optional(bool, false)
-    high_availability_mode = optional(string, "Disabled")
+    sku_name                  = optional(string, "GP_Standard_D2ds_v4")
+    storage_size_gb           = optional(number, 100)
+    storage_iops              = optional(number, 700)
+    backup_retention_days     = optional(number, 7)
+    geo_redundant_backup      = optional(bool, false)
+    high_availability_mode    = optional(string, "Disabled")
+    storage_auto_grow_enabled = optional(bool, true)
+  })
+  default = {}
+}
+
+# Storage configuration
+variable "storage" {
+  description = "Storage account configuration"
+  type = object({
+    additional_containers           = optional(map(object({ access_type = optional(string, "private") })), {})
+    versioning_enabled              = optional(bool, true)
+    blob_delete_retention_days      = optional(number, 30)
+    container_delete_retention_days = optional(number, 30)
+    lifecycle_policy_enabled        = optional(bool, true)
+    lifecycle_cool_tier_days        = optional(number, 30)
+    lifecycle_version_delete_days   = optional(number, 90)
+    lifecycle_snapshot_delete_days  = optional(number, 90)
+    lifecycle_prefix_match          = optional(list(string), ["uploads/"])
   })
   default = {}
 }
@@ -71,12 +89,17 @@ variable "database" {
 variable "app_service" {
   description = "App Service configuration"
   type = object({
-    plan_id           = optional(string, null)
-    use_shared_plan   = optional(bool, false)
-    sku_name          = optional(string, "P1v3")
-    always_on         = optional(bool, true)
-    health_check_path = optional(string, "/")
-    worker_count      = optional(number, 1)
+    plan_id                        = optional(string, null)
+    use_shared_plan                = optional(bool, false)
+    sku_name                       = optional(string, "P1v3")
+    always_on                      = optional(bool, true)
+    health_check_path              = optional(string, "/")
+    worker_count                   = optional(number, 1)
+    extra_app_settings             = optional(map(string), {})
+    extra_sticky_app_setting_names = optional(list(string), [])
+    sticky_connection_string_names = optional(list(string), [])
+    staging_app_settings_override  = optional(map(string), {})
+    staging_always_on              = optional(bool, false)
   })
   default = {}
 }
