@@ -180,6 +180,36 @@ variable "front_door_id" {
   default     = ""
 }
 
+variable "extra_app_settings" {
+  description = "Additional app settings to merge with the default WordPress settings (e.g., WP_ENVIRONMENT_TYPE, custom plugin config)"
+  type        = map(string)
+  default     = {}
+}
+
+variable "extra_sticky_app_setting_names" {
+  description = "Additional app setting names to mark as sticky (slot-specific, not swapped)"
+  type        = list(string)
+  default     = []
+}
+
+variable "sticky_connection_string_names" {
+  description = "Connection string names to mark as sticky (slot-specific, not swapped)"
+  type        = list(string)
+  default     = []
+}
+
+variable "staging_app_settings_override" {
+  description = "App settings to override in the staging slot (merged on top of production settings)"
+  type        = map(string)
+  default     = {}
+}
+
+variable "staging_always_on" {
+  description = "Keep the staging slot always loaded (set to false to save cost)"
+  type        = bool
+  default     = false
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

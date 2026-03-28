@@ -152,6 +152,8 @@ No modules.
 | <a name="input_database_username"></a> [database\_username](#input\_database\_username) | MySQL username | `string` | n/a | yes |
 | <a name="input_docker_image_tag"></a> [docker\_image\_tag](#input\_docker\_image\_tag) | Tag for the WordPress Docker image | `string` | `"8.4"` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
+| <a name="input_extra_app_settings"></a> [extra\_app\_settings](#input\_extra\_app\_settings) | Additional app settings to merge with the default WordPress settings (e.g., WP\_ENVIRONMENT\_TYPE, custom plugin config) | `map(string)` | `{}` | no |
+| <a name="input_extra_sticky_app_setting_names"></a> [extra\_sticky\_app\_setting\_names](#input\_extra\_sticky\_app\_setting\_names) | Additional app setting names to mark as sticky (slot-specific, not swapped) | `list(string)` | `[]` | no |
 | <a name="input_front_door_enabled"></a> [front\_door\_enabled](#input\_front\_door\_enabled) | DEPRECATED: Use cdn\_provider instead. Whether Front Door is enabled. | `bool` | `true` | no |
 | <a name="input_front_door_id"></a> [front\_door\_id](#input\_front\_door\_id) | Azure Front Door resource GUID (required when cdn\_provider = azure\_front\_door) | `string` | `""` | no |
 | <a name="input_health_check_path"></a> [health\_check\_path](#input\_health\_check\_path) | Path for health check endpoint | `string` | `"/"` | no |
@@ -165,6 +167,9 @@ No modules.
 | <a name="input_storage_access_key_secret_uri"></a> [storage\_access\_key\_secret\_uri](#input\_storage\_access\_key\_secret\_uri) | Key Vault secret URI for storage access key (versionless) | `string` | n/a | yes |
 | <a name="input_storage_account_name"></a> [storage\_account\_name](#input\_storage\_account\_name) | Storage account name for media uploads | `string` | n/a | yes |
 | <a name="input_storage_container_name"></a> [storage\_container\_name](#input\_storage\_container\_name) | Storage container name for media uploads | `string` | n/a | yes |
+| <a name="input_staging_always_on"></a> [staging\_always\_on](#input\_staging\_always\_on) | Keep the staging slot always loaded (set to false to save cost) | `bool` | `false` | no |
+| <a name="input_staging_app_settings_override"></a> [staging\_app\_settings\_override](#input\_staging\_app\_settings\_override) | App settings to override in the staging slot (merged on top of production settings) | `map(string)` | `{}` | no |
+| <a name="input_sticky_connection_string_names"></a> [sticky\_connection\_string\_names](#input\_sticky\_connection\_string\_names) | Connection string names to mark as sticky (slot-specific, not swapped) | `list(string)` | `[]` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources | `map(string)` | `{}` | no |
 | <a name="input_use_shared_plan"></a> [use\_shared\_plan](#input\_use\_shared\_plan) | Set to true when using a shared App Service Plan. This avoids plan-time unknown value issues. | `bool` | `false` | no |
 | <a name="input_worker_count"></a> [worker\_count](#input\_worker\_count) | Number of workers (instances) | `number` | `1` | no |
@@ -181,5 +186,6 @@ No modules.
 | <a name="output_principal_id"></a> [principal\_id](#output\_principal\_id) | Principal ID of the Web App managed identity |
 | <a name="output_staging_slot_hostname"></a> [staging\_slot\_hostname](#output\_staging\_slot\_hostname) | Hostname of the staging deployment slot (null if SKU doesn't support slots) |
 | <a name="output_staging_slot_id"></a> [staging\_slot\_id](#output\_staging\_slot\_id) | ID of the staging deployment slot (null if SKU doesn't support slots) |
+| <a name="output_staging_slot_principal_id"></a> [staging\_slot\_principal\_id](#output\_staging\_slot\_principal\_id) | Principal ID of the staging slot managed identity (null if SKU doesn't support slots) |
 | <a name="output_tenant_id"></a> [tenant\_id](#output\_tenant\_id) | Tenant ID of the Web App managed identity |
 <!-- END_TF_DOCS -->

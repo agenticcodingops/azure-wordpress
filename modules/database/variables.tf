@@ -84,6 +84,12 @@ variable "storage_iops" {
   }
 }
 
+variable "storage_auto_grow_enabled" {
+  description = "Enable auto-grow for MySQL storage when capacity is low"
+  type        = bool
+  default     = true
+}
+
 variable "backup_retention_days" {
   description = "Backup retention in days (1-35)"
   type        = number

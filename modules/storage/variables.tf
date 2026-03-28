@@ -74,6 +74,95 @@ variable "container_name" {
   }
 }
 
+variable "additional_containers" {
+  description = "Map of additional blob containers to create (e.g., wp-backups for UpdraftPlus)"
+  type = map(object({
+    access_type = optional(string, "private")
+  }))
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for name, config in var.additional_containers :
+      contains(["private", "blob", "container"], config.access_type)
+    ])
+    error_message = "Container access_type must be 'private', 'blob', or 'container'."
+  }
+}
+
+variable "versioning_enabled" {
+  description = "Enable blob versioning for point-in-time recovery"
+  type        = bool
+  default     = true
+}
+
+variable "blob_delete_retention_days" {
+  description = "Number of days to retain soft-deleted blobs (1-365)"
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.blob_delete_retention_days >= 1 && var.blob_delete_retention_days <= 365
+    error_message = "Blob delete retention must be between 1 and 365 days."
+  }
+}
+
+variable "container_delete_retention_days" {
+  description = "Number of days to retain soft-deleted containers (1-365)"
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.container_delete_retention_days >= 1 && var.container_delete_retention_days <= 365
+    error_message = "Container delete retention must be between 1 and 365 days."
+  }
+}
+
+variable "lifecycle_policy_enabled" {
+  description = "Enable lifecycle management policy for blob tiering and version cleanup"
+  type        = bool
+  default     = true
+}
+
+variable "lifecycle_cool_tier_days" {
+  description = "Days since last access before moving base blobs to Cool tier"
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.lifecycle_cool_tier_days >= 1
+    error_message = "Cool tier days must be at least 1."
+  }
+}
+
+variable "lifecycle_version_delete_days" {
+  description = "Days since creation before deleting old blob versions"
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.lifecycle_version_delete_days >= 1
+    error_message = "Version delete days must be at least 1."
+  }
+}
+
+variable "lifecycle_snapshot_delete_days" {
+  description = "Days since creation before deleting old snapshots"
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.lifecycle_snapshot_delete_days >= 1
+    error_message = "Snapshot delete days must be at least 1."
+  }
+}
+
+variable "lifecycle_prefix_match" {
+  description = "List of blob prefixes to scope the lifecycle management policy"
+  type        = list(string)
+  default     = ["uploads/"]
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

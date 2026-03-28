@@ -32,3 +32,8 @@ output "primary_connection_string" {
   value       = azurerm_storage_account.main.primary_connection_string
   sensitive   = true
 }
+
+output "additional_container_names" {
+  description = "Map of additional container names created"
+  value       = { for name, container in azurerm_storage_container.additional : name => container.name }
+}

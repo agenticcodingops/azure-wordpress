@@ -99,11 +99,11 @@ locals {
   }
 
   # Sticky settings - these stay with the slot, not swapped
-  sticky_settings = [
+  sticky_settings = distinct(concat([
     "WP_HOME",
     "WP_SITEURL",
     "WP_DEBUG"
-  ]
+  ], var.extra_sticky_app_setting_names))
 }
 
 # App Service Plan (created if not using shared plan)
@@ -218,12 +218,13 @@ resource "azurerm_linux_web_app" "main" {
     ip_restriction_default_action = local.effective_cdn_provider != "direct" ? "Deny" : "Allow"
   }
 
-  # App settings
-  app_settings = local.app_settings
+  # App settings (default WordPress settings merged with extra settings from consumer)
+  app_settings = merge(local.app_settings, var.extra_app_settings)
 
   # Sticky settings for deployment slots
   sticky_settings {
-    app_setting_names = local.sticky_settings
+    app_setting_names       = local.sticky_settings
+    connection_string_names = length(var.sticky_connection_string_names) > 0 ? var.sticky_connection_string_names : null
   }
 
   # NOTE: NO storage_account block
@@ -279,9 +280,9 @@ resource "azurerm_linux_web_app_slot" "staging" {
     type = "SystemAssigned"
   }
 
-  # Site configuration (same as production)
+  # Site configuration (staging may differ from production for cost savings)
   site_config {
-    always_on                         = var.always_on
+    always_on                         = var.staging_always_on
     minimum_tls_version               = "1.2"
     http2_enabled                     = true
     ftps_state                        = "Disabled"
@@ -296,11 +297,11 @@ resource "azurerm_linux_web_app_slot" "staging" {
   }
 
   # Staging-specific settings (WP_HOME/WP_SITEURL are sticky)
-  app_settings = merge(local.app_settings, {
+  app_settings = merge(local.app_settings, var.extra_app_settings, {
     "WP_HOME"    = "https://app-${local.name_prefix}-staging.azurewebsites.net"
     "WP_SITEURL" = "https://app-${local.name_prefix}-staging.azurewebsites.net"
     "WP_DEBUG"   = "true" # Always debug in staging
-  })
+  }, var.staging_app_settings_override)
 
   tags = merge(var.tags, {
     Site = var.site_name

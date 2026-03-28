@@ -44,8 +44,9 @@ resource "azurerm_mysql_flexible_server" "main" {
 
   # Storage configuration
   storage {
-    size_gb = var.storage_size_gb
-    iops    = var.storage_iops
+    size_gb           = var.storage_size_gb
+    iops              = var.storage_iops
+    auto_grow_enabled = var.storage_auto_grow_enabled
   }
 
   # Backup configuration

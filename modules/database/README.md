@@ -149,6 +149,8 @@ No modules.
 | <a name="input_site_name"></a> [site\_name](#input\_site\_name) | Site name used for resource naming (lowercase, hyphens only) | `string` | n/a | yes |
 | <a name="input_sku_name"></a> [sku\_name](#input\_sku\_name) | MySQL SKU name. Use GP\_Standard\_D2ds\_v4 or higher for production (D-series REQUIRED). | `string` | `"GP_Standard_D2ds_v4"` | no |
 | <a name="input_storage_iops"></a> [storage\_iops](#input\_storage\_iops) | Storage IOPS (360-20000) | `number` | `700` | no |
+| <a name="input_storage_auto_grow_enabled"></a> [storage\_auto\_grow\_enabled](#input\_storage\_auto\_grow\_enabled) | Enable auto-grow for MySQL storage when capacity is low | `bool` | `true` | no |
+| <a name="input_storage_iops"></a> [storage\_iops](#input\_storage\_iops) | Storage IOPS (360-20000) | `number` | `700` | no |
 | <a name="input_storage_size_gb"></a> [storage\_size\_gb](#input\_storage\_size\_gb) | Storage size in GB (20-16384) | `number` | `100` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources | `map(string)` | `{}` | no |
 
