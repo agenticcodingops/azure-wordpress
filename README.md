@@ -5,11 +5,15 @@ Deploy production-ready WordPress sites on Azure with Cloudflare CDN using Terra
 ## Features
 
 - **Azure App Service** (Linux) with managed WordPress container
+- **Staging Deployment Slots** with configurable app settings and always-on control
 - **Azure MySQL Flexible Server** with Private Endpoint (secure database access)
+- **Backup & Recovery** -- configurable PITR retention (1-35 days), geo-redundant backup, storage auto-grow
 - **Azure Blob Storage** for media uploads (no Azure Files latency)
+- **Blob Protection** -- versioning, soft-delete retention, additional containers (e.g., wp-backups)
+- **Storage Lifecycle Management** -- auto-tier to Cool, version/snapshot cleanup on schedule
 - **Cloudflare CDN** with DNS management and SSL (cost-optimized)
 - **Azure Front Door** alternative with WAF (enterprise option)
-- **Key Vault** for secrets management with managed identity
+- **Key Vault** for secrets management with managed identity (production + staging slots)
 - **Application Insights** for monitoring and alerting
 - **Shared App Service Plans** for multi-site cost optimization
 
@@ -168,7 +172,7 @@ sequenceDiagram
 ```hcl
 module "wordpress_site" {
   # Pin to a release version for stability - see Releases page for latest
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.1.0"
 
   project_name  = "myproject"
   site_name     = "blog"
@@ -183,6 +187,20 @@ module "wordpress_site" {
     account_id = var.cloudflare_account_id
     domain     = "example.com"
     subdomain  = "blog"
+  }
+
+  # Backup container for UpdraftPlus (v1.1.0+)
+  storage = {
+    additional_containers = {
+      "wp-backups" = { access_type = "private" }
+    }
+  }
+
+  # Staging slot settings (v1.1.0+)
+  app_service = {
+    extra_app_settings             = { "WP_ENVIRONMENT_TYPE" = "production" }
+    extra_sticky_app_setting_names = ["WP_ENVIRONMENT_TYPE"]
+    staging_app_settings_override  = { "WP_ENVIRONMENT_TYPE" = "staging" }
   }
 }
 ```
@@ -271,7 +289,7 @@ Deploy multiple WordPress sites on a single App Service Plan:
 
 ```hcl
 module "shared" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v1.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v1.1.0"
 
   project_name       = "myproject"
   environment        = "nonprod"
@@ -280,7 +298,7 @@ module "shared" {
 }
 
 module "site1" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.1.0"
 
   project_name = "myproject"
   site_name    = "site1"
@@ -312,6 +330,100 @@ module "site1" {
 - **IP Restrictions**: Only Cloudflare IPs can reach origin (when enabled)
 - **TLS 1.2**: Minimum version enforced everywhere
 
+## Backup & Recovery
+
+### MySQL Point-in-Time Recovery (PITR)
+
+Configure via the `database` variable:
+
+```hcl
+database = {
+  backup_retention_days     = 14                  # 1-35 days (default: 30 for production, 7 for nonprod)
+  geo_redundant_backup      = true                # Cross-region backup (default: true for production)
+  storage_auto_grow_enabled = true                # Auto-grow storage when capacity is low (default: true)
+}
+```
+
+The composition module applies environment-aware defaults: production gets 30-day retention
+with geo-redundant backup enabled automatically.
+
+### Blob Storage Protection
+
+Configure via the `storage` variable:
+
+```hcl
+storage = {
+  versioning_enabled              = true          # Point-in-time recovery for blobs (default: true)
+  blob_delete_retention_days      = 30            # Soft-delete for blobs (default: 30)
+  container_delete_retention_days = 30            # Soft-delete for containers (default: 30)
+
+  # Additional containers (e.g., for UpdraftPlus backup plugin)
+  additional_containers = {
+    "wp-backups" = { access_type = "private" }
+  }
+}
+```
+
+### Storage Lifecycle Management
+
+Automatically tier and clean up old data to reduce costs:
+
+```hcl
+storage = {
+  lifecycle_policy_enabled       = true           # Enable lifecycle rules (default: true)
+  lifecycle_cool_tier_days       = 30             # Move to Cool tier after N days (default: 30)
+  lifecycle_version_delete_days  = 90             # Delete old versions after N days (default: 90)
+  lifecycle_snapshot_delete_days = 90             # Delete old snapshots after N days (default: 90)
+  lifecycle_prefix_match         = ["uploads/"]   # Scope to specific prefixes (default: ["uploads/"])
+}
+```
+
+## Staging Deployment Slots
+
+The App Service module creates a staging deployment slot automatically on Standard (S\*)
+and Premium (P\*) SKUs. Basic tier (B\*) does not support slots.
+
+### Configuring Staging
+
+```hcl
+app_service = {
+  sku_name = "P1v3"  # Must be Standard or Premium for slot support
+
+  # Add custom app settings (merged with built-in WordPress settings)
+  extra_app_settings = {
+    "WP_ENVIRONMENT_TYPE" = "production"
+  }
+
+  # Mark settings as sticky (slot-specific, not swapped)
+  extra_sticky_app_setting_names = ["WP_ENVIRONMENT_TYPE"]
+
+  # Override settings on the staging slot
+  staging_app_settings_override = {
+    "WP_ENVIRONMENT_TYPE" = "staging"
+  }
+
+  # Save cost by not keeping staging always loaded
+  staging_always_on = false
+}
+```
+
+### Built-in Slot Behavior
+
+The module automatically handles these -- do NOT duplicate them in `extra_app_settings`:
+
+| Setting | Production Value | Staging Value | Sticky? |
+|---------|-----------------|---------------|---------|
+| `WP_HOME` | `https://{custom_domain}` | `https://app-{name}-staging.azurewebsites.net` | Yes |
+| `WP_SITEURL` | `https://{custom_domain}` | `https://app-{name}-staging.azurewebsites.net` | Yes |
+| `WP_DEBUG` | `false` | `true` | Yes |
+| `DATABASE_*` | Key Vault reference | Same as production | No |
+| `MICROSOFT_AZURE_*` | Key Vault reference | Same as production | No |
+
+### Key Vault Access
+
+Both production and staging slot managed identities are granted Key Vault `Get`/`List`
+access automatically, so `@Microsoft.KeyVault(SecretUri=...)` references resolve on both slots.
+
 ## Requirements
 
 | Name | Version |
@@ -331,7 +443,7 @@ Always pin module references to a specific version tag to prevent unexpected cha
 
 ```hcl
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.1.0"
   # ...
 }
 ```

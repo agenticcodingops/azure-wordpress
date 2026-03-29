@@ -36,7 +36,7 @@ data "azurerm_client_config" "current" {}
 
 module "shared" {
   # Pin to a specific version tag for stability
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v1.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v1.1.0"
 
   project_name    = var.project_name
   environment     = var.environment
@@ -54,7 +54,7 @@ module "shared" {
 module "wordpress_sites" {
   for_each = var.sites
   # Pin to a specific version tag for stability
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.1.0"
 
   project_name  = var.project_name
   site_name     = each.key
@@ -70,6 +70,10 @@ module "wordpress_sites" {
     sku_name          = var.app_service_sku
     always_on         = !startswith(var.app_service_sku, "B") # B-tier doesn't support always_on
     health_check_path = "/wp-includes/images/blank.gif"
+
+    extra_app_settings             = { "WP_ENVIRONMENT_TYPE" = "production" }
+    extra_sticky_app_setting_names = ["WP_ENVIRONMENT_TYPE"]
+    staging_app_settings_override  = { "WP_ENVIRONMENT_TYPE" = "staging" }
   }
   shared_resource_group_name = module.shared.resource_group_name
   shared_plan_sku            = var.app_service_sku
@@ -88,6 +92,13 @@ module "wordpress_sites" {
   database = {
     sku_name        = each.value.database_sku
     storage_size_gb = each.value.database_storage_gb
+  }
+
+  # Storage -- backup container for UpdraftPlus
+  storage = {
+    additional_containers = {
+      "wp-backups" = { access_type = "private" }
+    }
   }
 
   tags = var.tags

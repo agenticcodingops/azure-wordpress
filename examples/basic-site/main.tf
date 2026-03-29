@@ -32,7 +32,7 @@ data "azurerm_client_config" "current" {}
 # Deploy WordPress site
 module "wordpress" {
   # Pin to a specific version tag for stability
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.1.0"
 
   project_name  = var.project_name
   site_name     = var.site_name
@@ -57,11 +57,23 @@ module "wordpress" {
     storage_size_gb = 100
   }
 
+  # Storage configuration -- backup container for UpdraftPlus
+  storage = {
+    additional_containers = {
+      "wp-backups" = { access_type = "private" }
+    }
+  }
+
   # App Service configuration (creates dedicated plan)
+  # NOTE: B1 does not support deployment slots -- use S1+ for staging
   app_service = {
     sku_name          = "B1"
     always_on         = false # B1 doesn't support always_on
     health_check_path = "/wp-includes/images/blank.gif"
+
+    extra_app_settings             = { "WP_ENVIRONMENT_TYPE" = "production" }
+    extra_sticky_app_setting_names = ["WP_ENVIRONMENT_TYPE"]
+    staging_app_settings_override  = { "WP_ENVIRONMENT_TYPE" = "staging" }
   }
 
   tags = {
