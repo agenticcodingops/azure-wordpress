@@ -557,7 +557,7 @@ resource "azurerm_monitor_metric_alert" "high_cpu" {
 
   criteria {
     metric_namespace = "Microsoft.Web/sites"
-    metric_name      = "CpuTime"
+    metric_name      = "CpuPercentage"
     aggregation      = "Average"
     operator         = "GreaterThan"
     threshold        = local.alert_config.high_cpu_threshold
