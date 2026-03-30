@@ -91,8 +91,9 @@ locals {
     "PHP_MAX_EXECUTION_TIME" = "120"
     "PHP_MAX_INPUT_VARS"     = "2000"
 
-    # WordPress security
-    "DISABLE_WP_CRON" = "true" # Use Azure Functions for cron
+    # WordPress cron - use built-in wp-cron.php (triggered on page loads)
+    # Set to "true" only after provisioning an external cron replacement (Azure Functions, etc.)
+    "DISABLE_WP_CRON" = "false"
 
     # Debugging (nonprod only)
     "WP_DEBUG" = var.environment == "nonprod" ? "true" : "false"

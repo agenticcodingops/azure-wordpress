@@ -156,7 +156,7 @@ No modules.
 | <a name="input_extra_sticky_app_setting_names"></a> [extra\_sticky\_app\_setting\_names](#input\_extra\_sticky\_app\_setting\_names) | Additional app setting names to mark as sticky (slot-specific, not swapped) | `list(string)` | `[]` | no |
 | <a name="input_front_door_enabled"></a> [front\_door\_enabled](#input\_front\_door\_enabled) | DEPRECATED: Use cdn\_provider instead. Whether Front Door is enabled. | `bool` | `true` | no |
 | <a name="input_front_door_id"></a> [front\_door\_id](#input\_front\_door\_id) | Azure Front Door resource GUID (required when cdn\_provider = azure\_front\_door) | `string` | `""` | no |
-| <a name="input_health_check_path"></a> [health\_check\_path](#input\_health\_check\_path) | Path for health check endpoint | `string` | `"/"` | no |
+| <a name="input_health_check_path"></a> [health\_check\_path](#input\_health\_check\_path) | Path for health check endpoint (use a lightweight static file, not the homepage) | `string` | `"/wp-includes/images/blank.gif"` | no |
 | <a name="input_key_vault_uri"></a> [key\_vault\_uri](#input\_key\_vault\_uri) | Key Vault URI for secret references | `string` | n/a | yes |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for resources | `string` | n/a | yes |
 | <a name="input_plan_id"></a> [plan\_id](#input\_plan\_id) | ID of existing App Service Plan. If null, a new plan is created. | `string` | `null` | no |

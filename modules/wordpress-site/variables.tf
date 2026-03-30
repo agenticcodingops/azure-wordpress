@@ -155,7 +155,7 @@ variable "cloudflare" {
     subdomain                      = optional(string, "")
     proxied                        = optional(bool, true)
     enable_waf                     = optional(bool, false) # Default false for Free plan compatibility
-    enable_page_rules              = optional(bool, false) # Default false for Free plan compatibility (3 rule limit)
+    enable_page_rules              = optional(bool, true)  # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)
     enable_cache_rules             = optional(bool, false) # Requires paid plan
     enable_zone_setting_overrides  = optional(bool, false) # Some settings can't be modified on Free plan
     enable_wordpress_optimizations = optional(bool, true)
@@ -201,6 +201,14 @@ variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
   default     = {}
+}
+
+# Resource lock to prevent accidental deletion
+# Requires "User Access Administrator" role on the deploying service principal
+variable "enable_resource_lock" {
+  description = "Enable CanNotDelete lock on the resource group (requires User Access Administrator role)"
+  type        = bool
+  default     = false
 }
 
 # App Service Plan density validation

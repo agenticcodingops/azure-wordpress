@@ -77,9 +77,9 @@ variable "always_on" {
 }
 
 variable "health_check_path" {
-  description = "Path for health check endpoint"
+  description = "Path for health check endpoint (use a lightweight static file, not the homepage)"
   type        = string
-  default     = "/"
+  default     = "/wp-includes/images/blank.gif"
 }
 
 variable "worker_count" {

@@ -77,7 +77,7 @@ locals {
     use_shared_plan   = coalesce(var.app_service.use_shared_plan, false)
     sku_name          = local.effective_sku
     always_on         = coalesce(var.app_service.always_on, true)
-    health_check_path = coalesce(var.app_service.health_check_path, "/")
+    health_check_path = coalesce(var.app_service.health_check_path, "/wp-includes/images/blank.gif")
     worker_count      = coalesce(var.app_service.worker_count, 1)
   }
 
@@ -107,7 +107,7 @@ locals {
     subdomain                      = try(var.cloudflare.subdomain, "") != "" ? var.cloudflare.subdomain : ""
     proxied                        = coalesce(var.cloudflare.proxied, true)
     enable_waf                     = coalesce(var.cloudflare.enable_waf, false)                    # Free plan: WAF not available
-    enable_page_rules              = coalesce(var.cloudflare.enable_page_rules, false)             # Free plan: 3 rule limit
+    enable_page_rules              = coalesce(var.cloudflare.enable_page_rules, true)              # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)
     enable_cache_rules             = coalesce(var.cloudflare.enable_cache_rules, false)            # Requires paid plan
     enable_zone_setting_overrides  = coalesce(var.cloudflare.enable_zone_setting_overrides, false) # Some settings not editable on Free
     enable_wordpress_optimizations = coalesce(var.cloudflare.enable_wordpress_optimizations, true)
@@ -799,12 +799,11 @@ resource "azurerm_app_service_custom_hostname_binding" "main" {
 # ============================================================================
 
 # Lock the resource group to prevent accidental deletion
-# NOTE: Disabled - requires User Access Administrator role which service principal lacks
-# To enable: grant "User Access Administrator" role and change count to: var.environment == "production" ? 1 : 0
+# Requires "User Access Administrator" role on the deploying service principal
 resource "azurerm_management_lock" "main" {
-  count      = 0 # Disabled pending permission grant
+  count      = var.enable_resource_lock ? 1 : 0
   name       = "site-protection-lock"
   scope      = azurerm_resource_group.main.id
   lock_level = "CanNotDelete"
-  notes      = "Protects production WordPress site from accidental deletion. 30-day recovery window."
+  notes      = "Protects WordPress site from accidental deletion. 30-day recovery window."
 }
