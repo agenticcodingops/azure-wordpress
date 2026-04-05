@@ -8,10 +8,11 @@ locals {
   env_suffix = var.environment == "nonprod" ? "np" : "prod"
 
   # Key Vault names have 24 char limit - abbreviate
-  # Pattern: kv-{site}-{env}9 (site max ~14, env = 2-4, suffix = 1)
-  # The "9" suffix avoids conflicts with soft-deleted vaults from previous deployments
+  # Pattern: kv-{site}-{env}{suffix} (site max ~14, env = 2-4, suffix = configurable)
+  # The suffix avoids conflicts with soft-deleted vaults from previous deployments
   # (np, np2-np8 are all soft-deleted and can't be purged due to purge protection)
-  kv_name = "kv-${substr(replace(var.site_name, "-", ""), 0, 14)}-${local.env_suffix}9"
+  # Consumers can override var.name_suffix to avoid conflicts (e.g., "10" if "9" is soft-deleted)
+  kv_name = "kv-${substr(replace(var.site_name, "-", ""), 0, 14)}-${local.env_suffix}${var.name_suffix}"
 }
 
 # Key Vault

@@ -203,6 +203,13 @@ variable "tags" {
   default     = {}
 }
 
+# Key Vault name suffix to avoid conflicts with soft-deleted vaults
+variable "key_vault_name_suffix" {
+  description = "Suffix appended to Key Vault name. Bump this to avoid conflicts with soft-deleted vaults that have purge protection enabled."
+  type        = string
+  default     = "9"
+}
+
 # Resource lock to prevent accidental deletion
 # Requires "User Access Administrator" role on the deploying service principal
 variable "enable_resource_lock" {
