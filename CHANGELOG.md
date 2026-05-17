@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0](https://github.com/agenticcodingops/azure-wordpress/compare/v1.1.0...v1.2.0) (2026-05-17)
+
+
+### Features
+
+* Add configurable key_vault_name_suffix to avoid soft-delete conflicts ([459b5d4](https://github.com/agenticcodingops/azure-wordpress/commit/459b5d42523c02c2be601702c90eaee567b7999f))
+
+
+### Bug Fixes
+
+* pre-launch hardening for WP-Cron, health checks, page rules, and resource locks ([a4039fd](https://github.com/agenticcodingops/azure-wordpress/commit/a4039fd434b7660ac1e53c774898b7d2c3b87ecc))
+* use CpuPercentage instead of CpuTime for high CPU alert metric ([9755189](https://github.com/agenticcodingops/azure-wordpress/commit/97551899ecb5b33e0528873ed6be21d8e8f78f75))
+
 ## [1.1.0](https://github.com/agenticcodingops/azure-wordpress/compare/v1.0.0...v1.1.0) (2026-05-17)
 
 
