@@ -27,8 +27,10 @@ locals {
   # Priority: cdn_provider > front_door_enabled
   effective_cdn_provider = var.cdn_provider != "none" ? var.cdn_provider : (var.front_door_enabled ? "azure_front_door" : "direct")
 
-  # Cloudflare IPv4 ranges (from https://www.cloudflare.com/ips/)
-  cloudflare_ipv4_ranges = [
+  # Cloudflare IPv4 ranges — uses live-fetched list when passed from composition module,
+  # falls back to the static list for standalone use or when cdn_provider != cloudflare.
+  # Fallback source: https://www.cloudflare.com/ips/
+  cloudflare_ipv4_ranges = var.cloudflare_ipv4_cidr_blocks != null ? var.cloudflare_ipv4_cidr_blocks : [
     "173.245.48.0/20",
     "103.21.244.0/22",
     "103.22.200.0/22",
@@ -46,8 +48,9 @@ locals {
     "131.0.72.0/22"
   ]
 
-  # Cloudflare IPv6 ranges (from https://www.cloudflare.com/ips/)
-  cloudflare_ipv6_ranges = [
+  # Cloudflare IPv6 ranges — same live-fetch / fallback pattern as IPv4.
+  # Fallback source: https://www.cloudflare.com/ips/
+  cloudflare_ipv6_ranges = var.cloudflare_ipv6_cidr_blocks != null ? var.cloudflare_ipv6_cidr_blocks : [
     "2400:cb00::/32",
     "2606:4700::/32",
     "2803:f800::/32",
@@ -295,6 +298,48 @@ resource "azurerm_linux_web_app_slot" "staging" {
       docker_registry_url = "https://mcr.microsoft.com"
       docker_image_name   = "appsvc/wordpress-debian-php:${var.docker_image_tag}"
     }
+
+    ip_restriction {
+      ip_address = "168.63.129.16/32"
+      name       = "AllowAzureHealthProbe"
+      priority   = 10
+      action     = "Allow"
+    }
+
+    dynamic "ip_restriction" {
+      for_each = local.effective_cdn_provider == "cloudflare" ? local.cloudflare_ipv4_ranges : []
+      content {
+        ip_address = ip_restriction.value
+        name       = "AllowCloudflare-IPv4-${index(local.cloudflare_ipv4_ranges, ip_restriction.value)}"
+        priority   = 100 + index(local.cloudflare_ipv4_ranges, ip_restriction.value)
+        action     = "Allow"
+      }
+    }
+
+    dynamic "ip_restriction" {
+      for_each = local.effective_cdn_provider == "cloudflare" ? local.cloudflare_ipv6_ranges : []
+      content {
+        ip_address = ip_restriction.value
+        name       = "AllowCloudflare-IPv6-${index(local.cloudflare_ipv6_ranges, ip_restriction.value)}"
+        priority   = 200 + index(local.cloudflare_ipv6_ranges, ip_restriction.value)
+        action     = "Allow"
+      }
+    }
+
+    dynamic "ip_restriction" {
+      for_each = local.effective_cdn_provider == "azure_front_door" ? [1] : []
+      content {
+        service_tag = "AzureFrontDoor.Backend"
+        name        = "AllowFrontDoor"
+        priority    = 100
+        action      = "Allow"
+        headers {
+          x_azure_fdid = var.front_door_id != "" ? [var.front_door_id] : []
+        }
+      }
+    }
+
+    ip_restriction_default_action = local.effective_cdn_provider != "direct" ? "Deny" : "Allow"
   }
 
   # Staging-specific settings (WP_HOME/WP_SITEURL are sticky)

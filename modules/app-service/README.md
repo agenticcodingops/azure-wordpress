@@ -145,6 +145,8 @@ No modules.
 | <a name="input_app_insights_connection_string_secret_uri"></a> [app\_insights\_connection\_string\_secret\_uri](#input\_app\_insights\_connection\_string\_secret\_uri) | Key Vault secret URI for App Insights connection string (versionless) | `string` | `""` | no |
 | <a name="input_app_subnet_id"></a> [app\_subnet\_id](#input\_app\_subnet\_id) | ID of the App Service VNet integration subnet (from networking module) | `string` | n/a | yes |
 | <a name="input_cdn_provider"></a> [cdn\_provider](#input\_cdn\_provider) | CDN provider for IP restrictions: 'cloudflare', 'azure\_front\_door', 'direct', or 'none' | `string` | `"none"` | no |
+| <a name="input_cloudflare_ipv4_cidr_blocks"></a> [cloudflare\_ipv4\_cidr\_blocks](#input\_cloudflare\_ipv4\_cidr\_blocks) | Cloudflare IPv4 CIDR blocks for origin IP restrictions. When null, uses the built-in fallback list. Pass data.cloudflare\_ip\_ranges.current[0].ipv4\_cidrs for live updates. | `list(string)` | `null` | no |
+| <a name="input_cloudflare_ipv6_cidr_blocks"></a> [cloudflare\_ipv6\_cidr\_blocks](#input\_cloudflare\_ipv6\_cidr\_blocks) | Cloudflare IPv6 CIDR blocks for origin IP restrictions. When null, uses the built-in fallback list. Pass data.cloudflare\_ip\_ranges.current[0].ipv6\_cidrs for live updates. | `list(string)` | `null` | no |
 | <a name="input_custom_domain"></a> [custom\_domain](#input\_custom\_domain) | Custom domain for the WordPress site | `string` | n/a | yes |
 | <a name="input_database_host"></a> [database\_host](#input\_database\_host) | MySQL server FQDN | `string` | n/a | yes |
 | <a name="input_database_name"></a> [database\_name](#input\_database\_name) | MySQL database name | `string` | n/a | yes |

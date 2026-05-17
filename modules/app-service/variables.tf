@@ -210,6 +210,18 @@ variable "staging_always_on" {
   default     = false
 }
 
+variable "cloudflare_ipv4_cidr_blocks" {
+  description = "Cloudflare IPv4 CIDR blocks for origin IP restrictions. When null, uses the built-in fallback list. Pass data.cloudflare_ip_ranges.current[0].ipv4_cidrs for live updates."
+  type        = list(string)
+  default     = null
+}
+
+variable "cloudflare_ipv6_cidr_blocks" {
+  description = "Cloudflare IPv6 CIDR blocks for origin IP restrictions. When null, uses the built-in fallback list. Pass data.cloudflare_ip_ranges.current[0].ipv6_cidrs for live updates."
+  type        = list(string)
+  default     = null
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
