@@ -38,6 +38,13 @@ terraform {
   }
 }
 
+# Fetch live Cloudflare egress IP ranges at apply time (public, no auth required).
+# Only instantiated when cdn_provider = cloudflare to avoid requiring a Cloudflare
+# provider configuration when Front Door or direct is used instead.
+data "cloudflare_ip_ranges" "current" {
+  count = var.cdn_provider == "cloudflare" ? 1 : 0
+}
+
 locals {
   # Short environment suffix for naming
   env_suffix = var.environment == "nonprod" ? "np" : "prod"
@@ -372,6 +379,12 @@ module "app_service" {
   # The azapi_update_resource below updates IP restrictions after Front Door is created
   cdn_provider       = var.cdn_provider
   front_door_enabled = local.fd_config.enabled
+
+  # Live Cloudflare IP ranges fetched at apply time — keeps origin restrictions current
+  # as Cloudflare adds new egress CIDRs. Null when not using Cloudflare (falls back to
+  # built-in list in the app-service module, which is harmless since rules aren't applied).
+  cloudflare_ipv4_cidr_blocks = var.cdn_provider == "cloudflare" ? data.cloudflare_ip_ranges.current[0].ipv4_cidrs : null
+  cloudflare_ipv6_cidr_blocks = var.cdn_provider == "cloudflare" ? data.cloudflare_ip_ranges.current[0].ipv6_cidrs : null
 
   tags = local.common_tags
 

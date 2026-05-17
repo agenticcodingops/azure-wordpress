@@ -31,6 +31,7 @@ This module creates a complete WordPress site deployment including:
 |------|---------|
 | <a name="provider_azapi"></a> [azapi](#provider\_azapi) | >= 1.12.0 |
 | <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | >= 4.0.0 |
+| <a name="provider_cloudflare"></a> [cloudflare](#provider\_cloudflare) | >= 4.0.0 |
 | <a name="provider_random"></a> [random](#provider\_random) | >= 3.5.0 |
 | <a name="provider_time"></a> [time](#provider\_time) | >= 0.9.0 |
 
@@ -68,6 +69,7 @@ This module creates a complete WordPress site deployment including:
 | [azurerm_resource_group.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/resource_group) | resource |
 | [random_password.db](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/password) | resource |
 | [time_sleep.dns_propagation](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
+| [cloudflare_ip_ranges.current](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/data-sources/ip_ranges) | data source |
 
 ## Inputs
 
