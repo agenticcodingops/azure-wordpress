@@ -187,8 +187,8 @@ resource "azurerm_linux_web_app" "main" {
       for_each = local.effective_cdn_provider == "cloudflare" ? local.cloudflare_ipv4_ranges : []
       content {
         ip_address = ip_restriction.value
-        name       = "AllowCloudflare-IPv4-${index(local.cloudflare_ipv4_ranges, ip_restriction.value)}"
-        priority   = 100 + index(local.cloudflare_ipv4_ranges, ip_restriction.value)
+        name       = "AllowCloudflare-IPv4-${ip_restriction.key}"
+        priority   = 100 + ip_restriction.key
         action     = "Allow"
       }
     }
@@ -198,8 +198,8 @@ resource "azurerm_linux_web_app" "main" {
       for_each = local.effective_cdn_provider == "cloudflare" ? local.cloudflare_ipv6_ranges : []
       content {
         ip_address = ip_restriction.value
-        name       = "AllowCloudflare-IPv6-${index(local.cloudflare_ipv6_ranges, ip_restriction.value)}"
-        priority   = 200 + index(local.cloudflare_ipv6_ranges, ip_restriction.value)
+        name       = "AllowCloudflare-IPv6-${ip_restriction.key}"
+        priority   = 200 + ip_restriction.key
         action     = "Allow"
       }
     }
@@ -310,8 +310,8 @@ resource "azurerm_linux_web_app_slot" "staging" {
       for_each = local.effective_cdn_provider == "cloudflare" ? local.cloudflare_ipv4_ranges : []
       content {
         ip_address = ip_restriction.value
-        name       = "AllowCloudflare-IPv4-${index(local.cloudflare_ipv4_ranges, ip_restriction.value)}"
-        priority   = 100 + index(local.cloudflare_ipv4_ranges, ip_restriction.value)
+        name       = "AllowCloudflare-IPv4-${ip_restriction.key}"
+        priority   = 100 + ip_restriction.key
         action     = "Allow"
       }
     }
@@ -320,12 +320,18 @@ resource "azurerm_linux_web_app_slot" "staging" {
       for_each = local.effective_cdn_provider == "cloudflare" ? local.cloudflare_ipv6_ranges : []
       content {
         ip_address = ip_restriction.value
-        name       = "AllowCloudflare-IPv6-${index(local.cloudflare_ipv6_ranges, ip_restriction.value)}"
-        priority   = 200 + index(local.cloudflare_ipv6_ranges, ip_restriction.value)
+        name       = "AllowCloudflare-IPv6-${ip_restriction.key}"
+        priority   = 200 + ip_restriction.key
         action     = "Allow"
       }
     }
 
+    # TODO: The staging slot restricts to AzureFrontDoor.Backend service tag but cannot
+    # enforce the per-instance x-azure-fdid header check. front_door_id is intentionally
+    # not passed to this module (see wordpress-site/main.tf) to avoid a circular dependency;
+    # the azapi_update_resource that patches the FDID only targets the main app slot.
+    # Staging is lower-risk (not publicly advertised), but be aware any Front Door instance
+    # can reach this slot when cdn_provider = azure_front_door.
     dynamic "ip_restriction" {
       for_each = local.effective_cdn_provider == "azure_front_door" ? [1] : []
       content {
