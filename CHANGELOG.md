@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1](https://github.com/agenticcodingops/azure-wordpress/compare/v1.3.0...v1.3.1) (2026-05-17)
+
+
+### Bug Fixes
+
+* **monitoring:** add app_service_plan_id variable ([e7c181f](https://github.com/agenticcodingops/azure-wordpress/commit/e7c181f920d4aabbb2690948258dd6f01adf38ec))
+* **monitoring:** scope high_cpu alert to App Service Plan ([398cbed](https://github.com/agenticcodingops/azure-wordpress/commit/398cbed689a0c708fbac8104496c73e50ae7d7b6))
+* **monitoring:** scope high_cpu alert to App Service Plan ([463e1ac](https://github.com/agenticcodingops/azure-wordpress/commit/463e1acc4f1e9bd40aa0aa284bbbb3c040cb1501))
+* **monitoring:** scope high_cpu alert to App Service Plan ([6774761](https://github.com/agenticcodingops/azure-wordpress/commit/67747612f914d6e5ff6ddafc7aadf3919ece1642))
+
 ## [1.3.0](https://github.com/agenticcodingops/azure-wordpress/compare/v1.2.0...v1.3.0) (2026-05-17)
 
 
