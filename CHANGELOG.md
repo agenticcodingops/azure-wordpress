@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0](https://github.com/agenticcodingops/azure-wordpress/compare/v1.2.0...v1.3.0) (2026-05-17)
+
+
+### Features
+
+* Add configurable key_vault_name_suffix to avoid soft-delete conflicts ([459b5d4](https://github.com/agenticcodingops/azure-wordpress/commit/459b5d42523c02c2be601702c90eaee567b7999f))
+
+
+### Bug Fixes
+
+* **app-service:** fetch live Cloudflare IPs at apply time, protect staging slot ([3de7594](https://github.com/agenticcodingops/azure-wordpress/commit/3de75948cc762da4d917bac1e8dbeb0df06a664d))
+* **app-service:** fetch live Cloudflare IPs at apply time, protect staging slot ([832acd9](https://github.com/agenticcodingops/azure-wordpress/commit/832acd903710c1e9ca6527df614a2a00ee4031fe))
+* **app-service:** replace index() with ip_restriction.key in dynamic blocks ([18a2680](https://github.com/agenticcodingops/azure-wordpress/commit/18a2680c7515e30c5361773d4222dc2d1c100628))
+* use CpuPercentage instead of CpuTime for high CPU alert metric ([9755189](https://github.com/agenticcodingops/azure-wordpress/commit/97551899ecb5b33e0528873ed6be21d8e8f78f75))
+
 ## [1.2.0](https://github.com/agenticcodingops/azure-wordpress/compare/v1.1.0...v1.2.0) (2026-05-17)
 
 
