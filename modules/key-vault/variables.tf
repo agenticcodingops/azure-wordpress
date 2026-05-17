@@ -81,6 +81,12 @@ variable "public_network_access_enabled" {
   default     = true
 }
 
+variable "name_suffix" {
+  description = "Suffix appended to Key Vault name to avoid conflicts with soft-deleted vaults. Bump this when a vault with purge protection is soft-deleted and the name must be reused."
+  type        = string
+  default     = "9"
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

@@ -306,6 +306,9 @@ module "key_vault" {
   # Use a placeholder principal ID - will be updated after app_service creates
   app_service_principal_id = "00000000-0000-0000-0000-000000000000"
 
+  # Key Vault name suffix (avoids soft-delete conflicts)
+  name_suffix = var.key_vault_name_suffix
+
   # Secrets are available now because we created App Insights early
   secrets = {
     "db-password"            = random_password.db.result
