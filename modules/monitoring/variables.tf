@@ -65,6 +65,11 @@ variable "app_service_id" {
   type        = string
 }
 
+variable "app_service_plan_id" {
+  description = "ID of the App Service Plan for CPU percentage alert (Microsoft.Web/serverfarms)"
+  type        = string
+}
+
 variable "mysql_server_id" {
   description = "ID of the MySQL server to monitor"
   type        = string
