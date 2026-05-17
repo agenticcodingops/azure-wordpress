@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0](https://github.com/agenticcodingops/azure-wordpress/compare/v1.0.0...v1.1.0) (2026-05-17)
+
+
+### Features
+
+* Add configurable key_vault_name_suffix to avoid soft-delete conflicts ([459b5d4](https://github.com/agenticcodingops/azure-wordpress/commit/459b5d42523c02c2be601702c90eaee567b7999f))
+* add release-please automation for semantic versioning ([f2a2068](https://github.com/agenticcodingops/azure-wordpress/commit/f2a206809e32b74ba8aa06031eb87e02d15c3dc9))
+* enhance app service and database modules with additional settings and lifecycle management features ([72f3e0e](https://github.com/agenticcodingops/azure-wordpress/commit/72f3e0e65c2fece882fcd046a5e64860503c8dcf))
+* **wordpress-site:** expose backup, storage lifecycle, and staging slot variables ([695d5e9](https://github.com/agenticcodingops/azure-wordpress/commit/695d5e96d080628a21bddc025857cd8148c5411d))
+
+
+### Bug Fixes
+
+* **ci:** use PAT token for release-please PR creation ([5e6e8e3](https://github.com/agenticcodingops/azure-wordpress/commit/5e6e8e3405778cffce8a5b6a6a460a5c240a99ef))
+* correct formatting for additional containers and lifecycle management parameters in storage module README ([19b0f9d](https://github.com/agenticcodingops/azure-wordpress/commit/19b0f9dc189557ff806d407e97ccab0f8c5bf476))
+* correct terraform formatting in multi-site example ([3146a6b](https://github.com/agenticcodingops/azure-wordpress/commit/3146a6b4f9337f3ce562677d1280537689f45c00))
+* pre-launch hardening for WP-Cron, health checks, page rules, and resource locks ([a4039fd](https://github.com/agenticcodingops/azure-wordpress/commit/a4039fd434b7660ac1e53c774898b7d2c3b87ecc))
+* update skip_check rules in Checkov job for improved security compliance ([168b188](https://github.com/agenticcodingops/azure-wordpress/commit/168b188a715739d306db842fb30d33b50f97d592))
+* use CpuPercentage instead of CpuTime for high CPU alert metric ([9755189](https://github.com/agenticcodingops/azure-wordpress/commit/97551899ecb5b33e0528873ed6be21d8e8f78f75))
+
 ## [Unreleased]
 
 ## [1.1.0] - 2026-03-29
