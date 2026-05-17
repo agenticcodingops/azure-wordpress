@@ -186,19 +186,21 @@ resource "azurerm_monitor_metric_alert" "http_5xx" {
 }
 
 # Alert: High CPU
+# Scoped to the App Service Plan (Microsoft.Web/serverfarms) because
+# CpuPercentage is a plan-level metric; it does not exist on Web Apps.
 resource "azurerm_monitor_metric_alert" "high_cpu" {
   count = length(var.alert_recipients) > 0 ? 1 : 0
 
   name                = "alert-highcpu-${local.name_prefix}"
   resource_group_name = var.resource_group_name
-  scopes              = [var.app_service_id]
+  scopes              = [var.app_service_plan_id]
   description         = "Alert when CPU exceeds threshold"
   severity            = 2 # Warning
   frequency           = "PT1M"
   window_size         = "PT${local.alert_config.alert_window_minutes}M"
 
   criteria {
-    metric_namespace = "Microsoft.Web/sites"
+    metric_namespace = "Microsoft.Web/serverfarms"
     metric_name      = "CpuPercentage"
     aggregation      = "Average"
     operator         = "GreaterThan"
