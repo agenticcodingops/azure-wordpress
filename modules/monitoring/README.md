@@ -99,7 +99,7 @@ No requirements.
 ## Providers
 
 | Name | Version |
-| ---- | ------- |
+|------|---------|
 | <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | n/a |
 
 ## Modules
@@ -109,7 +109,7 @@ No modules.
 ## Resources
 
 | Name | Type |
-| ---- | ---- |
+|------|------|
 | [azurerm_application_insights.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/application_insights) | resource |
 | [azurerm_log_analytics_workspace.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/log_analytics_workspace) | resource |
 | [azurerm_monitor_action_group.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_action_group) | resource |
@@ -123,7 +123,7 @@ No modules.
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-| ---- | ----------- | ---- | ------- | :------: |
+|------|-------------|------|---------|:--------:|
 | <a name="input_alert_recipients"></a> [alert\_recipients](#input\_alert\_recipients) | Email addresses for alert notifications | `list(string)` | `[]` | no |
 | <a name="input_alert_rules"></a> [alert\_rules](#input\_alert\_rules) | Alert threshold configuration | <pre>object({<br/>    http_5xx_threshold   = optional(number, 10)<br/>    high_cpu_threshold   = optional(number, 80)<br/>    db_failure_threshold = optional(number, 5)<br/>    alert_window_minutes = optional(number, 5)<br/>  })</pre> | `{}` | no |
 | <a name="input_app_service_id"></a> [app\_service\_id](#input\_app\_service\_id) | ID of the App Service to monitor | `string` | n/a | yes |
@@ -142,7 +142,7 @@ No modules.
 ## Outputs
 
 | Name | Description |
-| ---- | ----------- |
+|------|-------------|
 | <a name="output_action_group_id"></a> [action\_group\_id](#output\_action\_group\_id) | ID of the alert action group |
 | <a name="output_app_insights_id"></a> [app\_insights\_id](#output\_app\_insights\_id) | ID of the Application Insights instance |
 | <a name="output_app_insights_name"></a> [app\_insights\_name](#output\_app\_insights\_name) | Name of the Application Insights instance |
