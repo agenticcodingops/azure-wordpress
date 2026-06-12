@@ -111,6 +111,7 @@ No modules.
 | <a name="input_app_service_principal_id"></a> [app\_service\_principal\_id](#input\_app\_service\_principal\_id) | Principal ID of the App Service managed identity | `string` | n/a | yes |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for resources | `string` | n/a | yes |
+| <a name="input_name_suffix"></a> [name\_suffix](#input\_name\_suffix) | Suffix appended to Key Vault name to avoid conflicts with soft-deleted vaults. Bump this when a vault with purge protection is soft-deleted and the name must be reused. | `string` | `"9"` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |
 | <a name="input_public_network_access_enabled"></a> [public\_network\_access\_enabled](#input\_public\_network\_access\_enabled) | Allow public network access (required for CI/CD deployment) | `bool` | `true` | no |
 | <a name="input_purge_protection_enabled"></a> [purge\_protection\_enabled](#input\_purge\_protection\_enabled) | Enable purge protection (recommended for production) | `bool` | `true` | no |

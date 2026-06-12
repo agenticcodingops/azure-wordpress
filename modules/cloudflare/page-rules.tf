@@ -29,6 +29,15 @@ resource "cloudflare_page_rule" "wp_admin" {
     security_level      = "high"
     ssl                 = "strict"
   }
+
+  # zone_id comes from data.cloudflare_zones, which is deferred to apply time
+  # whenever this module's depends_on targets have pending changes. An unknown
+  # zone_id forces replacement, and create-before-destroy then exceeds the free
+  # plan's 3-page-rule limit (Cloudflare error 1008). Same pattern as the DNS
+  # records in main.tf.
+  lifecycle {
+    ignore_changes = [zone_id]
+  }
 }
 
 # Rule 2: Bypass cache for WordPress login
@@ -46,6 +55,11 @@ resource "cloudflare_page_rule" "wp_login" {
     security_level = "high"
     ssl            = "strict"
   }
+
+  # See wp_admin: prevents forced replacement when the zones lookup is deferred
+  lifecycle {
+    ignore_changes = [zone_id]
+  }
 }
 
 # Rule 3: Cache everything for static content
@@ -62,6 +76,11 @@ resource "cloudflare_page_rule" "wp_content" {
     cache_level    = "cache_everything"
     edge_cache_ttl = var.static_content_cache_ttl
     ssl            = "strict"
+  }
+
+  # See wp_admin: prevents forced replacement when the zones lookup is deferred
+  lifecycle {
+    ignore_changes = [zone_id]
   }
 }
 
