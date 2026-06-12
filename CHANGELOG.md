@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2](https://github.com/agenticcodingops/azure-wordpress/compare/v1.3.1...v1.3.2) (2026-06-12)
+
+
+### Bug Fixes
+
+* **cloudflare:** ignore zone_id changes on page rules to prevent forced replacement ([#14](https://github.com/agenticcodingops/azure-wordpress/issues/14)) ([ba23376](https://github.com/agenticcodingops/azure-wordpress/commit/ba2337647f59ecc738f65502a1d07dc077490920))
+
 ## [1.3.1](https://github.com/agenticcodingops/azure-wordpress/compare/v1.3.0...v1.3.1) (2026-05-17)
 
 
