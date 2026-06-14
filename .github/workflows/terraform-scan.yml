@@ -1,0 +1,28 @@
+# ============================================================================
+# Terraform Security Scan (CALLER) — consumes the shared reusable IaC scanner from
+# agenticcodingops/auto-code-scanning. Trivy-IaC + Checkov + tflint over the modules,
+# uploading SARIF under distinct categories. Pinned to the immutable v2.0.4 commit SHA.
+# ============================================================================
+name: Terraform Security Scan
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write # upload SARIF to code scanning
+  pull-requests: write # PR annotations
+
+jobs:
+  terraform-scan:
+    # PIN to the IMMUTABLE v2.0.4 commit SHA (== tag v2.0.4). Bump deliberately.
+    uses: agenticcodingops/auto-code-scanning/.github/workflows/reusable-scan.yml@a3bdd33cc804f0c460a578e1aec23c4958d6024f # v2.0.4
+    with:
+      terraform-directory: "."
+      cloud-provider: "azure"
+      severity: "CRITICAL,HIGH"
+      scanning-repo-ref: "a3bdd33cc804f0c460a578e1aec23c4958d6024f"

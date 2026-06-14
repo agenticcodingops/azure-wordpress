@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/agenticcodingops/auto-code-scanning/schemas/scan-config.schema.json",
+  "title": "scan-config.yaml",
+  "description": "Schema for the multi-language scan->fix platform config. Validated by hooks/validate-scan-config and in CI.",
+  "type": "object",
+  "required": ["schema_version", "languages"],
+  "comment-additionalProperties": "false at the root catches typos like 'fx_loop' that would silently leave the fix-loop disabled. All known top-level keys are declared below.",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Config schema version (e.g. '1.0')."
+    },
+    "global": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "results_dir": { "type": "string" },
+        "severity_levels": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/severity" }
+        },
+        "blocking_severities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/severity" }
+        },
+        "performance": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "pre_commit_max_seconds": { "type": "integer", "minimum": 1 },
+            "pre_push_max_seconds": { "type": "integer", "minimum": 1 },
+            "per_hook_max_seconds": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "exclude_paths": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "languages": {
+      "type": "object",
+      "description": "Language plugins. Each key is a language name; terraform, csharp, typescript, sql, python, powershell, shell, docker, kubernetes are recognised.",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/language" }
+    },
+    "ci": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "workflow_file": { "type": "string" },
+        "sarif_upload": { "type": "boolean" },
+        "sarif": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "category_prefix": {
+              "type": "string",
+              "description": "Prefix prepended to each tool's SARIF category so uploads stay distinct (post-2025-07 GitHub rule)."
+            }
+          }
+        },
+        "fail_on": { "type": "array", "items": { "$ref": "#/$defs/severity" } },
+        "required_checks": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "reporting": { "type": "object", "additionalProperties": true },
+    "suppressions": { "type": "object", "additionalProperties": true },
+    "fix_loop": { "$ref": "#/$defs/fix_loop" }
+  },
+  "$defs": {
+    "severity": {
+      "type": "string",
+      "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
+    },
+    "stage": {
+      "type": "string",
+      "enum": ["pre-commit", "pre-push", "manual", "ci"]
+    },
+    "language": {
+      "type": "object",
+      "required": ["enabled"],
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "description": { "type": "string" },
+        "file_patterns": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "exclude_patterns": { "type": "array", "items": { "type": "string" } },
+        "build": {
+          "type": "object",
+          "description": "Per-project build settings. Solves the dotnet-format path bug by config (never hardcoded).",
+          "additionalProperties": true,
+          "properties": {
+            "solution": { "type": "string", "description": "Path to .sln/.slnx, or '' to auto-detect." },
+            "working_dir": { "type": "string", "description": "Directory to run the build/format tool from." }
+          }
+        },
+        "tools": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/tool" }
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "required": ["enabled"],
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "version": { "type": "string" },
+        "description": { "type": "string" },
+        "config_file": { "type": "string" },
+        "auto_fix": { "type": "boolean" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "stage": { "$ref": "#/$defs/stage" },
+        "full_scan_stage": { "$ref": "#/$defs/stage" }
+      }
+    },
+    "fix_loop": {
+      "type": "object",
+      "description": "LAYER B agentic fix loop. Optional; off by default.",
+      "required": ["enabled"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "label": {
+          "type": "string",
+          "description": "PR label that opts a PR into auto-fix (default 'ai-autofix')."
+        },
+        "human_review_label": {
+          "type": "string",
+          "description": "Label applied when the loop stops (cap/gate/failure)."
+        },
+        "max_turns": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "max_iterations": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "allowlist_paths": {
+          "type": "array",
+          "description": "ONLY these path prefixes may be auto-fixed (allowlist, not denylist).",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "gated_paths": {
+          "type": "array",
+          "description": "Security-sensitive substrings that are never auto-fixed.",
+          "items": { "type": "string" }
+        },
+        "claude_code_action_ref": {
+          "type": "string",
+          "description": "SHA-pinned claude-code-action ref; MUST be >= v1.0.93 (CVE-2025-66032).",
+          "pattern": "^anthropics/claude-code-action@[0-9a-f]{40}$"
+        },
+        "build_verify_cmd": {
+          "type": "string",
+          "description": "Authoritative re-verify command in apply-and-push (e.g. 'dotnet build api/App.slnx'). '' = secret scan only."
+        },
+        "required_secrets": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "enabled": { "const": true } } },
+          "then": {
+            "required": ["allowlist_paths", "claude_code_action_ref"]
+          }
+        }
+      ]
+    }
+  }
+}

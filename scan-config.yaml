@@ -1,0 +1,123 @@
+# ============================================================================
+# scan-config.yaml — azure-wordpress (Terraform/OpenTofu module library)
+# Consumes the shared scan->fix platform agenticcodingops/auto-code-scanning @ v2.0.4.
+# Pure HCL: Terraform/IaC scanning only (Trivy-IaC + Checkov + tflint + fmt) + secrets.
+# See docs at the platform repo + LOCAL-HOOKS-TOGGLE.md for the off-switch below.
+# ============================================================================
+schema_version: "1.0"
+
+global:
+  results_dir: ".scan-results"
+
+  # OFF-SWITCH: set false to skip ALL local pre-commit/pre-push hooks (e.g. to avoid
+  # blocking in-progress work) WITHOUT uninstalling lefthook; CI + the fix-loop are
+  # unaffected. Default true; only an explicit false disables.
+  local_hooks_enabled: true
+
+  severity_levels: [CRITICAL, HIGH, MEDIUM, LOW]
+  blocking_severities: [CRITICAL, HIGH]
+  performance:
+    pre_commit_max_seconds: 15
+    pre_push_max_seconds: 120
+    per_hook_max_seconds: 10
+  exclude_paths: [.git, .terraform, .scan-results, node_modules, __pycache__, "*.tfstate*"]
+
+languages:
+  # --- Terraform / IaC (the only language here) -----------------------------
+  terraform:
+    enabled: true
+    description: "Azure WordPress Terraform/OpenTofu modules + examples"
+    file_patterns: ["**/*.tf", "**/*.tfvars"]
+    tools:
+      trivy:
+        enabled: true
+        version: ">=0.50.0"
+        config_file: ".trivyignore"
+        args: ["--severity=CRITICAL,HIGH", "--exit-code=1", "--skip-dirs=.terraform"]
+        stage: pre-commit
+      terraform_fmt:
+        enabled: true
+        args: ["-recursive"]
+        stage: pre-commit
+      tflint:
+        enabled: true
+        version: ">=0.50.0"
+        config_file: ".tflint.hcl"
+        args: ["--config=.tflint.hcl"]
+        stage: pre-push
+      checkov:
+        enabled: true
+        version: ">=3.0.0"
+        config_file: ".checkov.yaml"
+        args: ["--framework=terraform", "--quiet", "--compact"]
+        stage: pre-push
+      # terraform validate needs per-module `init -backend=false`; kept to CI
+      # (validate.yml) rather than a local hook to keep commits fast.
+      terraform_validate:
+        enabled: false
+        stage: pre-push
+
+ci:
+  sarif_upload: true
+  sarif:
+    category_prefix: "scan-"
+  fail_on: [CRITICAL, HIGH]
+
+reporting:
+  format: json
+  sarif: true
+  retention_days: 90
+
+suppressions:
+  file: ".scan-suppressions.yaml"
+  max_duration_days: 180
+  require_approval: [CRITICAL, HIGH]
+  review_frequency_days: 90
+
+# ----------------------------------------------------------------------------
+# FIX LOOP (LAYER B) — opt-in (PR needs the `ai-autofix` label). The agent fixes
+# IaC issues flagged by reviews, restricted to the module/example .tf via the
+# allowlist; a separate job re-verifies (terraform fmt) and pushes via AUTOFIX_TOKEN.
+# ----------------------------------------------------------------------------
+fix_loop:
+  enabled: true
+  label: "ai-autofix"
+  human_review_label: "needs-human-review"
+  max_turns: 12
+  max_iterations: 3
+
+  # ALLOWLIST — only the Terraform modules/examples are auto-fixable.
+  allowlist_paths:
+    - "modules/"
+    - "examples/"
+
+  # GATED — never auto-fixed even inside an allowlisted dir.
+  gated_paths:
+    - "auth"
+    - "payment"
+    - "crypto"
+    - "security"
+    - "identity"
+    - "secret"
+    - "credential"
+    - ".github/"
+    - ".claude/"
+    - "hooks"
+    - "lefthook.yml"
+    - "scan-and-fix.ps1"
+    - "scripts/"
+    - ".env"
+    - "LICENSE"
+
+  # Centralized, SHA-pinned claude-code-action (>= v1.0.93, CVE-2025-66032).
+  claude_code_action_ref: "anthropics/claude-code-action@d5726de019ec4498aa667642bc3a80fca83aa102"
+
+  # Authoritative re-verify in JOB B (apply-and-push). Read from the BASE ref (a PR
+  # can't change it), runs token-free. `terraform fmt -check` is fast (no init) and
+  # catches the most common agent mistake (malformed HCL). terraform is preinstalled
+  # on ubuntu-latest.
+  build_verify_cmd: "terraform fmt -check -recursive"
+
+  required_secrets:
+    - "AUTOFIX_TOKEN"      # fine-grained PAT: owner=agenticcodingops, Contents RW + Pull-requests RW
+    - "ANTHROPIC_API_KEY"  # or CLAUDE_CODE_OAUTH_TOKEN
