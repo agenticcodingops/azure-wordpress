@@ -19,10 +19,10 @@ permissions:
 
 jobs:
   terraform-scan:
-    # PIN to the IMMUTABLE v2.0.5 commit SHA (== tag v2.0.5). Bump deliberately.
-    uses: agenticcodingops/auto-code-scanning/.github/workflows/reusable-scan.yml@8fb92b3b6da107fbe5d2ca2bf29e94ee00095e82 # v2.0.5
+    # PIN to the IMMUTABLE v2.0.6 commit SHA (== tag v2.0.6). Bump deliberately.
+    uses: agenticcodingops/auto-code-scanning/.github/workflows/reusable-scan.yml@9816c62818079b8e4263d82b92aa95b0124b034b # v2.0.6
     with:
       terraform-directory: "."
       cloud-provider: "azure"
       severity: "CRITICAL,HIGH"
-      scanning-repo-ref: "8fb92b3b6da107fbe5d2ca2bf29e94ee00095e82"
+      scanning-repo-ref: "9816c62818079b8e4263d82b92aa95b0124b034b"

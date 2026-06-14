@@ -57,12 +57,12 @@ jobs:
           contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
         )
       )
-    # PIN to the IMMUTABLE v2.0.5 commit SHA (tags are mutable) — NEVER @main.
-    uses: agenticcodingops/auto-code-scanning/.github/workflows/autonomous-fix.yml@8fb92b3b6da107fbe5d2ca2bf29e94ee00095e82 # v2.0.5
+    # PIN to the IMMUTABLE v2.0.6 commit SHA (tags are mutable) — NEVER @main.
+    uses: agenticcodingops/auto-code-scanning/.github/workflows/autonomous-fix.yml@9816c62818079b8e4263d82b92aa95b0124b034b # v2.0.6
     with:
       pr_number: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
       config_path: scan-config.yaml
-      scanning_repo_ref: 8fb92b3b6da107fbe5d2ca2bf29e94ee00095e82 # v2.0.5
+      scanning_repo_ref: 9816c62818079b8e4263d82b92aa95b0124b034b # v2.0.6
     # Least privilege: pass ONLY the secrets the reusable workflow declares.
     secrets:
       AUTOFIX_TOKEN: ${{ secrets.AUTOFIX_TOKEN }}

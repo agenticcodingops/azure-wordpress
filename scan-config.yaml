@@ -1,6 +1,6 @@
 # ============================================================================
 # scan-config.yaml — azure-wordpress (Terraform/OpenTofu module library)
-# Consumes the shared scan->fix platform agenticcodingops/auto-code-scanning @ v2.0.5.
+# Consumes the shared scan->fix platform agenticcodingops/auto-code-scanning @ v2.0.6.
 # Pure HCL: Terraform/IaC scanning only (Trivy-IaC + Checkov + tflint + fmt) + secrets.
 # See docs at the platform repo + LOCAL-HOOKS-TOGGLE.md for the off-switch below.
 # ============================================================================
