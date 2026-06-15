@@ -1,7 +1,7 @@
 # ============================================================================
 # Terraform Security Scan (CALLER) — consumes the shared reusable IaC scanner from
 # agenticcodingops/auto-code-scanning. Trivy-IaC + Checkov + tflint over the modules,
-# uploading SARIF under distinct categories. Pinned to the immutable v2.0.6 commit SHA.
+# uploading SARIF under distinct categories. Pinned to the immutable commit SHA.
 # ============================================================================
 name: Terraform Security Scan
 
