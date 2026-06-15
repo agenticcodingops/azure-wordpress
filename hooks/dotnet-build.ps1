@@ -20,8 +20,10 @@ $solution = Read-ScanConfigValue -Key 'languages.csharp.build.solution' -Default
 if (-not $solution) {
     $solution = Find-DotnetSolution -WorkingDir $workingDir
     if ($solution -and $workingDir -ne '.') {
-        $full = (Resolve-Path $workingDir -ErrorAction SilentlyContinue).Path
-        if ($full) { $solution = $solution.Replace($full, '').TrimStart('/', '\') }
+        $full = (Resolve-Path -LiteralPath $workingDir -ErrorAction SilentlyContinue).Path
+        # Case-insensitive prefix strip anchored at start — drive-letter / path-casing
+        # mismatches (e.g. C:\ vs c:\) must not silently skip the strip.
+        if ($full) { $solution = ($solution -replace "^$([regex]::Escape($full))", '').TrimStart('/', '\') }
     }
 }
 if (-not $solution) {

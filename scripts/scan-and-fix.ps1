@@ -82,7 +82,8 @@ function Invoke-CSharpScan {
     $disp = Join-Path $PSScriptRoot '..\hooks\dotnet-build.ps1'
     if (Test-Path $disp) {
         $out = & pwsh -NoProfile -ExecutionPolicy Bypass -File $disp 2>&1
-        Add-Result -Tool 'dotnet build (Roslyn)' -ExitCode $LASTEXITCODE -Issues (Get-IssueLines ($out -join "`n")) -OutputTail (($out -join "`n"))
+        $csText = ($out -join "`n")
+        Add-Result -Tool 'dotnet build (Roslyn)' -ExitCode $LASTEXITCODE -Issues (Get-IssueLines $csText) -OutputTail ($csText.Substring([Math]::Max(0, $csText.Length - 3000)))
     }
 }
 
@@ -91,7 +92,8 @@ function Invoke-TypeScriptScan {
     if (Test-Path $disp) {
         $env:SCAN_HOOK_ID = 'semgrep-typescript'
         $out = & pwsh -NoProfile -ExecutionPolicy Bypass -File $disp 2>&1
-        Add-Result -Tool 'Semgrep (TypeScript)' -ExitCode $LASTEXITCODE -Issues (Get-IssueLines ($out -join "`n")) -OutputTail (($out -join "`n"))
+        $tsText = ($out -join "`n")
+        Add-Result -Tool 'Semgrep (TypeScript)' -ExitCode $LASTEXITCODE -Issues (Get-IssueLines $tsText) -OutputTail ($tsText.Substring([Math]::Max(0, $tsText.Length - 3000)))
     }
 }
 

@@ -65,7 +65,11 @@ def main(argv: list[str]) -> int:
         print(f"[validate-scan-config] ERROR: cannot parse {cfg_path}: {exc}")
         return 1
 
-    schema = json.loads(Path(schema_path).read_text(encoding="utf-8"))
+    try:
+        schema = json.loads(Path(schema_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"[validate-scan-config] ERROR: cannot read/parse schema {schema_path}: {exc}")
+        return 1
 
     validator = jsonschema.Draft202012Validator(schema)
     errors = sorted(validator.iter_errors(cfg), key=lambda e: list(e.path))

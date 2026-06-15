@@ -37,8 +37,12 @@ foreach ($dir in $scanDirs) {
     }
     try {
         & tflint @initArgs 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-HookWarn "tflint --init failed (exit $LASTEXITCODE) in '$dir' - continuing (fail-open)"
+        }
     } catch {
-        # Ignore init errors
+        # Don't silently swallow init failures — log and continue fail-open.
+        Write-HookWarn "tflint --init threw in '$dir': $($_.Exception.Message) - continuing (fail-open)"
     }
 
     # Build tflint arguments

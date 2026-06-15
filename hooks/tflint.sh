@@ -78,12 +78,16 @@ for dir in "${scan_dirs[@]}"; do
         print_tflint_findings "${output}"
         overall_exit=1
     elif [[ ${exit_code} -eq 3 ]] || [[ ${exit_code} -ge 4 ]]; then
-        # tflint exit 3+ = runtime error — fail-open
-        handle_exit_code ${exit_code}
+        # tflint exit 3+ = runtime error — fail-open.
+        # '|| true' so handle_exit_code's return doesn't trip set -e (fail-open
+        # must not terminate the script). Mirrors the PowerShell twin (tflint.ps1).
+        handle_exit_code ${exit_code} || true
     elif [[ ${exit_code} -eq 1 ]]; then
-        # tflint exit 1 = errors — treat as infrastructure error for consistency
-        # Some tflint versions use exit 1 for config errors
-        handle_exit_code ${exit_code}
+        # tflint exit 1 = errors — treat as infrastructure error for consistency.
+        # Some tflint versions use exit 1 for config errors. handle_exit_code returns
+        # 1 for exit 1, which would terminate under set -e — '|| true' keeps it
+        # fail-open as intended. Mirrors the PowerShell twin (tflint.ps1).
+        handle_exit_code ${exit_code} || true
     fi
 done
 

@@ -1,5 +1,5 @@
 <#
-    Note: No #Requires -Version 7.0 — must work on PowerShell 5.1 fallback from dispatcher
+    Note: No #Requires -Version 7.0 - must work on PowerShell 5.1 fallback from dispatcher
 #>
 <#
 .SYNOPSIS
@@ -16,21 +16,25 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 $ConfigDir = if ($env:SCAN_CONFIG_DIR) { $env:SCAN_CONFIG_DIR } else { ".scanning/configs" }
 
-# Find Python
-$Python = $null
-if (Get-Command python3 -ErrorAction SilentlyContinue) {
-    $Python = "python3"
-} elseif (Get-Command python -ErrorAction SilentlyContinue) {
-    $Python = "python"
-} else {
-    Write-HookVerbose "Python not found - cannot run suppression validation"
+# Find a Python that ACTUALLY runs (Get-Command python3 may resolve the
+# non-runnable Windows Store shim, which would fail-open and BYPASS validation).
+$Python = Find-WorkingPython
+if (-not $Python) {
+    Write-HookWarn "No working Python interpreter found - skipping suppression validation (fail-open)"
     exit 0  # fail-open
 }
 
+# Look in $ConfigDir first, then fall back to the repo-root default so the Windows
+# wrapper isn't blind to a root-level .scan-suppressions.yaml.
 $SuppressionFile = Join-Path $ConfigDir ".scan-suppressions.yaml"
-if (-not (Test-Path $SuppressionFile)) {
-    Write-HookVerbose "No suppression file found at $SuppressionFile - skipping"
-    exit 0
+if (-not (Test-Path -LiteralPath $SuppressionFile)) {
+    $rootSuppressionFile = ".scan-suppressions.yaml"
+    if (Test-Path -LiteralPath $rootSuppressionFile) {
+        $SuppressionFile = $rootSuppressionFile
+    } else {
+        Write-HookVerbose "No suppression file found at $SuppressionFile or $rootSuppressionFile - skipping"
+        exit 0
+    }
 }
 
 Write-HookVerbose "Running suppression validation with $Python"

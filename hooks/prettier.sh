@@ -32,10 +32,13 @@ if [[ -x "${working_dir%/}/node_modules/.bin/prettier" ]]; then
     runner=("${working_dir%/}/node_modules/.bin/prettier")
 elif command -v prettier >/dev/null 2>&1; then
     runner=(prettier)
-elif command -v npx >/dev/null 2>&1; then
+elif command -v npx >/dev/null 2>&1 && \
+     (cd "${working_dir}" && npx --no-install prettier --version >/dev/null 2>&1); then
+    # Only use the npx fallback once we've confirmed prettier is actually runnable
+    # (--no-install errors instead of installing) — otherwise fail open below.
     runner=(npx --no-install prettier)
 else
-    hook_warn "prettier not found - allowing commit (fail-open)"
+    hook_warn "prettier not found (no node_modules/.bin/prettier, prettier, or runnable npx prettier) - allowing commit (fail-open)"
     exit 0
 fi
 

@@ -10,8 +10,10 @@ source "${SCRIPT_DIR}/lib/common.sh"
 # Verify tool availability
 require_tool "trivy" || exit 0
 
-# Get list of staged files (all types — secrets can be in any file)
-mapfile -t staged_files < <(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null)
+# Get list of staged files (all types — secrets can be in any file).
+# NUL-delimited (-z + mapfile -d '') so filenames containing newlines can't
+# escape the scan.
+mapfile -d '' -t staged_files < <(git diff --cached --name-only -z --diff-filter=ACMR 2>/dev/null)
 
 if [[ ${#staged_files[@]} -eq 0 ]]; then
     hook_log "PASS: No files staged"

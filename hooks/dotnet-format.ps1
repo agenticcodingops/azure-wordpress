@@ -20,6 +20,11 @@ if (@($allCs).Count -eq 0) {
 $workingDir = Read-ScanConfigValue -Key 'languages.csharp.build.working_dir' -Default '.'
 $solution = Read-ScanConfigValue -Key 'languages.csharp.build.solution' -Default ''
 
+# Strip a leading './' or '.\' only — it breaks the staged-file prefix match below.
+# Anchored + single-segment so a legitimate working_dir ('.', '.config', '../x') is
+# left intact.
+$workingDir = $workingDir -replace '^\.[/\\]', ''
+
 # Filter staged files to those under working_dir; make relative to it.
 $wdPrefix = ($workingDir.TrimEnd('/', '\') + '/')
 $includeFiles = @()

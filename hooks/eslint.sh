@@ -33,10 +33,13 @@ if [[ -x "${working_dir%/}/node_modules/.bin/eslint" ]]; then
     runner=("${working_dir%/}/node_modules/.bin/eslint")
 elif command -v eslint >/dev/null 2>&1; then
     runner=(eslint)
-elif command -v npx >/dev/null 2>&1; then
+elif command -v npx >/dev/null 2>&1 && \
+     (cd "${working_dir}" && npx --no-install eslint --version >/dev/null 2>&1); then
+    # Only use the npx fallback once we've confirmed eslint is actually runnable
+    # (--no-install errors instead of installing) — otherwise fail open below.
     runner=(npx --no-install eslint)
 else
-    hook_warn "eslint not found (no node_modules/.bin/eslint, eslint, or npx) - allowing commit (fail-open)"
+    hook_warn "eslint not found (no node_modules/.bin/eslint, eslint, or runnable npx eslint) - allowing commit (fail-open)"
     exit 0
 fi
 

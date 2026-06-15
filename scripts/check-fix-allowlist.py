@@ -38,7 +38,15 @@ def _load_fix_loop(config_path: Path):
     except Exception as exc:  # malformed/unreadable config -> fail CLOSED, never open
         print(f"GATED: cannot read/parse {config_path}: {exc} (fail closed)")
         sys.exit(2)
+    # A malformed top-level (e.g. a YAML list/scalar) is not a dict; .get() would
+    # raise AttributeError. Fail CLOSED rather than crash or silently allow.
+    if not isinstance(data, dict):
+        print(f"GATED: {config_path} top-level is not a mapping (fail closed)")
+        sys.exit(2)
     fix_loop = data.get("fix_loop") or {}
+    if not isinstance(fix_loop, dict):
+        print(f"GATED: {config_path} 'fix_loop' is not a mapping (fail closed)")
+        sys.exit(2)
     allow = [str(p) for p in (fix_loop.get("allowlist_paths") or [])]
     gated = [str(p).lower() for p in (fix_loop.get("gated_paths") or [])]
     return allow, gated

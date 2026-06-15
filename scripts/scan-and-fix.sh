@@ -6,21 +6,37 @@
 # Usage: scan-and-fix.sh [secrets|semgrep|terraform|all] [--auto-fix]
 set -uo pipefail
 
-SCAN_TYPE="${1:-secrets}"
+# Parse args independently of position: --auto-fix/--fix is a flag, anything else
+# is the scan type. This way `scan-and-fix.sh --auto-fix` and
+# `scan-and-fix.sh all --auto-fix` both work (the flag is not mistaken for a type).
+SCAN_TYPE=""
 AUTO_FIX=0
-[[ "${2:-}" == "--auto-fix" ]] && AUTO_FIX=1
+for arg in "$@"; do
+    case "${arg}" in
+        --auto-fix|--fix) AUTO_FIX=1 ;;
+        *) [[ -z "${SCAN_TYPE}" ]] && SCAN_TYPE="${arg}" ;;
+    esac
+done
+SCAN_TYPE="${SCAN_TYPE:-secrets}"
 
 has_errors=0
 declare -a TOOLS=() CODES=()
 
 run_secret_scan() {
     command -v trivy >/dev/null 2>&1 || { echo "[scan-and-fix] trivy not found; skipping secrets (fail-open)"; return; }
+    # SECURITY: Trivy streams the matched secret values to stdout. Never let those
+    # leak into logs/findings — discard the noisy output and keep only the exit
+    # code (1 = secrets found). Mirrors the PowerShell twin (scan-and-fix.ps1).
     trivy fs . --scanners secret --severity CRITICAL,HIGH --exit-code 1 --quiet \
         --skip-dirs node_modules --skip-dirs dist --skip-dirs build \
-        --skip-dirs bin --skip-dirs obj --skip-dirs .terraform
+        --skip-dirs bin --skip-dirs obj --skip-dirs .terraform >/dev/null 2>&1
     local code=$?
     TOOLS+=("Trivy Secrets"); CODES+=("${code}")
-    [[ ${code} -ne 0 ]] && has_errors=1
+    if [[ ${code} -ne 0 ]]; then
+        has_errors=1
+        # Non-revealing summary only — run trivy locally to see the actual matches.
+        echo "[scan-and-fix] Secret findings detected — run 'trivy fs . --scanners secret' locally to see them (redacted here)." >&2
+    fi
 }
 
 run_semgrep_scan() {

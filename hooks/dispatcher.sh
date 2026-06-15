@@ -21,9 +21,12 @@ export SCAN_CONFIG_DIR="${SCAN_CONFIG_DIR:-.scanning/configs}"
 # ALL local pre-commit / pre-push hooks here (CI scanning via the reusable workflows
 # is unaffected). Opt-OUT: only an explicit `false` disables; a missing key keeps
 # scanning on. Lets you pause local scanning during in-progress work without
-# uninstalling lefthook. See docs/LOCAL-HOOKS-TOGGLE.md.
+# uninstalling lefthook: set `global.local_hooks_enabled: false` (or top-level
+# `local_hooks_enabled: false`) in scan-config.yaml to disable, remove it to re-enable.
+# Honour the SCAN_CONFIG_FILE override; otherwise resolve against the repo root so
+# the toggle works regardless of the hook's current working directory.
 # ---------------------------------------------------------------------------
-SCAN_CONFIG_FILE="${SCAN_CONFIG_FILE:-scan-config.yaml}"
+SCAN_CONFIG_FILE="${SCAN_CONFIG_FILE:-${REPO_ROOT}/scan-config.yaml}"
 if [ -f "${SCAN_CONFIG_FILE}" ] && \
    grep -qE '^[[:space:]]*local_hooks_enabled:[[:space:]]*false([[:space:]]|#|$)' "${SCAN_CONFIG_FILE}" 2>/dev/null; then
     echo "[${HOOK_ID}] local scanning disabled (scan-config.yaml: local_hooks_enabled: false) — skipping"

@@ -24,6 +24,7 @@ Warnings (informational, do not block):
 Exit Codes:
   0 - All suppressions valid
   1 - Validation errors found
+  2 - Infra error (e.g. missing PyYAML); shell wrapper fails open
 
 Usage:
   python hooks/validate-suppressions.py                        # default file
@@ -40,8 +41,11 @@ from pathlib import Path
 try:
     import yaml
 except ImportError:
+    # Infra problem (missing dependency), not a validation failure. Exit 2 so the
+    # shell wrapper treats it as an infra error (fail-open) rather than blocking
+    # the commit — consistent with the rest of the system's exit-code contract.
     print("ERROR: PyYAML is required. Install with: pip install pyyaml", file=sys.stderr)
-    sys.exit(1)
+    sys.exit(2)
 
 # Required fields per suppression entry
 REQUIRED_FIELDS = ["rule_id", "tool", "reason", "owner", "approved_date", "expires_date"]
@@ -72,7 +76,16 @@ TOOL_SECTIONS = {
 
 
 def parse_iso_date(date_str):
-    """Parse an ISO 8601 date string (YYYY-MM-DD) into a date object."""
+    """Parse an ISO 8601 date string (YYYY-MM-DD) into a pure ``date`` object.
+
+    Rejects ``datetime`` values explicitly: ``datetime`` is a subclass of
+    ``date``, and mixing the two in downstream ``date`` arithmetic raises
+    ``TypeError``. Only pure ``date`` values (or parseable strings) pass.
+    """
+    if isinstance(date_str, datetime):
+        # YAML may parse a full timestamp into a datetime; reject it so callers
+        # don't mix date/datetime in arithmetic. Treat as invalid input.
+        return None
     if isinstance(date_str, date):
         return date_str
     try:
@@ -120,6 +133,16 @@ def validate_suppressions(file_path, strict=False, check_expiry=False):
     if not isinstance(settings, dict):
         settings = {}
     max_expiry_days = settings.get("max_expiry_days", 180)
+    # Coerce to int: a YAML string (e.g. max_expiry_days: "180") would otherwise
+    # reach timedelta(days=...) and raise TypeError. Reject non-int as a
+    # validation error instead of crashing.
+    try:
+        max_expiry_days = int(max_expiry_days)
+    except (TypeError, ValueError):
+        errors.append(
+            f"V-006: 'settings.max_expiry_days' must be an integer, got '{max_expiry_days}'"
+        )
+        max_expiry_days = 180
     require_approval = settings.get("require_security_approval", ["CRITICAL", "HIGH"])
     if not isinstance(require_approval, list):
         require_approval = []

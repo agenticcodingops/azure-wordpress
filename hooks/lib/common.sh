@@ -160,15 +160,16 @@ ENDJSON
 # Monorepo / directory detection
 # ---------------------------------------------------------------------------
 
-# Print changed files for dir-detection. Prefer the staged index (pre-commit); when
-# it is empty (the usual case at pre-push) fall back to the push range so pushed
-# commits are still scanned. Best-effort — CI is the authoritative backstop.
+# Print changed files for dir-detection, NUL-delimited (-z). Prefer the staged index
+# (pre-commit); when it is empty (the usual case at pre-push) fall back to the push
+# range so pushed commits are still scanned. NUL output keeps paths with whitespace
+# or newlines intact. Best-effort — CI is the authoritative backstop.
 _changed_files_for_detect() {
     local files
-    files="$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null)"
+    files="$(git diff --cached --name-only -z --diff-filter=ACMR 2>/dev/null)"
     if [[ -z "${files}" ]]; then
-        files="$(git diff --name-only --diff-filter=ACMR '@{push}' HEAD 2>/dev/null)" || files=""
-        [[ -z "${files}" ]] && { files="$(git diff --name-only --diff-filter=ACMR '@{upstream}' HEAD 2>/dev/null)" || files=""; }
+        files="$(git diff --name-only -z --diff-filter=ACMR '@{push}' HEAD 2>/dev/null)" || files=""
+        [[ -z "${files}" ]] && { files="$(git diff --name-only -z --diff-filter=ACMR '@{upstream}' HEAD 2>/dev/null)" || files=""; }
     fi
     printf '%s' "${files}"
 }
@@ -186,9 +187,11 @@ detect_changed_dirs() {
 
     local dirs
     # Changed .tf dirs — staged at pre-commit, or the push range at pre-push.
+    # NUL-safe: filter .tf paths, dirname them, dedupe — without breaking on
+    # whitespace/newlines in paths (which would silently drop scan dirs).
     dirs="$(_changed_files_for_detect \
-        | grep '\.tf$' \
-        | xargs -I{} dirname {} 2>/dev/null \
+        | grep -z '\.tf$' \
+        | xargs -0 -r -I{} dirname {} 2>/dev/null \
         | sort -u)"
 
     if [[ -n "${dirs}" ]]; then
@@ -207,8 +210,10 @@ detect_all_changed_dirs() {
     fi
 
     local dirs
+    # NUL-safe: dirname each changed path, dedupe — without breaking on
+    # whitespace/newlines in paths (which would silently drop scan dirs).
     dirs="$(_changed_files_for_detect \
-        | xargs -I{} dirname {} 2>/dev/null \
+        | xargs -0 -r -I{} dirname {} 2>/dev/null \
         | sort -u)"
 
     if [[ -n "${dirs}" ]]; then

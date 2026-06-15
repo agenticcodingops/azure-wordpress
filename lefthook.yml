@@ -39,7 +39,7 @@ pre-commit:
     # `||` short-circuits, so terraform never runs.
     terraform-fmt:
       glob: "*.tf"
-      run: grep -qE '^[[:space:]]*local_hooks_enabled:[[:space:]]*false' scan-config.yaml 2>/dev/null || terraform fmt {staged_files}
+      run: grep -qE '^[[:space:]]*local_hooks_enabled:[[:space:]]*false([[:space:]]|#|$)' scan-config.yaml 2>/dev/null || terraform fmt {staged_files}
       stage_fixed: true # re-stage files terraform fmt rewrote
 
 # Heavier IaC scans at push time (CI's reusable-scan.yml is the authoritative backstop).

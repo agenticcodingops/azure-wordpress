@@ -9,9 +9,14 @@ $ErrorActionPreference = 'Stop'
 # Verify tool availability
 if (-not (Test-ToolAvailable 'trivy')) { exit 0 }
 
-# Get list of staged files (all types — secrets can be in any file)
-$stagedFiles = git diff --cached --name-only --diff-filter=ACMR 2>$null
-if (-not $stagedFiles -or @($stagedFiles).Count -eq 0) {
+# Get list of staged files (all types — secrets can be in any file).
+# Use -z (NUL-delimited) so filenames containing newlines are handled correctly.
+$rawStaged = git diff --cached --name-only --diff-filter=ACMR -z 2>$null
+$stagedFiles = @()
+if ($rawStaged) {
+    $stagedFiles = @(($rawStaged -join '') -split "`0" | Where-Object { $_ })
+}
+if (@($stagedFiles).Count -eq 0) {
     Write-HookLog "PASS: No files staged"
     exit 0
 }
@@ -32,14 +37,34 @@ try {
         $fileDir = Split-Path $file -Parent
         if ($fileDir) {
             $targetDir = Join-Path $tmpDir $fileDir
-            if (-not (Test-Path $targetDir)) {
+            if (-not (Test-Path -LiteralPath $targetDir)) {
                 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
             }
         }
-        # Export staged content (from git index, not working tree)
+        # Export staged content (from git index, not working tree). Capture git's
+        # raw stdout BYTES via a Process so binary blobs are preserved verbatim —
+        # a `git show | Set-Content` pipeline decodes to text first and corrupts
+        # binary content (and -NoNewline would strip trailing newlines).
         $targetFile = Join-Path $tmpDir $file
         try {
-            git show ":$file" 2>$null | Set-Content -Path $targetFile -Encoding UTF8 -NoNewline
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = 'git'
+            $psi.Arguments = "show `":$file`""
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $proc = [System.Diagnostics.Process]::Start($psi)
+            $ms = [System.IO.MemoryStream]::new()
+            try {
+                $proc.StandardOutput.BaseStream.CopyTo($ms)
+                $proc.WaitForExit()
+                $bytes = $ms.ToArray()
+            } finally {
+                $ms.Dispose()
+            }
+            if ($proc.ExitCode -ne 0) { throw "git show exit $($proc.ExitCode)" }
+            [System.IO.File]::WriteAllBytes($targetFile, $bytes)
         } catch {
             # Export failure (binary/encoding/etc.) -> count + surface so secret-scan
             # coverage gaps are visible rather than silently dropped.
@@ -89,8 +114,8 @@ try {
     }
 } finally {
     # Clean up temp directory
-    if (Test-Path $tmpDir) {
-        Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $tmpDir) {
+        Remove-Item -LiteralPath $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 

@@ -204,9 +204,12 @@ function Get-ChangedDirs {
             return @()
         }
 
-        $dirs = $changedFiles | ForEach-Object { Split-Path $_ -Parent } |
-            Where-Object { $_ -ne '' } |
-            Sort-Object -Unique
+        $dirs = $changedFiles | ForEach-Object {
+            $parent = Split-Path $_ -Parent
+            # Split-Path returns '' for root-level files — map to '.' (repo root)
+            # so root files are scanned rather than dropped.
+            if ($parent -eq '') { '.' } else { $parent }
+        } | Sort-Object -Unique
 
         if (-not $dirs -or $dirs.Count -eq 0) {
             return @()
@@ -235,9 +238,12 @@ function Get-AllChangedDirs {
             return @()
         }
 
-        $dirs = $changedFiles | ForEach-Object { Split-Path $_ -Parent } |
-            Where-Object { $_ -ne '' } |
-            Sort-Object -Unique
+        $dirs = $changedFiles | ForEach-Object {
+            $parent = Split-Path $_ -Parent
+            # Split-Path returns '' for root-level files — map to '.' (repo root)
+            # so root files are scanned rather than dropped.
+            if ($parent -eq '') { '.' } else { $parent }
+        } | Sort-Object -Unique
 
         if (-not $dirs -or $dirs.Count -eq 0) {
             return @()
@@ -303,7 +309,9 @@ function Export-StagedFilesToTempDir {
             if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force | Out-Null }
         }
         $targetFile = Join-Path $tmpDir $file
-        try { git show ":$file" 2>$null | Set-Content -Path $targetFile -Encoding UTF8 -NoNewline } catch { }
+        # Do NOT use -NoNewline: it strips trailing newlines and corrupts the
+        # scanned input (line breaks must be preserved for accurate scanning).
+        try { git show ":$file" 2>$null | Set-Content -LiteralPath $targetFile -Encoding UTF8 } catch { }
     }
     return $tmpDir
 }

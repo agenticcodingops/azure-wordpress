@@ -19,7 +19,7 @@ start_timer
 hook_log "Validating scan-config.yaml against schema..."
 
 set +e
-output="$("${PY}" "${REPO_ROOT}/scripts/validate-scan-config.py" "scan-config.yaml" 2>&1)"
+output="$("${PY}" "${REPO_ROOT}/scripts/validate-scan-config.py" "${REPO_ROOT}/scan-config.yaml" 2>&1)"
 exit_code=$?
 set -e
 

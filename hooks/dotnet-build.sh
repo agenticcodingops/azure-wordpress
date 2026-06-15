@@ -21,7 +21,7 @@ working_dir="$(read_scan_config languages.csharp.build.working_dir '.')"
 solution="$(read_scan_config languages.csharp.build.solution '')"
 if [[ -z "${solution}" ]]; then
     solution="$(detect_dotnet_solution "${working_dir}")"
-    [[ -n "${solution}" && "${working_dir}" != "." ]] && solution="${solution#${working_dir%/}/}"
+    [[ -n "${solution}" && "${working_dir}" != "." ]] && solution="${solution#"${working_dir%/}/"}"
 fi
 if [[ -z "${solution}" ]]; then
     hook_warn "No .sln/.slnx found under '${working_dir}' (set languages.csharp.build.solution) - allowing push"

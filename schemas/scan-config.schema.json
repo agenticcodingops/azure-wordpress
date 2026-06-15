@@ -16,6 +16,10 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
+        "local_hooks_enabled": {
+          "type": "boolean",
+          "description": "When false, skip all local pre-commit/pre-push hooks (CI + fix-loop unaffected)."
+        },
         "results_dir": { "type": "string" },
         "severity_levels": {
           "type": "array",

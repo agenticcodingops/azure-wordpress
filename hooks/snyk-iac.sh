@@ -6,6 +6,38 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
+# Print actionable details for Snyk IaC findings so developers know what to fix.
+# Mirrors print_tflint_findings / print_checkov_findings in lib/common.sh.
+# Usage: print_snyk_iac_findings "$json_output"
+print_snyk_iac_findings() {
+    local json="${1:-}"
+    if [[ -z "${json}" ]] || ! command -v jq >/dev/null 2>&1; then
+        hook_log "  (install jq to see finding details)"
+        return 0
+    fi
+
+    local findings
+    findings="$(echo "${json}" | jq -r '
+        [.infrastructureAsCodeIssues[]? |
+         {severity: (.severity // "unknown"), id: (.id // .publicId // ""),
+          title: (.title // .iacDescription.issue // ""),
+          file: (.targetFile // .path // ""),
+          line: (.lineNumber // 0), resolve: (.resolve // .iacDescription.resolve // "")}] |
+        sort_by(if .severity == "critical" then 0 elif .severity == "high" then 1
+                elif .severity == "medium" then 2 else 3 end) |
+        .[] |
+        "  \(.severity | ascii_upcase)  \(.id)  \(.file):\(.line)\n    \(.title)\(if .resolve != "" then "\n    Fix: \(.resolve)" else "" end)"
+    ' 2>/dev/null)" || true
+
+    if [[ -n "${findings}" ]]; then
+        hook_log ""
+        while IFS= read -r line; do
+            hook_log "${line}"
+        done <<< "${findings}"
+        hook_log ""
+    fi
+}
+
 # Verify tool availability (fail-open if snyk not installed)
 require_tool "snyk" || exit 0
 
@@ -78,6 +110,8 @@ for dir in "${scan_dirs[@]}"; do
         else
             total_high=$((total_high + 1))
         fi
+        # Surface the parsed findings (file, severity, title, fix) before failing.
+        print_snyk_iac_findings "${output}"
         overall_exit=1
     elif [[ ${exit_code} -ge 2 ]]; then
         # Infrastructure error — fail-open

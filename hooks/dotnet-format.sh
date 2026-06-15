@@ -20,6 +20,9 @@ fi
 
 # Resolve build settings from config (with safe defaults).
 working_dir="$(read_scan_config languages.csharp.build.working_dir '.')"
+# Strip a leading './' — git paths never start with './', so it would break the
+# staged-file prefix match below (e.g. './api' vs 'api/...').
+working_dir="${working_dir#./}"
 solution="$(read_scan_config languages.csharp.build.solution '')"
 
 # Filter staged files to those under working_dir and make them relative to it.
@@ -28,7 +31,7 @@ for f in "${all_cs[@]}"; do
     if [[ "${working_dir}" == "." ]]; then
         include_files+=("${f}")
     elif [[ "${f}" == "${working_dir%/}/"* ]]; then
-        include_files+=("${f#${working_dir%/}/}")
+        include_files+=("${f#"${working_dir%/}/"}")
     fi
 done
 if [[ ${#include_files[@]} -eq 0 ]]; then
@@ -40,7 +43,7 @@ fi
 if [[ -z "${solution}" ]]; then
     solution="$(detect_dotnet_solution "${working_dir}")"
     # Make detected solution path relative to working_dir.
-    [[ -n "${solution}" && "${working_dir}" != "." ]] && solution="${solution#${working_dir%/}/}"
+    [[ -n "${solution}" && "${working_dir}" != "." ]] && solution="${solution#"${working_dir%/}/"}"
 fi
 if [[ -z "${solution}" ]]; then
     hook_warn "No .sln/.slnx found under '${working_dir}' (set languages.csharp.build.solution) - allowing commit"

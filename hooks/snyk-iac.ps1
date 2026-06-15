@@ -70,6 +70,20 @@ foreach ($dir in $scanDirs) {
                 $totalHigh += @($issues | Where-Object { $_.severity -eq 'high' }).Count
                 $totalMedium += @($issues | Where-Object { $_.severity -eq 'medium' }).Count
                 $totalLow += @($issues | Where-Object { $_.severity -eq 'low' }).Count
+
+                # Show actionable details (file/severity/title) so developers know
+                # what to fix before the hook blocks the push.
+                $targetFile = $json.targetFile
+                Write-HookLog ""
+                foreach ($issue in @($issues | Sort-Object @{Expression = {
+                                switch ($_.severity) { 'critical' { 0 } 'high' { 1 } 'medium' { 2 } default { 3 } }
+                            }
+                        })) {
+                    $loc = if ($issue.lineNumber) { "$($targetFile):$($issue.lineNumber)" } else { $targetFile }
+                    Write-HookLog "  $(($issue.severity).ToUpper())  $($issue.id)  $loc"
+                    Write-HookLog "    $($issue.title)"
+                }
+                Write-HookLog ""
             }
         } catch {
             $totalHigh += 1

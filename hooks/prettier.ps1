@@ -52,7 +52,14 @@ $prettierArgs = $runnerArgs + @('--write', '--ignore-unknown')
 if ($ExtraArgs) { $prettierArgs += $ExtraArgs }
 $prettierArgs += $files
 
-Push-Location $workingDirPath
+# Guard Push-Location: under $ErrorActionPreference='Stop' a missing dir throws.
+# Fail-open (skip) if the working dir is gone.
+if (-not (Test-Path -LiteralPath $workingDirPath -PathType Container)) {
+    Write-HookWarn "working dir '$workingDirPath' not found - allowing commit (fail-open)"
+    exit 0
+}
+
+Push-Location -LiteralPath $workingDirPath
 try {
     $output = & $runner @prettierArgs 2>&1
     $exitCode = $LASTEXITCODE
