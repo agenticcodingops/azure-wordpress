@@ -17,7 +17,7 @@ terraform fmt -recursive
 cd modules/<module> && terraform init -backend=false && terraform validate
 
 # Security scan
-tfsec . --minimum-severity HIGH
+trivy config . --severity HIGH,CRITICAL
 
 # Compliance scan (see Checkov section below)
 checkov -d . --framework terraform --quiet
@@ -82,4 +82,4 @@ Examples and consumer repos use `?ref=v<VERSION>` for stability. When publishing
 
 ## CI Pipeline (.github/workflows/validate.yml)
 
-Five jobs: Format Check (tofu fmt), Validate (11 modules), TFSec, Checkov, Documentation (terraform-docs). All must pass before merge.
+Four jobs: Format Check (tofu fmt), Validate (11 modules), Checkov, Documentation (terraform-docs). All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).

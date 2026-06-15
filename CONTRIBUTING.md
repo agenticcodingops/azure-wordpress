@@ -54,7 +54,7 @@ git checkout -b docs/update-readme
 
 1. Install required tools:
    - [OpenTofu](https://opentofu.org/) >= 1.6.0 or [Terraform](https://www.terraform.io/) >= 1.6.0
-   - [tfsec](https://github.com/aquasecurity/tfsec)
+   - [Trivy](https://github.com/aquasecurity/trivy) (IaC config scanning; tfsec successor)
    - [checkov](https://www.checkov.io/)
    - [terraform-docs](https://terraform-docs.io/)
 
@@ -85,7 +85,7 @@ tofu init -backend=false
 tofu validate
 
 # Run security scans
-tfsec .
+trivy config .
 checkov -d .
 
 # Generate documentation (if module outputs changed)
@@ -164,7 +164,7 @@ refactor!: rename database_name output to mysql_database_name
 3. **Ensure all checks pass:**
    - `tofu fmt` - Code is formatted
    - `tofu validate` - Configuration is valid
-   - `tfsec` - No security issues
+   - `trivy config` - No security issues
    - `checkov` - Compliance checks pass
 4. **Update documentation** if you changed module inputs/outputs
 5. **Request review** from maintainers
