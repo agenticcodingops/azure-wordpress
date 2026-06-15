@@ -1,0 +1,70 @@
+# =============================================================================
+# Autonomous Fix (CALLER) — consumes the shared, hardened two-job fix-loop from
+# agenticcodingops/auto-code-scanning @ v2.0.9 (pinned by SHA).
+#
+# Thin caller: owns ONLY the privilege boundary (who/when); all hardened logic
+# (two-job analyze/apply split, allowlist/gated gate, secret re-scan, .fix-attempts
+# cap, flag-human-review) lives in the reusable workflow. Project specifics
+# (allowlist, gated paths, build-verify, max-turns, action pin) are in scan-config.yaml.
+#
+# PRIVILEGE BOUNDARY (never weaker):
+#   * manual maintainer dispatch (workflow_dispatch is write-access gated), OR
+#   * owner repo (agenticcodingops) + NON-fork PR head in THIS repo + the
+#     maintainer-applied `ai-autofix` label + a TRUSTED reviewer (CodeRabbit /
+#     SonarCloud bot, or an OWNER/MEMBER/COLLABORATOR association).
+#
+# PREREQUISITES (one-time): secret AUTOFIX_TOKEN (fine-grained PAT, owner
+# agenticcodingops, Contents RW + Pull-requests RW) + ANTHROPIC_API_KEY or
+# CLAUDE_CODE_OAUTH_TOKEN; labels ai-autofix + needs-human-review.
+# =============================================================================
+
+name: Autonomous Fix (CodeRabbit / SonarCloud)
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to run the autonomous fix against (manual test)"
+        required: true
+        type: string
+
+# The caller's top-level permissions are the CEILING for the reusable workflow's
+# nested jobs — must be the UNION of their needs (analyze: contents/pull-requests/
+# actions read; apply: contents read; flag-human-review: issues/pull-requests write).
+# Repo content WRITE never flows through this token — apply pushes via AUTOFIX_TOKEN.
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  fix:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.repository.owner.login == 'agenticcodingops' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(github.event.pull_request.labels.*.name, 'ai-autofix') &&
+        (
+          contains(fromJSON('["coderabbitai[bot]","sonarqubecloud[bot]","sonarcloud[bot]"]'), github.event.review.user.login) ||
+          contains(fromJSON('["coderabbitai[bot]","sonarqubecloud[bot]","sonarcloud[bot]"]'), github.event.comment.user.login) ||
+          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association) ||
+          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+        )
+      )
+    # PIN to the IMMUTABLE commit SHA (tags are mutable) — NEVER @main.
+    uses: agenticcodingops/auto-code-scanning/.github/workflows/autonomous-fix.yml@d4d47f9a7d49c33f40c2c74b4e7d1219a6b0fe8a # v2.0.9
+    with:
+      pr_number: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+      config_path: scan-config.yaml
+      scanning_repo_ref: d4d47f9a7d49c33f40c2c74b4e7d1219a6b0fe8a # v2.0.9
+    # Least privilege: pass ONLY the secrets the reusable workflow declares.
+    secrets:
+      AUTOFIX_TOKEN: ${{ secrets.AUTOFIX_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# scan-and-fix.sh — shared, versioned scanner (bash twin of scan-and-fix.ps1).
+# Used by the Claude Code Stop hook and on demand. Fails open on missing tools,
+# fails closed on real findings. With --auto-fix, writes .claude/scan-findings.json.
+#
+# Usage: scan-and-fix.sh [secrets|semgrep|terraform|all] [--auto-fix]
+set -uo pipefail
+
+# Parse args independently of position: --auto-fix/--fix is a flag, anything else
+# is the scan type. This way `scan-and-fix.sh --auto-fix` and
+# `scan-and-fix.sh all --auto-fix` both work (the flag is not mistaken for a type).
+# Fail CLOSED on misuse: a SECOND positional arg or an UNKNOWN --* option is an error
+# (exit 2) rather than being silently ignored — otherwise a typo'd second scan type
+# would quietly run only the first and skip the rest.
+SCAN_TYPE=""
+SCAN_TYPE_SET=0
+AUTO_FIX=0
+for arg in "$@"; do
+    case "${arg}" in
+        --auto-fix|--fix) AUTO_FIX=1 ;;
+        --*)
+            echo "[scan-and-fix] unknown option: ${arg}" >&2
+            echo "[scan-and-fix] usage: scan-and-fix.sh [secrets|semgrep|terraform|all] [--auto-fix]" >&2
+            exit 2
+            ;;
+        *)
+            if [[ ${SCAN_TYPE_SET} -eq 1 ]]; then
+                echo "[scan-and-fix] unexpected extra argument: ${arg}" >&2
+                echo "[scan-and-fix] usage: scan-and-fix.sh [secrets|semgrep|terraform|all] [--auto-fix]" >&2
+                exit 2
+            fi
+            SCAN_TYPE="${arg}"
+            SCAN_TYPE_SET=1
+            ;;
+    esac
+done
+SCAN_TYPE="${SCAN_TYPE:-secrets}"
+
+has_errors=0
+declare -a TOOLS=() CODES=()
+
+run_secret_scan() {
+    command -v trivy >/dev/null 2>&1 || { echo "[scan-and-fix] trivy not found; skipping secrets (fail-open)"; return; }
+    # SECURITY: Trivy streams the matched secret values to stdout. Never let those
+    # leak into logs/findings — discard the noisy output and keep only the exit
+    # code (1 = secrets found). Mirrors the PowerShell twin (scan-and-fix.ps1).
+    trivy fs . --scanners secret --severity CRITICAL,HIGH --exit-code 1 --quiet \
+        --skip-dirs node_modules --skip-dirs dist --skip-dirs build \
+        --skip-dirs bin --skip-dirs obj --skip-dirs .terraform >/dev/null 2>&1
+    local code=$?
+    TOOLS+=("Trivy Secrets"); CODES+=("${code}")
+    if [[ ${code} -ne 0 ]]; then
+        has_errors=1
+        # Non-revealing summary only — run trivy locally to see the actual matches.
+        echo "[scan-and-fix] Secret findings detected — run 'trivy fs . --scanners secret' locally to see them (redacted here)." >&2
+    fi
+}
+
+run_semgrep_scan() {
+    command -v semgrep >/dev/null 2>&1 || { echo "[scan-and-fix] semgrep not found; skipping (fail-open)"; return; }
+    export PYTHONUTF8=1 SEMGREP_SEND_METRICS=off
+    semgrep scan --config auto --error --metrics off --quiet
+    local code=$?
+    TOOLS+=("Semgrep SAST"); CODES+=("${code}")
+    [[ ${code} -ne 0 ]] && has_errors=1
+}
+
+run_terraform_scan() {
+    command -v trivy >/dev/null 2>&1 || return
+    trivy config . --severity CRITICAL,HIGH --exit-code 1 --quiet --skip-dirs .terraform
+    local code=$?
+    TOOLS+=("Trivy IaC"); CODES+=("${code}")
+    [[ ${code} -ne 0 ]] && has_errors=1
+}
+
+case "${SCAN_TYPE}" in
+    secrets)   run_secret_scan ;;
+    semgrep)   run_semgrep_scan ;;
+    terraform) run_terraform_scan ;;
+    all)       run_secret_scan; run_semgrep_scan; run_terraform_scan ;;
+    *)         echo "[scan-and-fix] unknown scan type: ${SCAN_TYPE}" >&2; exit 1 ;;  # fail closed
+esac
+
+if [[ ${AUTO_FIX} -eq 1 && ${has_errors} -ne 0 ]]; then
+    mkdir -p .claude
+    {
+        echo '{'
+        echo '  "schemaVersion": 1,'
+        echo "  \"scanType\": \"${SCAN_TYPE}\","
+        echo '  "autoFix": true,'
+        echo "  \"hasErrors\": true,"
+        echo '  "findings": ['
+        for i in "${!TOOLS[@]}"; do
+            trailing_comma=','
+            [[ $i -eq $(( ${#TOOLS[@]} - 1 )) ]] && trailing_comma=''
+            passed=$([[ "${CODES[$i]}" -eq 0 ]] && echo true || echo false)
+            echo "    {\"tool\": \"${TOOLS[$i]}\", \"exitCode\": ${CODES[$i]}, \"passed\": ${passed}}${trailing_comma}"
+        done
+        echo '  ]'
+        echo '}'
+    } > .claude/scan-findings.json
+fi
+
+for i in "${!TOOLS[@]}"; do
+    status=$([[ "${CODES[$i]}" -eq 0 ]] && echo PASS || echo FAIL)
+    echo "[scan-and-fix] ${status} ${TOOLS[$i]} (exit=${CODES[$i]})"
+done
+
+[[ ${has_errors} -ne 0 ]] && exit 1 || exit 0

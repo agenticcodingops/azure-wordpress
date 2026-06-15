@@ -24,3 +24,9 @@ terraform.rc
 # OS
 .DS_Store
 Thumbs.db
+
+# auto-code-scanning — local scan artifacts generated at runtime by the hooks
+.scanning/
+.scan-results/
+__pycache__/
+*.pyc

@@ -1,0 +1,54 @@
+# ============================================================================
+# lefthook.yml — local pre-commit/pre-push scanning for azure-wordpress (Terraform).
+# Calls the vendored hooks/dispatcher.sh (auto-code-scanning @ v2.0.4).
+#
+# OFF-SWITCH: set `global.local_hooks_enabled: false` in scan-config.yaml (the
+# dispatcher honors it and skips everything), or `LEFTHOOK=0 git commit`. CI is
+# unaffected either way. See docs/LOCAL-HOOKS-TOGGLE.md in the platform repo.
+#
+# Install once after cloning:  lefthook install
+# ============================================================================
+min_version: 1.6.0
+
+pre-commit:
+  parallel: true
+  skip:
+    - merge
+    - rebase
+  commands:
+    # Mandatory secret gate (always; secrets can be in any file).
+    secret-scan:
+      priority: 1
+      run: hooks/dispatcher.sh trivy-secrets
+    gitleaks:
+      priority: 1
+      run: hooks/dispatcher.sh gitleaks
+
+    # Validate scan-config.yaml against its schema when it changes.
+    validate-scan-config:
+      glob: "scan-config.yaml"
+      run: hooks/dispatcher.sh validate-scan-config
+
+    # Terraform / IaC — fast checks at commit.
+    trivy-iac:
+      glob: "*.tf"
+      run: hooks/dispatcher.sh trivy-iac-critical
+    # terraform fmt is not a platform dispatcher hook, so we call terraform directly
+    # AND honor the local_hooks_enabled kill-switch ourselves (the dispatcher-based
+    # hooks above check it automatically). If the flag is false, the grep matches and
+    # `||` short-circuits, so terraform never runs.
+    terraform-fmt:
+      glob: "*.tf"
+      run: grep -qE '^[[:space:]]*local_hooks_enabled:[[:space:]]*false([[:space:]]|#|$)' scan-config.yaml 2>/dev/null || terraform fmt {staged_files}
+      stage_fixed: true # re-stage files terraform fmt rewrote
+
+# Heavier IaC scans at push time (CI's reusable-scan.yml is the authoritative backstop).
+pre-push:
+  parallel: true
+  commands:
+    checkov:
+      glob: "*.tf"
+      run: hooks/dispatcher.sh checkov
+    tflint:
+      glob: "*.tf"
+      run: hooks/dispatcher.sh tflint
