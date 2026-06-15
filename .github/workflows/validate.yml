@@ -60,21 +60,10 @@ jobs:
         working-directory: ${{ matrix.module }}
         run: tofu validate
 
-  tfsec:
-    name: TFSec
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Run tfsec
-        uses: aquasecurity/tfsec-action@b466648d6e39e7c75324f25d83891162a721f2d6 # v1.0.3
-        with:
-          # Authenticate the release download to avoid anonymous GitHub API 504s /
-          # rate-limits (the action fetches tfsec `latest` from api.github.com).
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          soft_fail: false
-          additional_args: --minimum-severity HIGH
+  # NOTE: the standalone `tfsec` job was removed — tfsec is EOL (Aqua folded its checks
+  # into Trivy) and aquasecurity's org IP-allow-list now 403s the action's binary download
+  # from GitHub runners. IaC misconfiguration scanning is covered by the Terraform Security
+  # Scan workflow (Trivy IaC + Checkov + tflint), which supersedes tfsec.
 
   checkov:
     name: Checkov

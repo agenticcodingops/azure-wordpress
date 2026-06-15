@@ -41,7 +41,7 @@ Fixes #
 ### Code Quality
 - [ ] I have run `tofu fmt -recursive` and code is properly formatted
 - [ ] I have run `tofu validate` and there are no errors
-- [ ] I have run `tfsec` and addressed any findings
+- [ ] I have run `trivy config` and addressed any findings
 - [ ] I have run `checkov` and addressed any findings
 
 ### Documentation
