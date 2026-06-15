@@ -68,7 +68,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Run tfsec
-        uses: aquasecurity/tfsec-action@v1.0.3
+        uses: aquasecurity/tfsec-action@b466648d6e39e7c75324f25d83891162a721f2d6 # v1.0.3
         with:
           # Authenticate the release download to avoid anonymous GitHub API 504s /
           # rate-limits (the action fetches tfsec `latest` from api.github.com).

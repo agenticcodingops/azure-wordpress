@@ -56,6 +56,7 @@ try {
             $psi.CreateNoWindow = $true
             $proc = [System.Diagnostics.Process]::Start($psi)
             $ms = [System.IO.MemoryStream]::new()
+            $exitCode = -1
             try {
                 # Drain stderr ASYNCHRONOUSLY while we synchronously copy stdout.
                 # Both pipes are redirected; reading only stdout would let a noisy
@@ -66,11 +67,14 @@ try {
                 $null = $errTask.GetAwaiter().GetResult()
                 $proc.WaitForExit()
                 $bytes = $ms.ToArray()
+                # Capture ExitCode BEFORE the finally disposes $proc — accessing
+                # ExitCode after Dispose() can throw InvalidOperationException.
+                $exitCode = $proc.ExitCode
             } finally {
                 $ms.Dispose()
                 $proc.Dispose()
             }
-            if ($proc.ExitCode -ne 0) { throw "git show exit $($proc.ExitCode)" }
+            if ($exitCode -ne 0) { throw "git show exit $exitCode" }
             [System.IO.File]::WriteAllBytes($targetFile, $bytes)
         } catch {
             # Export failure (binary/encoding/etc.) -> count + surface so secret-scan
