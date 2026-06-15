@@ -70,6 +70,9 @@ jobs:
       - name: Run tfsec
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
+          # Authenticate the release download to avoid anonymous GitHub API 504s /
+          # rate-limits (the action fetches tfsec `latest` from api.github.com).
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           soft_fail: false
           additional_args: --minimum-severity HIGH
 
