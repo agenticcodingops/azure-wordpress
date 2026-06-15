@@ -311,7 +311,15 @@ function Export-StagedFilesToTempDir {
         $targetFile = Join-Path $tmpDir $file
         # Do NOT use -NoNewline: it strips trailing newlines and corrupts the
         # scanned input (line breaks must be preserved for accurate scanning).
-        try { git show ":$file" 2>$null | Set-Content -LiteralPath $targetFile -Encoding UTF8 } catch { }
+        try {
+            $content = git show ":$file" 2>$null
+            if ($LASTEXITCODE -ne 0) { throw "git show exit $LASTEXITCODE" }
+            $content | Set-Content -LiteralPath $targetFile -Encoding UTF8
+        } catch {
+            # WARN, never stay silent: a dropped staged file makes secret/IaC hooks
+            # scan missing content and report a false CLEAN. Surface the gap.
+            Write-HookWarn "could not export staged '$file' to temp dir (skipped from scan)"
+        }
     }
     return $tmpDir
 }

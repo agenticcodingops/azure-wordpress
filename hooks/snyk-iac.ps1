@@ -73,13 +73,21 @@ foreach ($dir in $scanDirs) {
 
                 # Show actionable details (file/severity/title) so developers know
                 # what to fix before the hook blocks the push.
-                $targetFile = $json.targetFile
+                $topTargetFile = $json.targetFile
                 Write-HookLog ""
                 foreach ($issue in @($issues | Sort-Object @{Expression = {
                                 switch ($_.severity) { 'critical' { 0 } 'high' { 1 } 'medium' { 2 } default { 3 } }
                             }
                         })) {
-                    $loc = if ($issue.lineNumber) { "$($targetFile):$($issue.lineNumber)" } else { $targetFile }
+                    # Prefer the issue's own file/path (more precise); fall back to the
+                    # project-level targetFile only when the per-issue value is absent.
+                    $file = $issue.targetFile
+                    if ([string]::IsNullOrWhiteSpace($file)) {
+                        $issuePath = $issue.path
+                        if ($issuePath) { $file = ($issuePath -join '.') }
+                    }
+                    if ([string]::IsNullOrWhiteSpace($file)) { $file = $topTargetFile }
+                    $loc = if ($issue.lineNumber) { "$($file):$($issue.lineNumber)" } else { $file }
                     Write-HookLog "  $(($issue.severity).ToUpper())  $($issue.id)  $loc"
                     Write-HookLog "    $($issue.title)"
                 }

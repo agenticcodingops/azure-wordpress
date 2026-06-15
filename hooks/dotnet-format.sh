@@ -23,6 +23,10 @@ working_dir="$(read_scan_config languages.csharp.build.working_dir '.')"
 # Strip a leading './' — git paths never start with './', so it would break the
 # staged-file prefix match below (e.g. './api' vs 'api/...').
 working_dir="${working_dir#./}"
+# Stripping './' (or a bare '.') can leave working_dir empty, which would break the
+# prefix match below and yield a false "no files" PASS. Coerce back to the repo-root
+# sentinel '.' so the "${working_dir}" == "." branch handles it correctly.
+[[ -z "${working_dir}" ]] && working_dir="."
 solution="$(read_scan_config languages.csharp.build.solution '')"
 
 # Filter staged files to those under working_dir and make them relative to it.

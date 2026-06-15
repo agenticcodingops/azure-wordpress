@@ -165,13 +165,20 @@ ENDJSON
 # range so pushed commits are still scanned. NUL output keeps paths with whitespace
 # or newlines intact. Best-effort — CI is the authoritative backstop.
 _changed_files_for_detect() {
-    local files
-    files="$(git diff --cached --name-only -z --diff-filter=ACMR 2>/dev/null)"
-    if [[ -z "${files}" ]]; then
-        files="$(git diff --name-only -z --diff-filter=ACMR '@{push}' HEAD 2>/dev/null)" || files=""
-        [[ -z "${files}" ]] && { files="$(git diff --name-only -z --diff-filter=ACMR '@{upstream}' HEAD 2>/dev/null)" || files=""; }
+    # Read NUL-delimited paths into an ARRAY — a scalar `files="$(... -z)"` would have
+    # bash strip the NUL delimiters (command substitution drops NUL bytes), merging
+    # paths and defeating the downstream `grep -z` / `xargs -0`. Then re-emit
+    # NUL-delimited so callers keep whitespace/newline-safe paths.
+    local -a files=()
+    mapfile -d '' -t files < <(git diff --cached --name-only -z --diff-filter=ACMR 2>/dev/null)
+    if (( ${#files[@]} == 0 )); then
+        mapfile -d '' -t files < <(git diff --name-only -z --diff-filter=ACMR '@{push}' HEAD 2>/dev/null)
+        (( ${#files[@]} == 0 )) && mapfile -d '' -t files < <(git diff --name-only -z --diff-filter=ACMR '@{upstream}' HEAD 2>/dev/null)
     fi
-    printf '%s' "${files}"
+    local f
+    for f in "${files[@]}"; do
+        printf '%s\0' "${f}"
+    done
 }
 
 # Detect directories containing Terraform files that have changed

@@ -14,6 +14,9 @@ if (@($allTs).Count -eq 0) {
 }
 
 $workingDir = Read-ScanConfigValue -Key 'languages.typescript.build.working_dir' -Default '.'
+# An empty/whitespace working_dir would make $wdPrefix='/' and match no staged file
+# => false PASS. Coerce back to repo-root before the prefix is built.
+if ([string]::IsNullOrWhiteSpace($workingDir)) { $workingDir = '.' }
 $wdPrefix = ($workingDir.TrimEnd('/', '\') + '/')
 
 $files = @()

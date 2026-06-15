@@ -24,6 +24,9 @@ $solution = Read-ScanConfigValue -Key 'languages.csharp.build.solution' -Default
 # Anchored + single-segment so a legitimate working_dir ('.', '.config', '../x') is
 # left intact.
 $workingDir = $workingDir -replace '^\.[/\\]', ''
+# Stripping './' from a bare './' yields '' — coerce back to '.' so the prefix
+# filter below treats it as repo-root (else $wdPrefix='/' matches nothing => false PASS).
+if ([string]::IsNullOrWhiteSpace($workingDir)) { $workingDir = '.' }
 
 # Filter staged files to those under working_dir; make relative to it.
 $wdPrefix = ($workingDir.TrimEnd('/', '\') + '/')

@@ -57,11 +57,18 @@ try {
             $proc = [System.Diagnostics.Process]::Start($psi)
             $ms = [System.IO.MemoryStream]::new()
             try {
+                # Drain stderr ASYNCHRONOUSLY while we synchronously copy stdout.
+                # Both pipes are redirected; reading only stdout would let a noisy
+                # stderr fill its buffer, block git, and deadlock WaitForExit()
+                # (the classic two-pipe deadlock).
+                $errTask = $proc.StandardError.ReadToEndAsync()
                 $proc.StandardOutput.BaseStream.CopyTo($ms)
+                $null = $errTask.GetAwaiter().GetResult()
                 $proc.WaitForExit()
                 $bytes = $ms.ToArray()
             } finally {
                 $ms.Dispose()
+                $proc.Dispose()
             }
             if ($proc.ExitCode -ne 0) { throw "git show exit $($proc.ExitCode)" }
             [System.IO.File]::WriteAllBytes($targetFile, $bytes)

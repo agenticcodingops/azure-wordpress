@@ -27,6 +27,11 @@ for f in "${all_files[@]}"; do
 done
 [[ ${#files[@]} -eq 0 ]] && { hook_log "PASS: No staged files under '${working_dir}'"; exit 0; }
 
+# Fail-open if the configured working_dir doesn't exist on disk — otherwise a runner
+# gets selected and the later `cd "${working_dir}"` exits 1, which we'd misread as a
+# format failure and BLOCK the commit. A missing dir is an infra error, not a finding.
+[[ -d "${working_dir}" ]] || { hook_warn "prettier: working_dir '${working_dir}' not found - allowing commit (fail-open)"; exit 0; }
+
 runner=()
 if [[ -x "${working_dir%/}/node_modules/.bin/prettier" ]]; then
     runner=("${working_dir%/}/node_modules/.bin/prettier")

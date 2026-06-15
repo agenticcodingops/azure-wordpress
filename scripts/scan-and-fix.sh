@@ -9,12 +9,29 @@ set -uo pipefail
 # Parse args independently of position: --auto-fix/--fix is a flag, anything else
 # is the scan type. This way `scan-and-fix.sh --auto-fix` and
 # `scan-and-fix.sh all --auto-fix` both work (the flag is not mistaken for a type).
+# Fail CLOSED on misuse: a SECOND positional arg or an UNKNOWN --* option is an error
+# (exit 2) rather than being silently ignored — otherwise a typo'd second scan type
+# would quietly run only the first and skip the rest.
 SCAN_TYPE=""
+SCAN_TYPE_SET=0
 AUTO_FIX=0
 for arg in "$@"; do
     case "${arg}" in
         --auto-fix|--fix) AUTO_FIX=1 ;;
-        *) [[ -z "${SCAN_TYPE}" ]] && SCAN_TYPE="${arg}" ;;
+        --*)
+            echo "[scan-and-fix] unknown option: ${arg}" >&2
+            echo "[scan-and-fix] usage: scan-and-fix.sh [secrets|semgrep|terraform|all] [--auto-fix]" >&2
+            exit 2
+            ;;
+        *)
+            if [[ ${SCAN_TYPE_SET} -eq 1 ]]; then
+                echo "[scan-and-fix] unexpected extra argument: ${arg}" >&2
+                echo "[scan-and-fix] usage: scan-and-fix.sh [secrets|semgrep|terraform|all] [--auto-fix]" >&2
+                exit 2
+            fi
+            SCAN_TYPE="${arg}"
+            SCAN_TYPE_SET=1
+            ;;
     esac
 done
 SCAN_TYPE="${SCAN_TYPE:-secrets}"

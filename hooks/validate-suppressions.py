@@ -134,15 +134,23 @@ def validate_suppressions(file_path, strict=False, check_expiry=False):
         settings = {}
     max_expiry_days = settings.get("max_expiry_days", 180)
     # Coerce to int: a YAML string (e.g. max_expiry_days: "180") would otherwise
-    # reach timedelta(days=...) and raise TypeError. Reject non-int as a
-    # validation error instead of crashing.
-    try:
-        max_expiry_days = int(max_expiry_days)
-    except (TypeError, ValueError):
+    # reach timedelta(days=...) and raise TypeError. Reject non-int as a validation
+    # error instead of crashing OR silently coercing — bool is an int subclass and
+    # float would be truncated by int(), so reject both explicitly; int-strings like
+    # "180" still pass, while "1.5"/"abc" fall through to the ValueError branch.
+    if isinstance(max_expiry_days, bool) or isinstance(max_expiry_days, float):
         errors.append(
             f"V-006: 'settings.max_expiry_days' must be an integer, got '{max_expiry_days}'"
         )
         max_expiry_days = 180
+    else:
+        try:
+            max_expiry_days = int(max_expiry_days)
+        except (TypeError, ValueError):
+            errors.append(
+                f"V-006: 'settings.max_expiry_days' must be an integer, got '{max_expiry_days}'"
+            )
+            max_expiry_days = 180
     require_approval = settings.get("require_security_approval", ["CRITICAL", "HIGH"])
     if not isinstance(require_approval, list):
         require_approval = []

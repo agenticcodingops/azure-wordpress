@@ -27,6 +27,11 @@ for f in "${all_ts[@]}"; do
 done
 [[ ${#files[@]} -eq 0 ]] && { hook_log "PASS: No staged TS/JS under '${working_dir}'"; exit 0; }
 
+# Fail-open if the configured working_dir doesn't exist on disk — otherwise a runner
+# gets selected and the later `cd "${working_dir}"` exits 1, which we'd misread as a
+# lint failure and BLOCK the commit. A missing dir is an infra error, not a finding.
+[[ -d "${working_dir}" ]] || { hook_warn "eslint: working_dir '${working_dir}' not found - allowing commit (fail-open)"; exit 0; }
+
 # Resolve an eslint runner; fail-open (skip) if the consumer has no eslint set up.
 runner=()
 if [[ -x "${working_dir%/}/node_modules/.bin/eslint" ]]; then
