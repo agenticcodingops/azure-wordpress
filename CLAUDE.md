@@ -104,9 +104,172 @@ Update the `?ref=` references in README.md and examples/ to the version being re
 
 Four jobs: Format Check (tofu fmt), Validate (11 modules), Checkov, Documentation (terraform-docs). All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
 
-**`claude-review` fails on every PR** and has done since at least #21 — its `ANTHROPIC_API_KEY` secret is empty. `main` has no branch protection, so nothing is gated on it and prior PRs merged with it red. Don't chase it as a regression from your change.
+**`claude-review` was failing on every PR — an expired `CLAUDE_CODE_OAUTH_TOKEN`, not the workflow.
+Resolved 2026-08-02 by rotating the secret; it has been green since.** If you are reading a red
+`claude-review` on an older PR, that is the pre-rotation window, not a regression from your change.
+`main` has no branch protection, so nothing was ever gated on it and those PRs merged red.
+
+> **Corrected 2026-08-02.** This file previously blamed an empty `ANTHROPIC_API_KEY`. That is the
+> wrong secret: `claude-code-review.yml` passes `claude_code_oauth_token`, and `ANTHROPIC_API_KEY`
+> is *expected* to be empty. The workflow is fine and needs no edit.
+
+Evidence, kept in case it regresses again — the failure is deliberately hard to read, because the action
+logs only `Claude execution failed: result is_error:true` and hides the message ("full output hidden
+for security"). Debug mode does **not** lift that redaction; only `show_full_output: true` does.
+Diagnose from the result record instead:
+
+- **Expired credential:** `num_turns: 1`, `duration_ms` ≈ 2000, `total_cost_usd: 0` — rejected before
+  any billable token. A genuine review reports 3–16 turns and a non-zero cost.
+- Runs here succeeded through **2026-06-15** on this same token, then every run from 2026-08-02
+  failed — 18 in a row across 9.6 h — until the rotation below ended the window. The first run on
+  the fresh token went green in 41 s, well clear of the ~2 s expired signature.
+- Same day, same `anthropics/claude-code-action@v1`, same Claude Code v2.1.220, same
+  `claude-sonnet-5`, byte-identical workflow: `agenticcodingops/agentic-research-stack` **passed** at
+  15:51 mid-window. The only difference is token age. That mid-window success also rules out an
+  account-wide usage limit, which would be time-boxed and hit every repo at once.
+- The same expiry hit `auto-code-scanning` and `multi-ai-deep-research-pipeline` on 2026-07-26; both
+  were fixed by rotating the secret and passed seconds later. This repo was missed.
+
+Rotate it (the value cannot be recovered — it must be re-minted):
+
+```bash
+claude setup-token   # interactive; prints a fresh token
+gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo agenticcodingops/azure-wordpress   # paste at the prompt
+```
+
+`agenticcodingops/trackroutinely` still carries a token from 2026-01-24 and has never had a green
+Claude run — rotate it there too.
+
+**Do not edit `claude-code-review.yml` to test this.** The action verifies the workflow file is
+byte-identical to the copy on the default branch; any PR that touches it makes the action *skip*
+with "Workflow validation failed" and report **green** without reviewing anything. Several of this
+workflow's historical "successes" are exactly that — a skip, not a review.
 
 `validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
+
+## Landing Stacked Work
+
+**Do not stack PRs in this repo.** On 2026-08-02 a three-PR stack silently lost an entire release:
+
+| PR | Base | Merged |
+|---|---|---|
+| #19 | `main` | 10:20:22 |
+| #20 | `fix/pin-azurerm-4x` | 10:21:28 |
+| #21 | `feat/key-vault-extra-secrets` | 10:21:47 |
+
+PR #19 was squash-merged into `main`, which deleted its head branch. PRs #20 and #21 then
+merged into branches that no longer fed anywhere. Both show **MERGED** in the GitHub UI;
+neither reached `main`. The gap went unnoticed until a later session found `extra_secrets` absent
+from `main` and re-landed all five commits via #23. Meanwhile release-please had already
+opened a release PR proposing a **major** version carrying the breaking network changes and
+none of the features that justified them.
+
+Three compounding traps, each of which hid the failure:
+
+1. **A squash-merge makes the base diverge.** The squash is a new commit object holding the
+   same tree, so `git diff --stat <original> <squash>` prints nothing while the two are
+   ancestrally unrelated. A stacked branch still carrying the pre-squash original merges
+   cleanly wherever its later commits touch *different hunks*, and conflicts only where a
+   later delta overlaps a region the squash also rewrote — so a conflict is possible, not
+   guaranteed. In #23 exactly one file conflicted (`modules/wordpress-site/main.tf`); every
+   other file both sides had touched auto-merged.
+
+2. **Detect conflicts with `merge-tree --write-tree`, not the legacy three-argument form.**
+   The legacy form *does* emit markers, but as unified-diff additions (`+<<<<<<< .our`), so
+   an anchored `grep '^<<<<<<<'` reports zero and reads as "clean". The modern form exits
+   non-zero on conflict, names the paths, and touches neither the worktree nor any branch —
+   no scratch branch to clobber:
+
+   Exit status is the signal: **0** clean, **1** conflict, other values an error whose output
+   is unspecified. Measured here (git 2.54): unrelated histories give **128**, so branch on
+   the status rather than using `if`/`else`. But **1 is not exclusively "conflict"** — an
+   unresolvable ref also exits 1, printing `not something we can merge` on *stderr*. Redirect
+   only stdout, so that message stays visible.
+
+   Capture the status immediately and re-exit with it. If you branch on `$?` and let the
+   conflict arm end in a `… | sed` pipeline, the script's own status becomes `sed`'s — **0** —
+   so wired into a gate it reports conflicts and then passes. Fail closed on the fetch too, or
+   you silently check a stale `origin/main` and get a false clean:
+
+   ```bash
+   #!/usr/bin/env bash
+   # conflict-check.sh <branch> — exit 0 clean, 1 conflict (or bad ref: see stderr), 2 no fetch
+   branch=$1
+   git fetch -q origin || { echo "fetch failed — refusing to check a stale ref" >&2; exit 2; }
+   git merge-tree --write-tree origin/main "$branch" >/dev/null   # stderr deliberately not redirected
+   status=$?
+   case $status in
+     0) echo "clean" ;;
+     1) git merge-tree --write-tree --name-only origin/main "$branch" | sed -n '2,/^$/p' ;;
+     *) echo "merge-tree errored — check the refs" >&2 ;;
+   esac
+   exit $status          # NOT the pipeline's status
+   ```
+
+3. **A conflicted PR gets no `pull_request` workflow runs.** GitHub cannot build the merge
+   ref, so every `pull_request`-triggered workflow is skipped. Measured on #23: while it was
+   `CONFLICTING` there were **zero** runs against its head SHA — not `validate.yml`, not
+   `terraform-scan.yml`, and not `semgrep.yml` or `claude-code-review.yml` either, even though
+   those two carry no `branches:` filter.
+
+   The scope matters: workflows on *other* triggers are unaffected. `claude.yml` fires on
+   `issue_comment` / `pull_request_review_comment`, so `@claude` still answers on a conflicted
+   PR — which makes it look alive while the gates that matter never ran.
+
+   Mergeability alone does not prove any of this — a PR can pass CI and *later* go
+   `CONFLICTING`/`DIRTY` when `main` moves, which does not erase the earlier runs. Query by
+   the exact head SHA rather than by branch, or stale runs on older SHAs come back and are
+   easy to misread as current:
+
+   ```bash
+   head_sha="$(git rev-parse HEAD)"
+   gh api "repos/agenticcodingops/azure-wordpress/actions/runs?head_sha=${head_sha}" \
+     -q '.workflow_runs[] | "\(.conclusion // .status)\t\(.name)"'
+   ```
+
+**Instead:** target `main` directly, one PR at a time; merge each fully and let release-please
+settle before opening the next.
+
+**Merge vs squash.** Prefer a **merge commit** only when *every* commit in the PR is a real
+release unit, so each `feat:`/`fix:` subject reaches `main` and earns its own changelog entry.
+If the branch carries `wip`/`fixup`/`address review comments` noise, **squash** instead —
+release-please parses every subject that lands, and a merge would drag the noise into the
+changelog. That is why release-please's own default recommendation is squash-merge.
+
+**Recovering an already-stacked branch** — two options, with a real trade-off:
+
+- *Merge `origin/main` into the branch and resolve there.* Keeps every commit message
+  verbatim, but leaves both the pre-squash commit and its squash as ancestors, so
+  release-please counts the change twice. On #23 that produced a duplicate `fix:` line **and**
+  a duplicate `BREAKING CHANGE:` bullet in #22, both removed by hand before releasing. Budget
+  for that edit.
+- *Rebuild on `main` with only the unlanded commits* —
+  `git rebase --onto origin/main <squashed-base> <branch>`. No duplicate entries, but it
+  rewrites SHAs, so force-push and re-request review.
+
+  `<squashed-base>` is **the pre-squash commit on your branch whose content already reached
+  `main` via the squash** — not `origin/main`, and not the squash commit. `rebase --onto`
+  replays "commits in `<branch>` not in `<upstream>`", so naming that commit is what excludes
+  the already-landed work. Confirm before running it:
+
+  Confirm it against the **squash commit** — `<squash-commit>`, the commit the base PR
+  produced on `main` — not against `origin/main` itself. `origin/main` is a moving tip: any
+  unrelated commit landing after the squash makes the diff non-empty even when your base is
+  correct. (Measured: `git diff --stat 27443d7 origin/main` reports 20 files today, versus
+  empty against `8d81c74`.) Three separate checks:
+
+  ```bash
+  git diff --stat <squashed-base> <squash-commit>              # empty  = same content, right base
+  git merge-base --is-ancestor <squash-commit> origin/main \
+    && echo "squash is on main"                                # confirms it actually landed
+  git log --oneline <squashed-base>..<branch>                  # must list ONLY unlanded commits
+  ```
+
+  Worked example from #23: `<squashed-base>` was `27443d7` and `<squash-commit>` was `8d81c74`
+  — identical trees. Using the merge-base (`fd952bc`) instead would have replayed `27443d7`
+  as well and reintroduced the very duplicate this option exists to avoid.
+
+Keep the subjects intact either way — release-please parses them.
 
 ## Provider Version Pinning
 
