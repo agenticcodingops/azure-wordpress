@@ -425,6 +425,35 @@ database = {
 The composition module applies environment-aware defaults: production gets 30-day retention
 with geo-redundant backup enabled automatically.
 
+> **Changed in v2.0.0.** These defaults were dead code through v1.3.2 — the object
+> attributes carried non-null `optional()` defaults, so the environment branch never ran
+> and every environment got 7-day retention with geo-redundancy off. They now work as
+> documented. **If you rely on backups staying in one region, set
+> `geo_redundant_backup = false` explicitly**, because production now enables it.
+
+### Environment-aware Defaults
+
+Set any of these explicitly and your value is used; leave it unset and the value below applies.
+
+| Setting | Production | Nonprod | Changing it later |
+|---|---|---|---|
+| `database.sku_name` | `GP_Standard_D2ds_v4` | `B_Standard_B2s` | in-place resize, 60-120s restart |
+| `database.backup_retention_days` | 30 | 7 | online |
+| `database.geo_redundant_backup` | `true` | `false` | **replaces the server** |
+| `front_door.waf_mode` | `Prevention` | `Detection` | in-place |
+| `monitoring.retention_days` | 90 | 30 | in-place |
+| `app_service.health_check_path` | `/wp-includes/images/blank.gif` | same | in-place |
+
+> **`geo_redundant_backup` is create-time only.** Azure can only choose geo-redundancy when
+> the MySQL Flexible Server is created, so azurerm marks it `ForceNew` — changing it on an
+> existing server produces a plan that **destroys and recreates it, losing all data**, and
+> `modules/database` sets `prevent_destroy = false`.
+>
+> This matters when **upgrading an existing v1.x deployment that never set the attribute**:
+> it was effectively `false` before and becomes `true` in production here. Set it explicitly
+> to `false` before upgrading, or take a backup and accept the replacement. New deployments
+> on v2.0.0+ are unaffected — the server is simply created with geo-redundancy on.
+
 ### Blob Storage Protection
 
 Configure via the `storage` variable:

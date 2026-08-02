@@ -144,7 +144,7 @@ No modules.
 | <a name="input_db_subnet_id"></a> [db\_subnet\_id](#input\_db\_subnet\_id) | ID of the database subnet (from networking module) | `string` | n/a | yes |
 | <a name="input_enforce_production_sku"></a> [enforce\_production\_sku](#input\_enforce\_production\_sku) | Enforce D-series SKU for production (fails if Burstable in prod) | `bool` | `true` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
-| <a name="input_geo_redundant_backup"></a> [geo\_redundant\_backup](#input\_geo\_redundant\_backup) | Enable geo-redundant backup (recommended for production) | `bool` | `false` | no |
+| <a name="input_geo_redundant_backup"></a> [geo\_redundant\_backup](#input\_geo\_redundant\_backup) | Enable geo-redundant backup (recommended for production). FORCES REPLACEMENT: azurerm can only set this at creation, so changing it on an existing server destroys and recreates it. Choose at creation time. | `bool` | `false` | no |
 | <a name="input_high_availability_mode"></a> [high\_availability\_mode](#input\_high\_availability\_mode) | High availability mode: Disabled, SameZone, or ZoneRedundant | `string` | `"Disabled"` | no |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for resources | `string` | n/a | yes |
 | <a name="input_private_dns_zone_id"></a> [private\_dns\_zone\_id](#input\_private\_dns\_zone\_id) | ID of the MySQL private DNS zone (from dns-zones module) | `string` | n/a | yes |

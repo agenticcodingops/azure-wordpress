@@ -43,8 +43,14 @@ App Insights is created early (between layers) to break a circular dependency â€
 **Composition module** (`modules/wordpress-site`) orchestrates everything. Consumers pass high-level objects (`database = {}`, `storage = {}`, `app_service = {}`) and the composition module fans out to sub-modules with environment-aware defaults.
 
 **Environment-aware defaults** in the composition module (not the sub-modules):
-- Production: 30-day backup retention, geo-redundant backup, GP_Standard_D2ds_v4 SKU, WAF Prevention mode
-- Nonprod: 7-day retention, no geo-redundancy, B_Standard_B2s SKU, WAF Detection mode
+- Production: 30-day backup retention, geo-redundant backup, GP_Standard_D2ds_v4 SKU, WAF Prevention mode, 90-day log retention
+- Nonprod: 7-day retention, no geo-redundancy, B_Standard_B2s SKU, WAF Detection mode, 30-day log retention
+
+These only fire for attributes whose `optional()` declaration carries **no default**, so
+`null` reaches the `coalesce()` in `main.tf`. An `optional(number, 7)` would make the
+environment branch unreachable â€” this was a real bug through v1.3.2, where every one of
+these defaults was dead code. When adding an environment-aware default, leave the object
+attribute's default off and select in the `*_config` local.
 
 **Shared plan pattern:** Multiple sites share one App Service Plan via `app_service.use_shared_plan = true`. Azure requires the App Service and Plan to be in the same resource group, so the composition module switches to `shared_resource_group_name` when this is set.
 
