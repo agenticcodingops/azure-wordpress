@@ -69,6 +69,36 @@ app_settings = {
 }
 ```
 
+## Network Access
+
+The vault **denies public network access by default** (`network_acls.default_action = "Deny"`).
+`bypass = "AzureServices"` lets trusted Azure services through, which covers App Service
+resolving `@Microsoft.KeyVault(...)` references.
+
+Terraform is **not** a trusted Azure service. Its data-plane calls create the secrets in this
+module, so if it cannot reach the vault the apply fails with a 403 on
+`azurerm_key_vault_secret`. Grant it access one of three ways:
+
+```hcl
+# 1. Allow-list the deploying principal's egress IP (recommended for CI)
+network_acls_ip_rules = ["203.0.113.10"]
+
+# 2. Allow-list a subnet carrying the Microsoft.KeyVault service endpoint
+#    (a self-hosted runner inside the VNet)
+network_acls_virtual_network_subnet_ids = [module.networking.app_subnet_id]
+
+# 3. Re-open public access deliberately
+public_network_access_enabled = true
+```
+
+The `wordpress-site` composition module allow-lists the site's App Service subnet
+automatically and exposes the rest through its `key_vault_public_network_access_enabled`,
+`key_vault_network_acls_ip_rules` and `key_vault_network_acls_virtual_network_subnet_ids`
+variables.
+
+> GitHub-hosted runners have a large, rotating egress range. Either use option 3, or a
+> self-hosted runner with a stable IP, or add the runner IP to the allow-list at deploy time.
+
 ## Validation Rules
 
 The module enforces these validations at plan time:
@@ -82,13 +112,16 @@ The module enforces these validations at plan time:
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
-No requirements.
+| Name | Version |
+|------|---------|
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.6.0 |
+| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | ~> 4.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | n/a |
+| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | ~> 4.0 |
 
 ## Modules
 
@@ -112,8 +145,10 @@ No modules.
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for resources | `string` | n/a | yes |
 | <a name="input_name_suffix"></a> [name\_suffix](#input\_name\_suffix) | Suffix appended to Key Vault name to avoid conflicts with soft-deleted vaults. Bump this when a vault with purge protection is soft-deleted and the name must be reused. | `string` | `"9"` | no |
+| <a name="input_network_acls_ip_rules"></a> [network\_acls\_ip\_rules](#input\_network\_acls\_ip\_rules) | Public IPv4 addresses or CIDRs permitted to reach the vault data plane. Add the deploying principal's egress IP (e.g. the CI runner) so Terraform can manage secrets while default\_action is Deny. | `list(string)` | `[]` | no |
+| <a name="input_network_acls_virtual_network_subnet_ids"></a> [network\_acls\_virtual\_network\_subnet\_ids](#input\_network\_acls\_virtual\_network\_subnet\_ids) | Subnet IDs permitted to reach the vault data plane. The subnets must carry the Microsoft.KeyVault service endpoint. | `list(string)` | `[]` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |
-| <a name="input_public_network_access_enabled"></a> [public\_network\_access\_enabled](#input\_public\_network\_access\_enabled) | Allow public network access (required for CI/CD deployment) | `bool` | `true` | no |
+| <a name="input_public_network_access_enabled"></a> [public\_network\_access\_enabled](#input\_public\_network\_access\_enabled) | Allow unrestricted public network access to the vault data plane (network\_acls default\_action = Allow). Defaults to false, which denies by default. IMPORTANT: a denying vault with no ip\_rules and no subnet ids is unreachable by Terraform itself, so secret creation will fail with 403 - allow-list your deployment principal via network\_acls\_ip\_rules, or set this to true. | `bool` | `false` | no |
 | <a name="input_purge_protection_enabled"></a> [purge\_protection\_enabled](#input\_purge\_protection\_enabled) | Enable purge protection (recommended for production) | `bool` | `true` | no |
 | <a name="input_resource_group_name"></a> [resource\_group\_name](#input\_resource\_group\_name) | Name of the resource group | `string` | n/a | yes |
 | <a name="input_secrets"></a> [secrets](#input\_secrets) | Map of secrets to store in Key Vault | `map(string)` | `{}` | no |

@@ -41,6 +41,50 @@ variable "resource_group_name" {
   type        = string
 }
 
+# Network rules for the storage account data plane (AZU-0012 / CKV_AZURE_36)
+#
+# IMPORTANT - read before setting this to Deny.
+# The WordPress Blob Storage plugin rewrites media URLs to the account's own
+# endpoint (https://<account>.blob.core.windows.net/...), so visitors' browsers
+# fetch media DIRECTLY from Azure, not through the CDN. Denying by default
+# therefore breaks media for end users unless one of these is true:
+#
+#   - the blob endpoint is fronted by a CDN custom domain (CNAME) so origin
+#     pulls come from the CDN's published egress ranges, which you allow-list
+#     via network_rules_ip_rules; or
+#   - you allow-list whatever else needs data-plane access.
+#
+# Azure Storage IP rules accept IPv4 only - IPv6 CIDRs are rejected - so a
+# CDN's IPv6 egress ranges cannot be expressed here.
+variable "network_rules_default_action" {
+  description = "Default action for storage account network rules. 'Deny' is secure-by-default but blocks direct browser access to media; see the module README before changing."
+  type        = string
+  default     = "Deny"
+
+  validation {
+    condition     = contains(["Allow", "Deny"], var.network_rules_default_action)
+    error_message = "Network rules default action must be 'Allow' or 'Deny'."
+  }
+}
+
+variable "network_rules_bypass" {
+  description = "Traffic permitted to bypass the network rules. Valid values: AzureServices, Logging, Metrics, None."
+  type        = set(string)
+  default     = ["AzureServices"]
+}
+
+variable "network_rules_ip_rules" {
+  description = "Public IPv4 addresses or CIDRs permitted to reach the storage data plane. Azure Storage does not accept IPv6 CIDRs, nor /31 and /32 prefixes (use a bare IP instead)."
+  type        = list(string)
+  default     = []
+}
+
+variable "network_rules_virtual_network_subnet_ids" {
+  description = "Subnet IDs permitted to reach the storage data plane. The subnets must carry the Microsoft.Storage service endpoint."
+  type        = list(string)
+  default     = []
+}
+
 variable "account_tier" {
   description = "Storage account tier (Standard or Premium)"
   type        = string

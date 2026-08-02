@@ -20,8 +20,8 @@ This module creates a complete WordPress site deployment including:
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.6.0 |
 | <a name="requirement_azapi"></a> [azapi](#requirement\_azapi) | >= 1.12.0 |
-| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | >= 4.0.0 |
-| <a name="requirement_cloudflare"></a> [cloudflare](#requirement\_cloudflare) | >= 4.0.0 |
+| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | ~> 4.0 |
+| <a name="requirement_cloudflare"></a> [cloudflare](#requirement\_cloudflare) | ~> 5.0 |
 | <a name="requirement_random"></a> [random](#requirement\_random) | >= 3.5.0 |
 | <a name="requirement_time"></a> [time](#requirement\_time) | >= 0.9.0 |
 
@@ -30,8 +30,8 @@ This module creates a complete WordPress site deployment including:
 | Name | Version |
 |------|---------|
 | <a name="provider_azapi"></a> [azapi](#provider\_azapi) | >= 1.12.0 |
-| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | >= 4.0.0 |
-| <a name="provider_cloudflare"></a> [cloudflare](#provider\_cloudflare) | >= 4.0.0 |
+| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | ~> 4.0 |
+| <a name="provider_cloudflare"></a> [cloudflare](#provider\_cloudflare) | ~> 5.0 |
 | <a name="provider_random"></a> [random](#provider\_random) | >= 3.5.0 |
 | <a name="provider_time"></a> [time](#provider\_time) | >= 0.9.0 |
 
@@ -85,6 +85,9 @@ This module creates a complete WordPress site deployment including:
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
 | <a name="input_front_door"></a> [front\_door](#input\_front\_door) | Front Door configuration | <pre>object({<br/>    enabled               = optional(bool, true)<br/>    sku_name              = optional(string, "Premium_AzureFrontDoor")<br/>    waf_mode              = optional(string, "Prevention")<br/>    cache_uploads_minutes = optional(number, 180)<br/>    cache_static_minutes  = optional(number, 180)<br/>  })</pre> | `{}` | no |
 | <a name="input_key_vault_name_suffix"></a> [key\_vault\_name\_suffix](#input\_key\_vault\_name\_suffix) | Suffix appended to Key Vault name. Bump this to avoid conflicts with soft-deleted vaults that have purge protection enabled. | `string` | `"9"` | no |
+| <a name="input_key_vault_network_acls_ip_rules"></a> [key\_vault\_network\_acls\_ip\_rules](#input\_key\_vault\_network\_acls\_ip\_rules) | Public IPv4 addresses or CIDRs permitted to reach the Key Vault data plane. Add the deploying principal's egress IP (e.g. the CI runner). | `list(string)` | `[]` | no |
+| <a name="input_key_vault_network_acls_virtual_network_subnet_ids"></a> [key\_vault\_network\_acls\_virtual\_network\_subnet\_ids](#input\_key\_vault\_network\_acls\_virtual\_network\_subnet\_ids) | Extra subnet IDs permitted to reach the Key Vault data plane. The site's App Service subnet is always included. | `list(string)` | `[]` | no |
+| <a name="input_key_vault_public_network_access_enabled"></a> [key\_vault\_public\_network\_access\_enabled](#input\_key\_vault\_public\_network\_access\_enabled) | Allow unrestricted public access to the Key Vault data plane. Defaults to false (deny). Terraform is not a trusted Azure service, so its calls to create secrets need either an entry in key\_vault\_network\_acls\_ip\_rules or this set to true. | `bool` | `false` | no |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for all resources | `string` | n/a | yes |
 | <a name="input_monitoring"></a> [monitoring](#input\_monitoring) | Monitoring configuration | <pre>object({<br/>    log_analytics_workspace_id = optional(string, null)<br/>    retention_days             = optional(number, 30)<br/>    alerts = optional(object({<br/>      http_5xx_threshold   = optional(number, 10)<br/>      high_cpu_threshold   = optional(number, 80)<br/>      db_failure_threshold = optional(number, 5)<br/>      alert_window_minutes = optional(number, 5)<br/>    }), {})<br/>  })</pre> | `{}` | no |
 | <a name="input_networking"></a> [networking](#input\_networking) | Networking configuration | <pre>object({<br/>    vnet_address_space           = optional(string, "10.0.0.0/16")<br/>    app_subnet_cidr              = optional(string, "10.0.0.0/24")<br/>    db_subnet_cidr               = optional(string, "10.0.1.0/24")<br/>    private_endpoint_subnet_cidr = optional(string, "10.0.2.0/24")<br/>  })</pre> | `{}` | no |
@@ -94,6 +97,10 @@ This module creates a complete WordPress site deployment including:
 | <a name="input_shared_resource_group_name"></a> [shared\_resource\_group\_name](#input\_shared\_resource\_group\_name) | Name of the shared resource group where the shared App Service Plan is located. Required when app\_service.use\_shared\_plan = true. | `string` | `null` | no |
 | <a name="input_site_name"></a> [site\_name](#input\_site\_name) | Site name used for resource naming (lowercase, hyphens only) | `string` | n/a | yes |
 | <a name="input_storage"></a> [storage](#input\_storage) | Storage account configuration | <pre>object({<br/>    additional_containers           = optional(map(object({ access_type = optional(string, "private") })), {})<br/>    versioning_enabled              = optional(bool, true)<br/>    blob_delete_retention_days      = optional(number, 30)<br/>    container_delete_retention_days = optional(number, 30)<br/>    lifecycle_policy_enabled        = optional(bool, true)<br/>    lifecycle_cool_tier_days        = optional(number, 30)<br/>    lifecycle_version_delete_days   = optional(number, 90)<br/>    lifecycle_snapshot_delete_days  = optional(number, 90)<br/>    lifecycle_prefix_match          = optional(list(string), ["uploads/"])<br/>  })</pre> | `{}` | no |
+| <a name="input_storage_network_rules_bypass"></a> [storage\_network\_rules\_bypass](#input\_storage\_network\_rules\_bypass) | Traffic permitted to bypass the storage network rules. Valid values: AzureServices, Logging, Metrics, None. | `set(string)` | <pre>[<br/>  "AzureServices"<br/>]</pre> | no |
+| <a name="input_storage_network_rules_default_action"></a> [storage\_network\_rules\_default\_action](#input\_storage\_network\_rules\_default\_action) | Default action for the storage account's network rules. Defaults to Deny. Set to 'Allow' if media is served straight from the blob endpoint rather than through a CDN custom domain. | `string` | `"Deny"` | no |
+| <a name="input_storage_network_rules_ip_rules"></a> [storage\_network\_rules\_ip\_rules](#input\_storage\_network\_rules\_ip\_rules) | Extra public IPv4 addresses or CIDRs permitted to reach the storage data plane. Cloudflare's live IPv4 egress ranges are added automatically when cdn\_provider = 'cloudflare'. Azure Storage rejects IPv6 CIDRs and /31-/32 prefixes. | `list(string)` | `[]` | no |
+| <a name="input_storage_network_rules_virtual_network_subnet_ids"></a> [storage\_network\_rules\_virtual\_network\_subnet\_ids](#input\_storage\_network\_rules\_virtual\_network\_subnet\_ids) | Extra subnet IDs permitted to reach the storage data plane. The site's App Service subnet is always included. | `list(string)` | `[]` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources | `map(string)` | `{}` | no |
 | <a name="input_tenant_id"></a> [tenant\_id](#input\_tenant\_id) | Azure AD tenant ID | `string` | n/a | yes |
 | <a name="input_wordpress_version"></a> [wordpress\_version](#input\_wordpress\_version) | WordPress Docker image tag (PHP version) | `string` | `"8.4"` | no |

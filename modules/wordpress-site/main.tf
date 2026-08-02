@@ -15,9 +15,11 @@ terraform {
   required_version = ">= 1.6.0"
 
   required_providers {
+    # Constrained to 4.x: the sub-modules use arguments that azurerm 5.x renamed
+    # or removed. Without an upper bound, a fresh init resolves 5.x and fails.
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = ">= 4.0.0"
+      version = "~> 4.0"
     }
     azapi = {
       source  = "azure/azapi"
@@ -27,9 +29,12 @@ terraform {
       source  = "hashicorp/random"
       version = ">= 3.5.0"
     }
+    # Constrained to 5.x: data.cloudflare_ip_ranges exposes ipv4_cidrs/ipv6_cidrs
+    # in 5.x but ipv4_cidr_blocks/ipv6_cidr_blocks in 4.x, and this module uses
+    # the 5.x names below.
     cloudflare = {
       source  = "cloudflare/cloudflare"
-      version = ">= 4.0.0"
+      version = "~> 5.0"
     }
     time = {
       source  = "hashicorp/time"
@@ -284,6 +289,25 @@ module "storage" {
   lifecycle_snapshot_delete_days  = var.storage.lifecycle_snapshot_delete_days
   lifecycle_prefix_match          = var.storage.lifecycle_prefix_match
 
+  # Data-plane network rules.
+  # The App Service subnet is always allow-listed (it carries the Microsoft.Storage
+  # service endpoint), so the WordPress plugin can read and write media.
+  # When Cloudflare is the CDN we also allow-list its live IPv4 egress ranges, which
+  # covers origin pulls if the blob endpoint is fronted by a Cloudflare custom domain.
+  # Cloudflare's IPv6 ranges are intentionally omitted: Azure Storage IP rules are
+  # IPv4-only and reject IPv6 CIDRs.
+  # See https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/
+  network_rules_default_action = var.storage_network_rules_default_action
+  network_rules_bypass         = var.storage_network_rules_bypass
+  network_rules_ip_rules = distinct(concat(
+    var.cdn_provider == "cloudflare" ? data.cloudflare_ip_ranges.current[0].ipv4_cidrs : [],
+    var.storage_network_rules_ip_rules
+  ))
+  network_rules_virtual_network_subnet_ids = distinct(concat(
+    [module.networking.app_subnet_id],
+    var.storage_network_rules_virtual_network_subnet_ids
+  ))
+
   tags = local.common_tags
 
   # Explicit dependency on Layer 1
@@ -308,6 +332,16 @@ module "key_vault" {
 
   # Key Vault name suffix (avoids soft-delete conflicts)
   name_suffix = var.key_vault_name_suffix
+
+  # Network rules. The App Service subnet is always allow-listed - it carries the
+  # Microsoft.KeyVault service endpoint (see networking module) and the site's
+  # managed identity resolves Key Vault references from there.
+  public_network_access_enabled = var.key_vault_public_network_access_enabled
+  network_acls_ip_rules         = var.key_vault_network_acls_ip_rules
+  network_acls_virtual_network_subnet_ids = distinct(concat(
+    [module.networking.app_subnet_id],
+    var.key_vault_network_acls_virtual_network_subnet_ids
+  ))
 
   # Secrets are available now because we created App Insights early
   secrets = {

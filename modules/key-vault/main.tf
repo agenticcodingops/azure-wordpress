@@ -33,13 +33,16 @@ resource "azurerm_key_vault" "main" {
   purge_protection_enabled        = var.purge_protection_enabled
   soft_delete_retention_days      = var.soft_delete_retention_days
 
-  # Network rules - allow public access for CI/CD deployment
-  # Can be locked down after initial deployment if needed
+  # Network rules - deny by default (CKV_AZURE_109 / AVD-AZU-0013).
+  # bypass = AzureServices lets trusted Azure services (including App Service
+  # Key Vault reference resolution) through. Anything else - notably Terraform's
+  # own data-plane calls to create secrets - must be allow-listed explicitly via
+  # network_acls_ip_rules, or public access re-enabled deliberately.
   network_acls {
     bypass                     = "AzureServices"
     default_action             = var.public_network_access_enabled ? "Allow" : "Deny"
-    ip_rules                   = []
-    virtual_network_subnet_ids = []
+    ip_rules                   = var.network_acls_ip_rules
+    virtual_network_subnet_ids = var.network_acls_virtual_network_subnet_ids
   }
 
   tags = merge(var.tags, {
