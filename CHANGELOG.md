@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0](https://github.com/agenticcodingops/azure-wordpress/compare/v1.3.2...v2.0.0) (2026-08-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **wordpress-site:** six object attributes no longer carry a default, so consumers that leave them unset now get environment-selected values instead of the old fixed ones.
+* Key Vault and Storage now deny public data-plane access by default.
+* Key Vault and Storage now deny public data-plane access by default.
+
+### Features
+
+* **wordpress-site:** activate environment-aware defaults ([#21](https://github.com/agenticcodingops/azure-wordpress/issues/21)) ([ee3615f](https://github.com/agenticcodingops/azure-wordpress/commit/ee3615f8b6549e2adf5f3beb9337cbd34237bba8))
+* **wordpress-site:** add extra_secrets and extra_secret_app_settings pass-through ([6287b5f](https://github.com/agenticcodingops/azure-wordpress/commit/6287b5f2e685d9a18d07b42b09f6930e908a6167))
+
+
+### Bug Fixes
+
+* **app-service:** use an allow-list for deployment-slot tier detection ([9edabcf](https://github.com/agenticcodingops/azure-wordpress/commit/9edabcfef8b3220f355819b21800a98821ef9aba))
+* pin providers and deny public data-plane access by default ([27443d7](https://github.com/agenticcodingops/azure-wordpress/commit/27443d730358e986f2e35bc19f200743c7cb4fd5))
+* pin providers and deny public data-plane access by default ([#19](https://github.com/agenticcodingops/azure-wordpress/issues/19)) ([8d81c74](https://github.com/agenticcodingops/azure-wordpress/commit/8d81c74c8aec607fd3e8fac92e4d228b03800561))
+
 ## [1.3.2](https://github.com/agenticcodingops/azure-wordpress/compare/v1.3.1...v1.3.2) (2026-06-12)
 
 
