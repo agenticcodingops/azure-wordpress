@@ -93,3 +93,70 @@ Update the `?ref=` references in README.md and examples/ to the version being re
 ## CI Pipeline (.github/workflows/validate.yml)
 
 Four jobs: Format Check (tofu fmt), Validate (11 modules), Checkov, Documentation (terraform-docs). All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
+
+`validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
+
+## Provider Version Pinning
+
+**Every module must declare `required_providers` with an upper bound.** Lock files are gitignored and CI runs `tofu init -backend=false` fresh, so an unconstrained module resolves the newest major and breaks:
+
+- `azurerm` is pinned `~> 4.0`. On 5.x, six of eleven modules fail to validate (`enable_rbac_authorization` → `rbac_authorization_enabled`, subnet `service_endpoints` removed, `private_dns_zone_name` → `private_dns_zone_id`, `minimum_tls_version`/`behavior_on_match` removed).
+- `cloudflare` is pinned `~> 5.0`. `data.cloudflare_ip_ranges` renamed its attributes across majors: 4.x exposes `ipv4_cidr_blocks`/`ipv6_cidr_blocks`, 5.x exposes `ipv4_cidrs`/`ipv6_cidrs`. This repo uses the 5.x names.
+
+Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure` declare theirs inline in `main.tf`. Adding a module without constraints reintroduces the breakage silently — it only surfaces when a new provider major ships.
+
+## Static Analysis Constraints
+
+**Checkov and Trivy resolve a plain variable's `default`, but cannot see through an `optional()` attribute inside an object-typed variable.** A secure default written as `storage = { network_rules_default_action = optional(string, "Deny") }` is reported as a misconfiguration (CKV_AZURE_35); the same default on a top-level variable passes. Verified: literal → pass, plain variable → pass, object attribute → fail, `coalesce()` via a `local` → fail.
+
+This is why the Key Vault and Storage network settings are **top-level variables** (`key_vault_network_acls_*`, `storage_network_rules_*`) rather than attributes on the `key_vault`/`storage` objects. Keep security-relevant defaults flat.
+
+Terraform itself has the same indirection, with a sharper consequence: an `optional()` default is substituted **before** the value reaches any `coalesce()`, so `coalesce(var.database.backup_retention_days, ...)` can never see `null` while that attribute declares `optional(number, 7)`. Any environment-aware default written that way is dead code. Leave the object attribute's default off and select in the `*_config` local.
+
+## Network Posture
+
+Key Vault and Storage **deny public data-plane access by default**. Two consequences that break deploys if unhandled:
+
+- **Terraform is not a trusted Azure service.** Its data-plane calls create the Key Vault secrets, so they 403 unless the deploying principal is reachable — set `key_vault_network_acls_ip_rules` to the runner's egress IP, or `key_vault_public_network_access_enabled = true`. The site's App Service subnet is allow-listed automatically (it carries the `Microsoft.KeyVault` service endpoint), so Key Vault references keep resolving.
+- **Media bypasses the CDN.** The WordPress Blob Storage plugin rewrites media URLs to `<account>.blob.core.windows.net`, so browsers fetch from Azure directly, from IPs that cannot be allow-listed. Unless the blob endpoint is fronted by a CDN custom domain, set `storage_network_rules_default_action = "Allow"`.
+
+`key_vault_public_network_access_enabled` drives **only** `network_acls.default_action` — the module never sets the ARM-level `public_network_access_enabled` argument. This is a firewall on a live public endpoint, not a private-endpoint configuration, so IP rules and service-endpoint subnets apply normally.
+
+When `cdn_provider = "cloudflare"`, Cloudflare's live IPv4 egress ranges are added to the storage allow-list via `data.cloudflare_ip_ranges`. IPv6 is omitted deliberately: Azure Storage IP rules are IPv4-only and also reject `/31`–`/32` prefixes.
+
+## Replacement Hazards
+
+`azurerm_mysql_flexible_server.geo_redundant_backup_enabled` is **ForceNew** — Azure can only choose geo-redundancy at creation. Changing it on an existing server produces a plan that destroys and recreates it, and `modules/database` sets `prevent_destroy = false`. Never change this default without an explicit migration note. `sku_name` is *not* ForceNew: tier changes (including General Purpose → Burstable) are an in-place resize with a 60–120s restart.
+
+## Composition vs Standalone Modules
+
+`modules/wordpress-site` does **not** instantiate `modules/monitoring`. It creates the Log Analytics Workspace and Application Insights inline so the App Insights connection string is available for Key Vault before App Service exists. Consequences:
+
+- The standalone `monitoring` module enforces a production floor of `max(var.retention_days, 90)`; the composition applies its own environment-aware default with **no floor**.
+- Changes to `modules/monitoring` do not affect consumers of `wordpress-site`.
+
+`modules/database` similarly has a `null_resource` guard rejecting Burstable SKUs in production, but the composition hardcodes `enforce_production_sku = false`, so that guard is unreachable through `wordpress-site`.
+
+## Reproducing CI Locally
+
+Pin to the exact versions CI uses, or results diverge:
+
+```bash
+# Clean-room validate — mirrors CI, which has no lock file
+rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl
+for m in modules/*/; do (cd "$m" && terraform init -backend=false >/dev/null && terraform validate); done
+
+# Checkov 3.3.8 (CI's version) with the exact skip list from validate.yml
+pip install checkov==3.3.8
+python -m checkov.main -d . --quiet --framework terraform --compact --skip-check <list-from-validate.yml>
+
+# terraform-docs 0.20.0 — the version terraform-docs/gh-actions@v1.4.1 bundles.
+# Regeneration is idempotent; an untouched module must produce a zero diff.
+
+# Trivy at the pre-commit hook's severity
+trivy config . --severity CRITICAL --skip-dirs .terraform
+```
+
+Local hooks run via **lefthook**, not pre-commit (`lefthook install`). Pre-commit runs secret scanning, `terraform fmt` and Trivy CRITICAL on changed directories only; pre-push adds Checkov and tflint. Missing tools fail open with a warning. Disable with `LEFTHOOK=0 git commit`, or `global.local_hooks_enabled: false` in `scan-config.yaml`. Note the hooks scan **changed directories**, so touching a previously untouched module can surface pre-existing findings.
+
+`docs/` and `tests/` exist but are empty — there is no test suite, and `docs/runbooks/database-snapshot.md` referenced from `modules/database/main.tf` does not exist.

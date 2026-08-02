@@ -13,6 +13,84 @@ This module creates a complete WordPress site deployment including:
 - App Service with managed identity
 - Optional monitoring and CDN
 
+## ⚠️ Upgrading to v2.0.0 — read before you apply
+
+v2.0.0 changes four defaults in ways that **will take a working site down** if you upgrade
+without setting them. All four are opt-out; none require a code change.
+
+### 1. Key Vault denies public access → Terraform gets 403
+
+`network_acls.default_action` now defaults to `Deny`. Terraform is **not** a trusted Azure
+service, so its data-plane calls that create secrets are refused. GitHub-hosted runners have
+a large, rotating egress range that cannot practically be allow-listed.
+
+```hcl
+# Deploying from hosted CI (GitHub Actions, Azure DevOps hosted agents):
+key_vault_public_network_access_enabled = true
+
+# Or, with a self-hosted runner on a stable IP or inside the VNet:
+key_vault_network_acls_ip_rules                   = ["203.0.113.10"]
+key_vault_network_acls_virtual_network_subnet_ids = [azurerm_subnet.runner.id]
+```
+
+The site's own App Service subnet is allow-listed automatically, so `@Microsoft.KeyVault(...)`
+references keep resolving either way. This only affects the deploying principal.
+
+### 2. Storage denies public access → media 403s for every visitor
+
+`network_rules.default_action` now defaults to `Deny`. This is the easiest one to under-read:
+the WordPress Blob Storage plugin rewrites media URLs to the storage account's **own** blob
+endpoint, so **end users' browsers fetch media directly from Azure** — from arbitrary
+consumer IPs that can never be allow-listed. Every image on the site returns 403.
+
+```hcl
+# Media served straight from the blob endpoint (the default plugin behaviour):
+storage_network_rules_default_action = "Allow"
+```
+
+Keep `Deny` only if the blob endpoint is fronted by a CDN custom domain, in which case
+allow-list the CDN's egress ranges via `storage_network_rules_ip_rules`. When
+`cdn_provider = "cloudflare"`, Cloudflare's live IPv4 ranges are added automatically — but
+that covers origin pulls only, not direct browser fetches.
+
+### 3. `database.geo_redundant_backup` now resolves `true` in production
+
+Previously this was always `false` regardless of environment. If you never set it explicitly,
+production now requests geo-redundant backup, and there are three ways that bites:
+
+- **Not all regions have a geo-backup target.** Sweden Central reports
+  `supportedGeoBackupRegions: []`, so the apply fails outright.
+- **Unsupported on the Burstable tier** (`B_*` SKUs) entirely.
+- **It is `ForceNew`.** Azure can only choose geo-redundancy at creation, so changing it on
+  an existing server plans a **destroy and recreate**, and `modules/database` sets
+  `prevent_destroy = false`.
+
+```hcl
+database = {
+  geo_redundant_backup = false   # keep pre-v2.0.0 behaviour
+}
+```
+
+Check your region first: `az mysql flexible-server list-skus -l <region> --query "[].supportedGeoBackupRegions"`.
+
+### 4. `database.sku_name` now resolves `B_Standard_B2s` in nonprod
+
+Previously every environment got `GP_Standard_D2ds_v4`. Nonprod now gets Burstable — a
+**downgrade on upgrade** for anyone relying on the old accidental behaviour, and a compute
+tier change that forces a restart. Pin it if you were depending on General Purpose:
+
+```hcl
+database = {
+  sku_name = "GP_Standard_D2ds_v4"
+}
+```
+
+### Everything else
+
+`backup_retention_days` (production 7 → 30), `monitoring.retention_days` (production 30 → 90)
+and `app_service.health_check_path` (`/` → `/wp-includes/images/blank.gif`) also become
+environment-aware. All are online, non-destructive changes.
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
