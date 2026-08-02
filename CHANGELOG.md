@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0](https://github.com/agenticcodingops/azure-wordpress/compare/v1.3.2...v2.0.0) (2026-08-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* Key Vault and Storage now deny public data-plane access by default.
+* **wordpress-site:** six object attributes no longer carry a default, so consumers that leave them unset now get environment-selected values instead of the old fixed ones.
+
+### 🚑 Upgrade path — read before applying
+
+Four new defaults will take a working site down if adopted blind. All are opt-out; none
+require a code change. Full detail in [`modules/wordpress-site/README.md`](modules/wordpress-site/README.md#-upgrading-to-v200--read-before-you-apply).
+
+**1. Key Vault denies public access → your pipeline gets 403.** Terraform is not a trusted
+Azure service, so its data-plane calls that create secrets are refused. GitHub-hosted runners
+have a rotating egress range that cannot practically be allow-listed.
+
+```hcl
+key_vault_public_network_access_enabled = true   # deploying from hosted CI
+```
+
+**2. Storage denies public access → media 403s for every visitor.** The WordPress Blob
+Storage plugin rewrites media URLs to the storage account's own blob endpoint, so **end
+users** fetch media directly from Azure, from arbitrary IPs that can never be allow-listed.
+This breaks images site-wide, not just deployment.
+
+```hcl
+storage_network_rules_default_action = "Allow"   # unless the blob endpoint is behind a CDN custom domain
+```
+
+**3. `database.geo_redundant_backup` now resolves `true` in production.** Previously always
+`false`. Three ways this bites: some regions have **no geo-backup target at all** (Sweden
+Central reports `supportedGeoBackupRegions: []`) and the apply fails; it is **unsupported on
+the Burstable tier**; and it is **`ForceNew`**, so changing it on an existing server plans a
+**destroy and recreate** with `prevent_destroy = false`.
+
+```hcl
+database = { geo_redundant_backup = false }      # keep pre-v2.0.0 behaviour
+```
+
+**4. `database.sku_name` now resolves `B_Standard_B2s` in nonprod** instead of
+`GP_Standard_D2ds_v4` — a downgrade-on-upgrade that forces replacement. Pin it if you relied
+on the old behaviour.
+
+Also environment-aware, all online and non-destructive: `backup_retention_days` (production
+7 → 30), `monitoring.retention_days` (production 30 → 90), `app_service.health_check_path`
+(`/` → `/wp-includes/images/blank.gif`).
+
+### Features
+
+* **wordpress-site:** activate environment-aware defaults ([#21](https://github.com/agenticcodingops/azure-wordpress/issues/21)) ([ee3615f](https://github.com/agenticcodingops/azure-wordpress/commit/ee3615f8b6549e2adf5f3beb9337cbd34237bba8))
+* **wordpress-site:** add extra_secrets and extra_secret_app_settings pass-through ([6287b5f](https://github.com/agenticcodingops/azure-wordpress/commit/6287b5f2e685d9a18d07b42b09f6930e908a6167))
+
+
+### Bug Fixes
+
+* **app-service:** use an allow-list for deployment-slot tier detection ([9edabcf](https://github.com/agenticcodingops/azure-wordpress/commit/9edabcfef8b3220f355819b21800a98821ef9aba))
+* pin providers and deny public data-plane access by default ([#19](https://github.com/agenticcodingops/azure-wordpress/issues/19)) ([8d81c74](https://github.com/agenticcodingops/azure-wordpress/commit/8d81c74c8aec607fd3e8fac92e4d228b03800561))
+
 ## [1.3.2](https://github.com/agenticcodingops/azure-wordpress/compare/v1.3.1...v1.3.2) (2026-06-12)
 
 
