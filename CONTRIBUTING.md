@@ -58,10 +58,13 @@ git checkout -b docs/update-readme
    - [checkov](https://www.checkov.io/)
    - [terraform-docs](https://terraform-docs.io/)
 
-2. Configure pre-commit hooks (recommended):
+2. Configure local hooks (recommended):
    ```bash
-   pre-commit install
+   lefthook install
    ```
+   The hooks are configured in `lefthook.yml` and dispatch through `hooks/dispatcher.sh`.
+   To skip them for a single command, use `LEFTHOOK=0 git commit ...`; to disable them
+   entirely, set `global.local_hooks_enabled: false` in `scan-config.yaml`.
 
 ### Terraform Formatting Requirements
 

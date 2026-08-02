@@ -62,7 +62,7 @@ Never use `>-` folded scalar or spaces after commas — it breaks the skip list 
 
 ## terraform-docs
 
-All module READMEs use `<!-- BEGIN_TF_DOCS -->` / `<!-- END_TF_DOCS -->` markers. CI runs `terraform-docs/gh-actions@v1.3.0` with `fail-on-diff: true` across all 11 modules. After changing any variable, output, or resource, regenerate the README for that module.
+All module READMEs use `<!-- BEGIN_TF_DOCS -->` / `<!-- END_TF_DOCS -->` markers. CI runs `terraform-docs/gh-actions@v1.4.1` (which bundles terraform-docs 0.20.0) with `fail-on-diff: true` across all 11 modules. After changing any variable, output, or resource, regenerate the README for that module.
 
 Do NOT leave `.terraform/` or `.terraform.lock.hcl` in module directories when running terraform-docs — lock files cause provider versions to resolve differently than CI (which runs without `terraform init`).
 
@@ -72,13 +72,17 @@ Do NOT leave `.terraform/` or `.terraform.lock.hcl` in module directories when r
 
 **Secret management:** Database password generated via `random_password`, stored in Key Vault, referenced by App Service via `@Microsoft.KeyVault(SecretUri=...)`. Both production and staging slot managed identities get Key Vault Get/List access.
 
-**Staging slots:** Only created on Standard (S\*) and Premium (P\*) SKUs. Detection: `!startswith(var.sku_name, "B")`. The slot gets its own managed identity and auto-generated `WP_HOME`/`WP_SITEURL` pointing to the staging hostname.
+**Staging slots:** Only created on Standard (S\*) and Premium (P\*) SKUs. Detection: `can(regex("^(S|P)[0-9]", var.sku_name))` — an allow-list, so an unrecognised tier fails closed rather than erroring at apply. Free (F1) and Shared (D1) have no slots either, though `sku_name`'s validation regex already rejects them. The slot gets its own managed identity and auto-generated `WP_HOME`/`WP_SITEURL` pointing to the staging hostname.
 
 **Naming convention:** `{resource-type}-{project_name}-{site_name}-{env_suffix}` where env_suffix is `np` (nonprod) or `prod` (production). Storage accounts: `sttr{site_abbrev}{env_suffix}` (alphanumeric only, 3-24 chars).
 
 ## Module Source Pinning
 
-Examples and consumer repos use `?ref=v<VERSION>` for stability. When publishing a new version: update all `?ref=` references in README.md and examples/, update CHANGELOG.md, then tag.
+Examples and consumer repos use `?ref=v<VERSION>` for stability.
+
+**Releases are cut by release-please, never by hand.** Merging a conventional commit to `main` makes release-please open a `chore(main): release X.Y.Z` PR; merging *that* PR creates the tag and GitHub Release. `fix:` bumps patch, `feat:` minor, `feat!:`/`BREAKING CHANGE:` major; `docs:`/`chore:` do not bump at all. Do not run `git tag` — it desyncs `.release-please-manifest.json` and `CHANGELOG.md`.
+
+Update the `?ref=` references in README.md and examples/ to the version being released as part of the change itself, since release-please does not rewrite the examples.
 
 ## CI Pipeline (.github/workflows/validate.yml)
 

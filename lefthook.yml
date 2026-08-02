@@ -1,6 +1,6 @@
 # ============================================================================
 # lefthook.yml — local pre-commit/pre-push scanning for azure-wordpress (Terraform).
-# Calls the vendored hooks/dispatcher.sh (auto-code-scanning @ v2.0.4).
+# Calls the vendored hooks/dispatcher.sh (auto-code-scanning @ v2.0.9).
 #
 # OFF-SWITCH: set `global.local_hooks_enabled: false` in scan-config.yaml (the
 # dispatcher honors it and skips everything), or `LEFTHOOK=0 git commit`. CI is
