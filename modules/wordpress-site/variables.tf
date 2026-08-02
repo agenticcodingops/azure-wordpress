@@ -54,14 +54,18 @@ variable "wordpress_version" {
 }
 
 # Database configuration
+# NOTE: sku_name, backup_retention_days and geo_redundant_backup intentionally carry
+# NO default. Their default is selected by environment in main.tf's db_config local;
+# giving them an optional() default here would mean null never reaches that coalesce
+# and the environment-aware branch could never run.
 variable "database" {
-  description = "Database configuration"
+  description = "Database configuration. sku_name, backup_retention_days and geo_redundant_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo_redundant_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading."
   type = object({
-    sku_name                  = optional(string, "GP_Standard_D2ds_v4")
+    sku_name                  = optional(string)
     storage_size_gb           = optional(number, 100)
     storage_iops              = optional(number, 700)
-    backup_retention_days     = optional(number, 7)
-    geo_redundant_backup      = optional(bool, false)
+    backup_retention_days     = optional(number)
+    geo_redundant_backup      = optional(bool)
     high_availability_mode    = optional(string, "Disabled")
     storage_auto_grow_enabled = optional(bool, true)
   })
@@ -153,7 +157,7 @@ variable "app_service" {
     use_shared_plan                = optional(bool, false)
     sku_name                       = optional(string, "P1v3")
     always_on                      = optional(bool, true)
-    health_check_path              = optional(string, "/")
+    health_check_path              = optional(string)
     worker_count                   = optional(number, 1)
     extra_app_settings             = optional(map(string), {})
     extra_sticky_app_setting_names = optional(list(string), [])
@@ -186,7 +190,7 @@ variable "front_door" {
   type = object({
     enabled               = optional(bool, true)
     sku_name              = optional(string, "Premium_AzureFrontDoor")
-    waf_mode              = optional(string, "Prevention")
+    waf_mode              = optional(string)
     cache_uploads_minutes = optional(number, 180)
     cache_static_minutes  = optional(number, 180)
   })
@@ -228,7 +232,7 @@ variable "monitoring" {
   description = "Monitoring configuration"
   type = object({
     log_analytics_workspace_id = optional(string, null)
-    retention_days             = optional(number, 30)
+    retention_days             = optional(number)
     alerts = optional(object({
       http_5xx_threshold   = optional(number, 10)
       high_cpu_threshold   = optional(number, 80)
@@ -259,6 +263,25 @@ variable "networking" {
 
 variable "tags" {
   description = "Tags to apply to all resources"
+  type        = map(string)
+  default     = {}
+}
+
+# Additional Key Vault secrets supplied by the consumer
+# Additive pass-through: the module's own secrets are merged last, so a consumer can
+# never clobber db-password, storage-key or appinsights-connection.
+variable "extra_secrets" {
+  description = "Additional secrets to store in the site's Key Vault, as secret name => value. Module-owned names (db-password, storage-key, appinsights-connection) take precedence and cannot be overridden. Keys must be known at plan time."
+  type        = map(string)
+  sensitive   = true
+  default     = {}
+}
+
+# App settings rendered as Key Vault references to secrets in this site's vault
+# Resolved inside the module because feeding the module's own key_vault output back
+# into its input would be a self-referential cycle.
+variable "extra_secret_app_settings" {
+  description = "Map of App Service app setting name => secret name in the site's Key Vault. Each entry is rendered as @Microsoft.KeyVault(SecretUri=...) and applied to both the production app and the staging slot. Takes precedence over app_service.extra_app_settings on key collision."
   type        = map(string)
   default     = {}
 }

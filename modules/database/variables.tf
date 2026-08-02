@@ -101,8 +101,12 @@ variable "backup_retention_days" {
   }
 }
 
+# WARNING: azurerm marks geo_redundant_backup_enabled as ForceNew - geo-redundancy can
+# only be chosen when the server is created. Changing this on an existing server produces
+# a plan that DESTROYS AND RECREATES it, losing all data (prevent_destroy is false below).
+# Decide at creation time; to change it later, back up and restore deliberately.
 variable "geo_redundant_backup" {
-  description = "Enable geo-redundant backup (recommended for production)"
+  description = "Enable geo-redundant backup (recommended for production). FORCES REPLACEMENT: azurerm can only set this at creation, so changing it on an existing server destroys and recreates it. Choose at creation time."
   type        = bool
   default     = false
 }

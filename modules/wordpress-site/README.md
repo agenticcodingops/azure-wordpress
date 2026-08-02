@@ -13,6 +13,84 @@ This module creates a complete WordPress site deployment including:
 - App Service with managed identity
 - Optional monitoring and CDN
 
+## ⚠️ Upgrading to v2.0.0 — read before you apply
+
+v2.0.0 changes four defaults in ways that **will take a working site down** if you upgrade
+without setting them. All four are opt-out; none require a code change.
+
+### 1. Key Vault denies public access → Terraform gets 403
+
+`network_acls.default_action` now defaults to `Deny`. Terraform is **not** a trusted Azure
+service, so its data-plane calls that create secrets are refused. GitHub-hosted runners have
+a large, rotating egress range that cannot practically be allow-listed.
+
+```hcl
+# Deploying from hosted CI (GitHub Actions, Azure DevOps hosted agents):
+key_vault_public_network_access_enabled = true
+
+# Or, with a self-hosted runner on a stable IP or inside the VNet:
+key_vault_network_acls_ip_rules                   = ["203.0.113.10"]
+key_vault_network_acls_virtual_network_subnet_ids = [azurerm_subnet.runner.id]
+```
+
+The site's own App Service subnet is allow-listed automatically, so `@Microsoft.KeyVault(...)`
+references keep resolving either way. This only affects the deploying principal.
+
+### 2. Storage denies public access → media 403s for every visitor
+
+`network_rules.default_action` now defaults to `Deny`. This is the easiest one to under-read:
+the WordPress Blob Storage plugin rewrites media URLs to the storage account's **own** blob
+endpoint, so **end users' browsers fetch media directly from Azure** — from arbitrary
+consumer IPs that can never be allow-listed. Every image on the site returns 403.
+
+```hcl
+# Media served straight from the blob endpoint (the default plugin behaviour):
+storage_network_rules_default_action = "Allow"
+```
+
+Keep `Deny` only if the blob endpoint is fronted by a CDN custom domain, in which case
+allow-list the CDN's egress ranges via `storage_network_rules_ip_rules`. When
+`cdn_provider = "cloudflare"`, Cloudflare's live IPv4 ranges are added automatically — but
+that covers origin pulls only, not direct browser fetches.
+
+### 3. `database.geo_redundant_backup` now resolves `true` in production
+
+Previously this was always `false` regardless of environment. If you never set it explicitly,
+production now requests geo-redundant backup, and there are three ways that bites:
+
+- **Not all regions have a geo-backup target.** Sweden Central reports
+  `supportedGeoBackupRegions: []`, so the apply fails outright.
+- **Unsupported on the Burstable tier** (`B_*` SKUs) entirely.
+- **It is `ForceNew`.** Azure can only choose geo-redundancy at creation, so changing it on
+  an existing server plans a **destroy and recreate**, and `modules/database` sets
+  `prevent_destroy = false`.
+
+```hcl
+database = {
+  geo_redundant_backup = false   # keep pre-v2.0.0 behaviour
+}
+```
+
+Check your region first: `az mysql flexible-server list-skus -l <region> --query "[].supportedGeoBackupRegions"`.
+
+### 4. `database.sku_name` now resolves `B_Standard_B2s` in nonprod
+
+Previously every environment got `GP_Standard_D2ds_v4`. Nonprod now gets Burstable — a
+**downgrade on upgrade** for anyone relying on the old accidental behaviour, and a compute
+tier change that forces a restart. Pin it if you were depending on General Purpose:
+
+```hcl
+database = {
+  sku_name = "GP_Standard_D2ds_v4"
+}
+```
+
+### Everything else
+
+`backup_retention_days` (production 7 → 30), `monitoring.retention_days` (production 30 → 90)
+and `app_service.health_check_path` (`/` → `/wp-includes/images/blank.gif`) also become
+environment-aware. All are online, non-destructive changes.
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
@@ -76,20 +154,22 @@ This module creates a complete WordPress site deployment including:
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_alert_recipients"></a> [alert\_recipients](#input\_alert\_recipients) | Email addresses for alert notifications | `list(string)` | `[]` | no |
-| <a name="input_app_service"></a> [app\_service](#input\_app\_service) | App Service configuration | <pre>object({<br/>    plan_id                        = optional(string, null)<br/>    use_shared_plan                = optional(bool, false)<br/>    sku_name                       = optional(string, "P1v3")<br/>    always_on                      = optional(bool, true)<br/>    health_check_path              = optional(string, "/")<br/>    worker_count                   = optional(number, 1)<br/>    extra_app_settings             = optional(map(string), {})<br/>    extra_sticky_app_setting_names = optional(list(string), [])<br/>    sticky_connection_string_names = optional(list(string), [])<br/>    staging_app_settings_override  = optional(map(string), {})<br/>    staging_always_on              = optional(bool, false)<br/>  })</pre> | `{}` | no |
+| <a name="input_app_service"></a> [app\_service](#input\_app\_service) | App Service configuration | <pre>object({<br/>    plan_id                        = optional(string, null)<br/>    use_shared_plan                = optional(bool, false)<br/>    sku_name                       = optional(string, "P1v3")<br/>    always_on                      = optional(bool, true)<br/>    health_check_path              = optional(string)<br/>    worker_count                   = optional(number, 1)<br/>    extra_app_settings             = optional(map(string), {})<br/>    extra_sticky_app_setting_names = optional(list(string), [])<br/>    sticky_connection_string_names = optional(list(string), [])<br/>    staging_app_settings_override  = optional(map(string), {})<br/>    staging_always_on              = optional(bool, false)<br/>  })</pre> | `{}` | no |
 | <a name="input_cdn_provider"></a> [cdn\_provider](#input\_cdn\_provider) | CDN provider: 'cloudflare' (uses Cloudflare CDN/WAF), 'azure\_front\_door' (uses Azure Front Door), 'direct' (no CDN) | `string` | `"direct"` | no |
 | <a name="input_cloudflare"></a> [cloudflare](#input\_cloudflare) | Cloudflare configuration | <pre>object({<br/>    enabled                        = optional(bool, false)<br/>    account_id                     = optional(string, "")<br/>    domain                         = optional(string, "")<br/>    subdomain                      = optional(string, "")<br/>    proxied                        = optional(bool, true)<br/>    enable_waf                     = optional(bool, false) # Default false for Free plan compatibility<br/>    enable_page_rules              = optional(bool, true)  # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)<br/>    enable_cache_rules             = optional(bool, false) # Requires paid plan<br/>    enable_zone_setting_overrides  = optional(bool, false) # Some settings can't be modified on Free plan<br/>    enable_wordpress_optimizations = optional(bool, true)<br/>  })</pre> | `{}` | no |
 | <a name="input_custom_domain"></a> [custom\_domain](#input\_custom\_domain) | Custom domain for the WordPress site | `string` | n/a | yes |
-| <a name="input_database"></a> [database](#input\_database) | Database configuration | <pre>object({<br/>    sku_name                  = optional(string, "GP_Standard_D2ds_v4")<br/>    storage_size_gb           = optional(number, 100)<br/>    storage_iops              = optional(number, 700)<br/>    backup_retention_days     = optional(number, 7)<br/>    geo_redundant_backup      = optional(bool, false)<br/>    high_availability_mode    = optional(string, "Disabled")<br/>    storage_auto_grow_enabled = optional(bool, true)<br/>  })</pre> | `{}` | no |
+| <a name="input_database"></a> [database](#input\_database) | Database configuration. sku\_name, backup\_retention\_days and geo\_redundant\_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo\_redundant\_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. | <pre>object({<br/>    sku_name                  = optional(string)<br/>    storage_size_gb           = optional(number, 100)<br/>    storage_iops              = optional(number, 700)<br/>    backup_retention_days     = optional(number)<br/>    geo_redundant_backup      = optional(bool)<br/>    high_availability_mode    = optional(string, "Disabled")<br/>    storage_auto_grow_enabled = optional(bool, true)<br/>  })</pre> | `{}` | no |
 | <a name="input_enable_resource_lock"></a> [enable\_resource\_lock](#input\_enable\_resource\_lock) | Enable CanNotDelete lock on the resource group (requires User Access Administrator role) | `bool` | `false` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
-| <a name="input_front_door"></a> [front\_door](#input\_front\_door) | Front Door configuration | <pre>object({<br/>    enabled               = optional(bool, true)<br/>    sku_name              = optional(string, "Premium_AzureFrontDoor")<br/>    waf_mode              = optional(string, "Prevention")<br/>    cache_uploads_minutes = optional(number, 180)<br/>    cache_static_minutes  = optional(number, 180)<br/>  })</pre> | `{}` | no |
+| <a name="input_extra_secret_app_settings"></a> [extra\_secret\_app\_settings](#input\_extra\_secret\_app\_settings) | Map of App Service app setting name => secret name in the site's Key Vault. Each entry is rendered as @Microsoft.KeyVault(SecretUri=...) and applied to both the production app and the staging slot. Takes precedence over app\_service.extra\_app\_settings on key collision. | `map(string)` | `{}` | no |
+| <a name="input_extra_secrets"></a> [extra\_secrets](#input\_extra\_secrets) | Additional secrets to store in the site's Key Vault, as secret name => value. Module-owned names (db-password, storage-key, appinsights-connection) take precedence and cannot be overridden. Keys must be known at plan time. | `map(string)` | `{}` | no |
+| <a name="input_front_door"></a> [front\_door](#input\_front\_door) | Front Door configuration | <pre>object({<br/>    enabled               = optional(bool, true)<br/>    sku_name              = optional(string, "Premium_AzureFrontDoor")<br/>    waf_mode              = optional(string)<br/>    cache_uploads_minutes = optional(number, 180)<br/>    cache_static_minutes  = optional(number, 180)<br/>  })</pre> | `{}` | no |
 | <a name="input_key_vault_name_suffix"></a> [key\_vault\_name\_suffix](#input\_key\_vault\_name\_suffix) | Suffix appended to Key Vault name. Bump this to avoid conflicts with soft-deleted vaults that have purge protection enabled. | `string` | `"9"` | no |
 | <a name="input_key_vault_network_acls_ip_rules"></a> [key\_vault\_network\_acls\_ip\_rules](#input\_key\_vault\_network\_acls\_ip\_rules) | Public IPv4 addresses or CIDRs permitted to reach the Key Vault data plane. Add the deploying principal's egress IP (e.g. the CI runner). | `list(string)` | `[]` | no |
 | <a name="input_key_vault_network_acls_virtual_network_subnet_ids"></a> [key\_vault\_network\_acls\_virtual\_network\_subnet\_ids](#input\_key\_vault\_network\_acls\_virtual\_network\_subnet\_ids) | Extra subnet IDs permitted to reach the Key Vault data plane. The site's App Service subnet is always included. | `list(string)` | `[]` | no |
 | <a name="input_key_vault_public_network_access_enabled"></a> [key\_vault\_public\_network\_access\_enabled](#input\_key\_vault\_public\_network\_access\_enabled) | Allow unrestricted public access to the Key Vault data plane. Defaults to false (deny). Terraform is not a trusted Azure service, so its calls to create secrets need either an entry in key\_vault\_network\_acls\_ip\_rules or this set to true. | `bool` | `false` | no |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for all resources | `string` | n/a | yes |
-| <a name="input_monitoring"></a> [monitoring](#input\_monitoring) | Monitoring configuration | <pre>object({<br/>    log_analytics_workspace_id = optional(string, null)<br/>    retention_days             = optional(number, 30)<br/>    alerts = optional(object({<br/>      http_5xx_threshold   = optional(number, 10)<br/>      high_cpu_threshold   = optional(number, 80)<br/>      db_failure_threshold = optional(number, 5)<br/>      alert_window_minutes = optional(number, 5)<br/>    }), {})<br/>  })</pre> | `{}` | no |
+| <a name="input_monitoring"></a> [monitoring](#input\_monitoring) | Monitoring configuration | <pre>object({<br/>    log_analytics_workspace_id = optional(string, null)<br/>    retention_days             = optional(number)<br/>    alerts = optional(object({<br/>      http_5xx_threshold   = optional(number, 10)<br/>      high_cpu_threshold   = optional(number, 80)<br/>      db_failure_threshold = optional(number, 5)<br/>      alert_window_minutes = optional(number, 5)<br/>    }), {})<br/>  })</pre> | `{}` | no |
 | <a name="input_networking"></a> [networking](#input\_networking) | Networking configuration | <pre>object({<br/>    vnet_address_space           = optional(string, "10.0.0.0/16")<br/>    app_subnet_cidr              = optional(string, "10.0.0.0/24")<br/>    db_subnet_cidr               = optional(string, "10.0.1.0/24")<br/>    private_endpoint_subnet_cidr = optional(string, "10.0.2.0/24")<br/>  })</pre> | `{}` | no |
 | <a name="input_plan_density_limit"></a> [plan\_density\_limit](#input\_plan\_density\_limit) | Maximum sites per App Service Plan (recommended 8-10 for P1v3) | `number` | `10` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |
@@ -128,6 +208,7 @@ This module creates a complete WordPress site deployment including:
 | <a name="output_front_door_profile_id"></a> [front\_door\_profile\_id](#output\_front\_door\_profile\_id) | Front Door profile ID |
 | <a name="output_front_door_resource_guid"></a> [front\_door\_resource\_guid](#output\_front\_door\_resource\_guid) | Front Door profile resource GUID (for App Service IP restriction) |
 | <a name="output_key_vault_id"></a> [key\_vault\_id](#output\_key\_vault\_id) | Key Vault ID |
+| <a name="output_key_vault_secret_versionless_uris"></a> [key\_vault\_secret\_versionless\_uris](#output\_key\_vault\_secret\_versionless\_uris) | Map of Key Vault secret names to versionless URIs, including any supplied via extra\_secrets |
 | <a name="output_key_vault_uri"></a> [key\_vault\_uri](#output\_key\_vault\_uri) | Key Vault URI |
 | <a name="output_log_analytics_workspace_id"></a> [log\_analytics\_workspace\_id](#output\_log\_analytics\_workspace\_id) | Log Analytics Workspace ID |
 | <a name="output_resource_group_id"></a> [resource\_group\_id](#output\_resource\_group\_id) | ID of the resource group |

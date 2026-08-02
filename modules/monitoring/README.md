@@ -21,6 +21,15 @@ Retention:
 - Nonprod: 30 days
 - Production: 90 days (enforced minimum)
 
+The production minimum is enforced in `main.tf` as
+`var.environment == "production" ? max(var.retention_days, 90) : var.retention_days`, so
+an explicit production value below 90 is raised to 90.
+
+Note the `wordpress-site` composition module does **not** use this module — it creates the
+Log Analytics Workspace and Application Insights inline and applies its own
+environment-aware default (90 for production, 30 for nonprod) with no floor, so a
+production value below 90 set there is honoured as given.
+
 ## Inputs
 
 | Name | Description | Type | Default | Required |

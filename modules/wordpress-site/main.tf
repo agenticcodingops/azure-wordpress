@@ -314,6 +314,16 @@ module "storage" {
   depends_on = [module.networking]
 }
 
+locals {
+  # Secrets this module owns. Merged LAST over var.extra_secrets so a consumer-supplied
+  # entry can never clobber the DB password, storage key or App Insights connection string.
+  module_secrets = {
+    "db-password"            = random_password.db.result
+    "storage-key"            = module.storage.primary_access_key
+    "appinsights-connection" = azurerm_application_insights.main.connection_string
+  }
+}
+
 # Key Vault Module
 # Created BEFORE app_service - uses placeholder for principal_id
 # Access policy is added later after app_service creates its managed identity
@@ -343,12 +353,10 @@ module "key_vault" {
     var.key_vault_network_acls_virtual_network_subnet_ids
   ))
 
-  # Secrets are available now because we created App Insights early
-  secrets = {
-    "db-password"            = random_password.db.result
-    "storage-key"            = module.storage.primary_access_key
-    "appinsights-connection" = azurerm_application_insights.main.connection_string
-  }
+  # Secrets are available now because we created App Insights early.
+  # Consumer-supplied extras first, module-owned second: merge() gives later maps
+  # precedence, so the module's own secret names always win.
+  secrets = merge(var.extra_secrets, local.module_secrets)
 
   tags = local.common_tags
 
@@ -358,6 +366,16 @@ module "key_vault" {
     module.storage,
     azurerm_application_insights.main
   ]
+}
+
+locals {
+  # Key Vault references for consumer-supplied secrets, built here rather than by the
+  # consumer: referencing this module's key_vault output from its own input would be a
+  # cycle. The app-service module applies extra_app_settings to the staging slot too.
+  extra_secret_app_settings = {
+    for setting_name, secret_name in var.extra_secret_app_settings :
+    setting_name => "@Microsoft.KeyVault(SecretUri=${module.key_vault.secret_versionless_uris[secret_name]})"
+  }
 }
 
 # App Service Module (creates managed identity)
@@ -402,7 +420,8 @@ module "app_service" {
   app_insights_connection_string_secret_uri = try(module.key_vault.secret_versionless_uris["appinsights-connection"], "")
 
   # Staging and extra settings
-  extra_app_settings             = coalesce(var.app_service.extra_app_settings, {})
+  # Generated Key Vault references win over literal extra_app_settings on key collision
+  extra_app_settings             = merge(coalesce(var.app_service.extra_app_settings, {}), local.extra_secret_app_settings)
   extra_sticky_app_setting_names = coalesce(var.app_service.extra_sticky_app_setting_names, [])
   sticky_connection_string_names = coalesce(var.app_service.sticky_connection_string_names, [])
   staging_app_settings_override  = coalesce(var.app_service.staging_app_settings_override, {})

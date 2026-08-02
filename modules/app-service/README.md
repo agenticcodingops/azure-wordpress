@@ -102,6 +102,16 @@ Rolling updates via deployment slots:
 3. Swap staging ↔ production
 4. Rollback by swapping again
 
+**Requires Standard (S\*) or Premium (P\*).** Basic (B\*) has no deployment slots, and
+neither do Free (F1) or Shared (D1) — though `sku_name`'s validation regex rejects those
+outright. Detection is an allow-list, `can(regex("^(S|P)[0-9]", var.sku_name))`, so an
+unrecognised tier fails closed (no slot created) rather than failing at apply time.
+
+On a Basic plan the slot is silently skipped and the `staging_slot_hostname` and
+`staging_slot_principal_id` outputs are `null`. Consumers of the `wordpress-site`
+composition module get the same behaviour, driven by `shared_plan_sku` when using a
+shared plan.
+
 ## Validation Rules
 
 The module enforces these validations at plan time:
