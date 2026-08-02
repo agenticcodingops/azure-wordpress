@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0](https://github.com/agenticcodingops/azure-wordpress/compare/v2.0.0...v3.0.0) (2026-08-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **wordpress-site:** nonprod deployments that leave both new inputs unset get a Key Vault destroy-and-recreate. Azure permits enabling purge protection but never disabling it, and soft_delete_retention_days cannot be updated after creation, so Terraform can only reach the new values by replacing the vault. The apply fails unless key_vault_name_suffix is bumped in the same change, because the soft-deleted vault still holds the name and the provider recovers it rather than creating a new one. Set key_vault_purge_protection_enabled = true and key_vault_soft_delete_retention_days = 90 to keep the previous behaviour. Production consumers are unaffected.
+
+### 🚑 Upgrade path — read before applying
+
+**Production consumers who set neither new variable are unaffected** — the resolved values
+are still `true` and `90`, exactly what the module hardcoded before. Verified as an empty
+plan diff. Nothing to do.
+
+**Nonprod deployments that leave both new inputs unset will replace their Key Vault, and
+the apply fails if you do nothing.** Terraform destroys before it creates; the old vault
+soft-deletes still holding its name, and because azurerm's `recover_soft_deleted_key_vaults`
+defaults to `true`, the create step then *recovers that old vault* — with purge protection
+still on, which the new configuration tries to disable. Azure refuses.
+
+Pick one before upgrading:
+
+```hcl
+# A. Keep pre-v3.0.0 behaviour exactly. No replacement, no plan diff.
+key_vault_purge_protection_enabled   = true
+key_vault_soft_delete_retention_days = 90
+
+# B. Adopt the new nonprod defaults, and give the new vault a free name in the same apply.
+key_vault_name_suffix = "12"   # any value not already soft-deleted
+```
+
+Under option B no secret value is lost: `random_password.db` has no `keepers`, so the
+database password is preserved and re-written into the new vault (**it is not rotated**);
+`storage-key` and `appinsights-connection` are re-read from the untouched live resources;
+`extra_secrets` are re-uploaded from your own configuration. Mind the 24-character vault
+name limit, `kv-{site≤14}-{env}{suffix}`.
+
+Note the asymmetry: only *disabling* purge protection forces replacement. Turning it back
+**on** for a nonprod vault later is a free in-place update.
+
+Full detail in [`modules/wordpress-site/README.md`](modules/wordpress-site/README.md#️-upgrading-to-v300--read-before-you-apply).
+
+### Features
+
+* **wordpress-site:** expose Key Vault purge protection and soft-delete retention ([#24](https://github.com/agenticcodingops/azure-wordpress/issues/24)) ([354bd9c](https://github.com/agenticcodingops/azure-wordpress/commit/354bd9c2b442614ddd3de8236970014d70fce66d))
+* **wordpress-site:** expose `app_service_principal_id`, removing the need for a consumer to re-read the site with a `data "azurerm_linux_web_app"` block ([354bd9c](https://github.com/agenticcodingops/azure-wordpress/commit/354bd9c2b442614ddd3de8236970014d70fce66d))
+
 ## [2.0.0](https://github.com/agenticcodingops/azure-wordpress/compare/v1.3.2...v2.0.0) (2026-08-02)
 
 
