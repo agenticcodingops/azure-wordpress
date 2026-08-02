@@ -104,7 +104,44 @@ Update the `?ref=` references in README.md and examples/ to the version being re
 
 Four jobs: Format Check (tofu fmt), Validate (11 modules), Checkov, Documentation (terraform-docs). All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
 
-**`claude-review` fails on every PR** and has done since at least #21 — its `ANTHROPIC_API_KEY` secret is empty. `main` has no branch protection, so nothing is gated on it and prior PRs merged with it red. Don't chase it as a regression from your change.
+**`claude-review` fails on every PR — the `CLAUDE_CODE_OAUTH_TOKEN` secret is expired, not the workflow.**
+`main` has no branch protection, so nothing is gated on it and prior PRs merged with it red. Don't
+chase it as a regression from your change.
+
+> **Corrected 2026-08-02.** This file previously blamed an empty `ANTHROPIC_API_KEY`. That is the
+> wrong secret: `claude-code-review.yml` passes `claude_code_oauth_token`, and `ANTHROPIC_API_KEY`
+> is *expected* to be empty. The workflow is fine and needs no edit.
+
+Evidence, in case it regresses again — the failure is deliberately hard to read, because the action
+logs only `Claude execution failed: result is_error:true` and hides the message ("full output hidden
+for security"). Debug mode does **not** lift that redaction; only `show_full_output: true` does.
+Diagnose from the result record instead:
+
+- **Expired credential:** `num_turns: 1`, `duration_ms` ≈ 2000, `total_cost_usd: 0` — rejected before
+  any billable token. A genuine review reports 3–16 turns and a non-zero cost.
+- Runs here succeeded through **2026-06-15** on this same token, then every run from 2026-08-02
+  onward failed — 18 in a row across 9.6 h.
+- Same day, same `anthropics/claude-code-action@v1`, same Claude Code v2.1.220, same
+  `claude-sonnet-5`, byte-identical workflow: `agenticcodingops/agentic-research-stack` **passed** at
+  15:51 mid-window. The only difference is token age. That mid-window success also rules out an
+  account-wide usage limit, which would be time-boxed and hit every repo at once.
+- The same expiry hit `auto-code-scanning` and `multi-ai-deep-research-pipeline` on 2026-07-26; both
+  were fixed by rotating the secret and passed seconds later. This repo was missed.
+
+Rotate it (the value cannot be recovered — it must be re-minted):
+
+```bash
+claude setup-token   # interactive; prints a fresh token
+gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo agenticcodingops/azure-wordpress   # paste at the prompt
+```
+
+`agenticcodingops/trackroutinely` still carries a token from 2026-01-24 and has never had a green
+Claude run — rotate it there too.
+
+**Do not edit `claude-code-review.yml` to test this.** The action verifies the workflow file is
+byte-identical to the copy on the default branch; any PR that touches it makes the action *skip*
+with "Workflow validation failed" and report **green** without reviewing anything. Several of this
+workflow's historical "successes" are exactly that — a skip, not a review.
 
 `validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
 
@@ -141,35 +178,52 @@ Three compounding traps, each of which hid the failure:
    non-zero on conflict, names the paths, and touches neither the worktree nor any branch —
    no scratch branch to clobber:
 
+   Exit status is the signal: **0** clean, **1** conflict, other values an error whose output
+   is unspecified. Measured here (git 2.54): unrelated histories give **128**, so branch on
+   the status rather than using `if`/`else`. But **1 is not exclusively "conflict"** — an
+   unresolvable ref also exits 1, printing `not something we can merge` on *stderr*. Redirect
+   only stdout, so that message stays visible. And fail closed if the fetch fails, or you
+   silently check a stale `origin/main` and get a false clean:
+
    ```bash
-   git fetch -q origin            # a stale origin/main gives a false clean
-   if git merge-tree --write-tree origin/main <branch> >/dev/null; then
-     echo clean
-   else
-     git merge-tree --write-tree --name-only origin/main <branch> | sed -n '2,/^$/p'
-   fi
+   git fetch -q origin || { echo "fetch failed — refusing to check against a stale ref"; exit 1; }
+   git merge-tree --write-tree origin/main <branch> >/dev/null   # stderr intentionally not redirected
+   case $? in
+     0) echo "clean" ;;
+     1) git merge-tree --write-tree --name-only origin/main <branch> | sed -n '2,/^$/p' ;;  # or a bad ref — check stderr
+     *) echo "merge-tree errored — check the refs" ;;
+   esac
    ```
 
-3. **A conflicted PR gets no workflow runs at all.** Measured on #23: while it was
+3. **A conflicted PR gets no `pull_request` workflow runs.** GitHub cannot build the merge
+   ref, so every `pull_request`-triggered workflow is skipped. Measured on #23: while it was
    `CONFLICTING` there were **zero** runs against its head SHA — not `validate.yml`, not
-   `terraform-scan.yml`, and not Semgrep or the review bot either, despite those two having
-   no `branches:` filter. Runs from an earlier stacked PR on *other* SHAs sit in the same
-   list and are easy to misread as the current one, which makes a conflicted PR look quiet
-   rather than broken.
+   `terraform-scan.yml`, and not `semgrep.yml` or `claude-code-review.yml` either, even though
+   those two carry no `branches:` filter.
 
-   Mergeability alone does not prove this — a PR can pass CI and *later* go
-   `CONFLICTING`/`DIRTY` when `main` moves, which does not erase the earlier runs. Compare
-   runs against the current head SHA:
+   The scope matters: workflows on *other* triggers are unaffected. `claude.yml` fires on
+   `issue_comment` / `pull_request_review_comment`, so `@claude` still answers on a conflicted
+   PR — which makes it look alive while the gates that matter never ran.
+
+   Mergeability alone does not prove any of this — a PR can pass CI and *later* go
+   `CONFLICTING`/`DIRTY` when `main` moves, which does not erase the earlier runs. Query by
+   the exact head SHA rather than by branch, or stale runs on older SHAs come back and are
+   easy to misread as current:
 
    ```bash
-   git rev-parse --short HEAD
-   gh api "repos/agenticcodingops/azure-wordpress/actions/runs?branch=<branch>" \
-     -q '.workflow_runs[] | "\(.head_sha[0:7]) \(.conclusion // .status) \(.name)"'
+   head_sha="$(git rev-parse HEAD)"
+   gh api "repos/agenticcodingops/azure-wordpress/actions/runs?head_sha=${head_sha}" \
+     -q '.workflow_runs[] | "\(.conclusion // .status)\t\(.name)"'
    ```
 
 **Instead:** target `main` directly, one PR at a time; merge each fully and let release-please
-settle before opening the next. For a multi-commit PR prefer a **merge commit** over a squash,
-so each `feat:`/`fix:` subject reaches `main` and earns its own changelog entry.
+settle before opening the next.
+
+**Merge vs squash.** Prefer a **merge commit** only when *every* commit in the PR is a real
+release unit, so each `feat:`/`fix:` subject reaches `main` and earns its own changelog entry.
+If the branch carries `wip`/`fixup`/`address review comments` noise, **squash** instead —
+release-please parses every subject that lands, and a merge would drag the noise into the
+changelog. That is why release-please's own default recommendation is squash-merge.
 
 **Recovering an already-stacked branch** — two options, with a real trade-off:
 
@@ -180,8 +234,23 @@ so each `feat:`/`fix:` subject reaches `main` and earns its own changelog entry.
   for that edit.
 - *Rebuild on `main` with only the unlanded commits* —
   `git rebase --onto origin/main <squashed-base> <branch>`. No duplicate entries, but it
-  rewrites SHAs, so force-push and re-request review. Keep the subjects intact either way:
-  release-please parses them.
+  rewrites SHAs, so force-push and re-request review.
+
+  `<squashed-base>` is **the pre-squash commit on your branch whose content already reached
+  `main` via the squash** — not `origin/main`, and not the squash commit. `rebase --onto`
+  replays "commits in `<branch>` not in `<upstream>`", so naming that commit is what excludes
+  the already-landed work. Confirm before running it:
+
+  ```bash
+  git log --oneline <squashed-base>..<branch>     # must list ONLY the unlanded commits
+  git diff --stat <squashed-base> origin/main     # empty = same content, so it is the right base
+  ```
+
+  Worked example from #23: `<squashed-base>` was `27443d7`, whose tree is identical to the
+  squash `8d81c74` on `main`. Using the merge-base (`fd952bc`) instead would have replayed
+  `27443d7` as well and reintroduced the very duplicate this option exists to avoid.
+
+Keep the subjects intact either way — release-please parses them.
 
 ## Provider Version Pinning
 
