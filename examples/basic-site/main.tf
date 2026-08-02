@@ -41,6 +41,34 @@ module "wordpress" {
   tenant_id     = data.azurerm_client_config.current.tenant_id
   custom_domain = var.custom_domain
 
+  # ---------------------------------------------------------------------------
+  # Data-plane network access. Both Key Vault and Storage DENY public access by
+  # default (v2.0.0+). Leaving these unset makes a first apply fail, so they are
+  # set explicitly here rather than left as an exercise.
+  # ---------------------------------------------------------------------------
+
+  # Terraform is not a trusted Azure service: its calls to create the Key Vault
+  # secrets are refused unless the deploying principal can reach the vault.
+  # GitHub-hosted runners have a large rotating egress range that cannot be
+  # allow-listed, hence `true` here. On a self-hosted runner with a stable IP,
+  # prefer the tighter option and delete this line:
+  #   key_vault_network_acls_ip_rules = ["203.0.113.10"]
+  key_vault_public_network_access_enabled = true
+
+  # The WordPress Blob Storage plugin rewrites media URLs to the account's own
+  # blob endpoint, so visitors fetch media straight from Azure, from arbitrary
+  # IPs. With the default "Deny" every image 403s for end users. Keep "Deny" only
+  # if the blob endpoint is fronted by a CDN custom domain.
+  storage_network_rules_default_action = "Allow"
+
+  # Key Vault lifecycle (v3.0.0). Unset, these default by environment:
+  # production true/90, nonprod false/7. Nonprod defaults to purge protection OFF
+  # so a destroyed vault's name is immediately reusable. Uncomment to keep the
+  # pre-v3.0.0 behaviour on an existing nonprod deployment and avoid a vault
+  # replacement -- see modules/wordpress-site/README.md.
+  #   key_vault_purge_protection_enabled   = true
+  #   key_vault_soft_delete_retention_days = 90
+
   # Use Cloudflare for CDN (cost-optimized)
   cdn_provider = "cloudflare"
   cloudflare = {

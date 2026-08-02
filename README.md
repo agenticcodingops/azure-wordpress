@@ -544,6 +544,22 @@ The module automatically handles these -- do NOT duplicate them in `extra_app_se
 Both production and staging slot managed identities are granted Key Vault `Get`/`List`
 access automatically, so `@Microsoft.KeyVault(SecretUri=...)` references resolve on both slots.
 
+To grant the site access to resources this module does **not** own (your own Key Vault,
+a storage account, a Service Bus namespace), use the exported principal IDs directly
+rather than re-reading the app with a `data "azurerm_linux_web_app"` block:
+
+```hcl
+resource "azurerm_key_vault_access_policy" "shared" {
+  key_vault_id       = azurerm_key_vault.shared.id
+  tenant_id          = data.azurerm_client_config.current.tenant_id
+  object_id          = module.wordpress_site.app_service_principal_id
+  secret_permissions = ["Get", "List"]
+}
+```
+
+`staging_slot_principal_id` is exported the same way, and is `null` on SKUs without slots
+(B-tier), so guard on it before using it.
+
 ## Requirements
 
 | Name | Version |
