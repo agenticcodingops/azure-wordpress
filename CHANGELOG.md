@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0](https://github.com/agenticcodingops/azure-wordpress/compare/v2.0.0...v3.0.0) (2026-08-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **wordpress-site:** nonprod deployments that leave both new inputs unset get a Key Vault destroy-and-recreate. Azure permits enabling purge protection but never disabling it, and soft_delete_retention_days cannot be updated after creation, so Terraform can only reach the new values by replacing the vault. The apply fails unless key_vault_name_suffix is bumped in the same change, because the soft-deleted vault still holds the name and the provider recovers it rather than creating a new one. Set key_vault_purge_protection_enabled = true and key_vault_soft_delete_retention_days = 90 to keep the previous behaviour. Production consumers are unaffected.
+
+### Features
+
+* **wordpress-site:** expose Key Vault purge protection and soft-delete retention ([#24](https://github.com/agenticcodingops/azure-wordpress/issues/24)) ([354bd9c](https://github.com/agenticcodingops/azure-wordpress/commit/354bd9c2b442614ddd3de8236970014d70fce66d))
+
 ## [2.0.0](https://github.com/agenticcodingops/azure-wordpress/compare/v1.3.2...v2.0.0) (2026-08-02)
 
 
