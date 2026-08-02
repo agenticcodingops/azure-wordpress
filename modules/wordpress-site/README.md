@@ -20,11 +20,15 @@ v3.0.0 makes Key Vault purge protection and soft-delete retention environment-aw
 **Production consumers who set neither new variable see no change at all** — the resolved
 values are still `true` and `90`, exactly what the module hardcoded before.
 
-**Nonprod consumers get a destroy-and-recreate of the Key Vault.** The new defaults are
-`purge_protection_enabled = false` and `soft_delete_retention_days = 7`, and Azure fixes
-both at creation: purge protection can be turned on but *never* off, and the retention
-window "can only be configured one time and cannot be updated". Terraform's only way to
-reach the new values on an existing vault is to replace it.
+**Nonprod deployments that leave both new inputs unset get a destroy-and-recreate of the
+Key Vault.** The new defaults are `purge_protection_enabled = false` and
+`soft_delete_retention_days = 7`, and neither can be reached in place on an existing vault:
+Azure permits *enabling* purge protection but never disabling it, and the retention window
+"can only be configured one time and cannot be updated". Terraform's only route to the new
+values is to replace the vault.
+
+Note the asymmetry — going the other way is free. Turning purge protection **on** for a
+nonprod vault is an in-place update and needs no rebuild or suffix change.
 
 ### If you do nothing, the apply fails
 
@@ -44,11 +48,16 @@ key_vault_soft_delete_retention_days = 90
 key_vault_name_suffix = "12"   # any value not already soft-deleted
 ```
 
-Under option B the vault is rebuilt empty. The three module-owned secrets
-(`db-password`, `storage-key`, `appinsights-connection`) regenerate automatically;
-anything you supply through `extra_secrets` is re-uploaded from your own configuration.
-Rotating `db-password` is applied to the MySQL server in the same run. Note the 24-character
-vault-name limit — `kv-{site≤14}-{env}{suffix}` — when choosing a suffix.
+Under option B the replacement vault is repopulated in the same apply, and no secret value
+is lost. `random_password.db` declares no `keepers`, so the existing database password is
+preserved and simply re-written into the new vault — **it is not rotated**, and the copy
+inside the soft-deleted vault stays valid until that vault is purged. `storage-key` and
+`appinsights-connection` are re-read from the live Storage and App Insights resources,
+which are not touched. Anything you pass through `extra_secrets` is re-uploaded from your
+own configuration. The App Service's `@Microsoft.KeyVault(...)` references are rewritten to
+the new vault automatically.
+
+Note the 24-character vault-name limit — `kv-{site≤14}-{env}{suffix}` — when choosing a suffix.
 
 ### Why the default changed
 

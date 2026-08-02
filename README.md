@@ -443,7 +443,7 @@ Set any of these explicitly and your value is used; leave it unset and the value
 | `front_door.waf_mode` | `Prevention` | `Detection` | in-place |
 | `monitoring.retention_days` | 90 | 30 | in-place |
 | `app_service.health_check_path` | `/wp-includes/images/blank.gif` | same | in-place |
-| `key_vault_purge_protection_enabled` | `true` | `false` | **replaces the vault** |
+| `key_vault_purge_protection_enabled` | `true` | `false` | in-place to enable; **replaces the vault** to disable |
 | `key_vault_soft_delete_retention_days` | 90 | 7 | **replaces the vault** |
 
 > **`geo_redundant_backup` is create-time only.** Azure can only choose geo-redundancy when
@@ -456,10 +456,12 @@ Set any of these explicitly and your value is used; leave it unset and the value
 > to `false` before upgrading, or take a backup and accept the replacement. New deployments
 > on v2.0.0+ are unaffected — the server is simply created with geo-redundancy on.
 >
-> **The two Key Vault settings are also create-time only.** Purge protection can be enabled
-> but never disabled, and the retention window cannot be updated, so changing either on an
-> existing vault plans a **destroy and recreate**. Upgrading an existing **nonprod**
-> deployment to v3.0.0 therefore replaces its vault, and the apply fails unless
+> **The two Key Vault settings are effectively create-time only — in one direction.** Purge
+> protection can be turned *on* in place, but never off; the retention window cannot be
+> updated at all. So the new nonprod values (`false`/`7`) are unreachable on an existing
+> vault and plan a **destroy and recreate**, while *hardening* a nonprod vault later is a
+> free in-place update. Upgrading an existing **nonprod** deployment that leaves both inputs
+> unset therefore replaces its vault, and the apply fails unless
 > `key_vault_name_suffix` is bumped in the same change — the soft-deleted vault still holds
 > the name, and the provider would recover it rather than create a new one. Set both to
 > `true`/`90` to keep the old behaviour. See

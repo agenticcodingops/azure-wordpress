@@ -102,7 +102,7 @@ variables.
 ## Purge Protection and Vault Lifecycle
 
 `purge_protection_enabled` defaults to `true` and `soft_delete_retention_days` to `90`.
-Both are **fixed by Azure at creation**:
+Neither can be relaxed once the vault exists:
 
 - Purge protection can be enabled but **never disabled**. Terraform models a `true → false`
   change as a destroy-and-recreate.
