@@ -84,6 +84,11 @@ output "key_vault_uri" {
   value       = module.key_vault.uri
 }
 
+output "key_vault_secret_versionless_uris" {
+  description = "Map of Key Vault secret names to versionless URIs, including any supplied via extra_secrets"
+  value       = module.key_vault.secret_versionless_uris
+}
+
 # Storage outputs
 output "storage_account_name" {
   description = "Storage Account name"

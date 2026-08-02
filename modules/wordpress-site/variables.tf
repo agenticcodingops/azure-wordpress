@@ -263,6 +263,25 @@ variable "tags" {
   default     = {}
 }
 
+# Additional Key Vault secrets supplied by the consumer
+# Additive pass-through: the module's own secrets are merged last, so a consumer can
+# never clobber db-password, storage-key or appinsights-connection.
+variable "extra_secrets" {
+  description = "Additional secrets to store in the site's Key Vault, as secret name => value. Module-owned names (db-password, storage-key, appinsights-connection) take precedence and cannot be overridden. Keys must be known at plan time."
+  type        = map(string)
+  sensitive   = true
+  default     = {}
+}
+
+# App settings rendered as Key Vault references to secrets in this site's vault
+# Resolved inside the module because feeding the module's own key_vault output back
+# into its input would be a self-referential cycle.
+variable "extra_secret_app_settings" {
+  description = "Map of App Service app setting name => secret name in the site's Key Vault. Each entry is rendered as @Microsoft.KeyVault(SecretUri=...) and applied to both the production app and the staging slot. Takes precedence over app_service.extra_app_settings on key collision."
+  type        = map(string)
+  default     = {}
+}
+
 # Key Vault name suffix to avoid conflicts with soft-deleted vaults
 variable "key_vault_name_suffix" {
   description = "Suffix appended to Key Vault name. Bump this to avoid conflicts with soft-deleted vaults that have purge protection enabled."
