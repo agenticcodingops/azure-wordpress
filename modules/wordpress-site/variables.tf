@@ -116,6 +116,26 @@ variable "key_vault_network_acls_virtual_network_subnet_ids" {
   default     = []
 }
 
+# Key Vault lifecycle. Both default to null so the environment-aware branch in
+# main.tf's kv_config local can fire - a non-null default here would be substituted
+# before coalesce ever saw it, making that branch dead code (the bug fixed in #21).
+variable "key_vault_purge_protection_enabled" {
+  description = "Enable Key Vault purge protection. Defaults by environment when unset: true in production, false in nonprod. WARNING: Azure permits enabling this but never disabling it, so changing it on an existing vault forces a destroy and recreate."
+  type        = bool
+  default     = null
+}
+
+variable "key_vault_soft_delete_retention_days" {
+  description = "Days a soft-deleted vault is retained (7-90). Defaults by environment when unset: 90 in production, 7 in nonprod. Azure fixes this at creation, so changing it on an existing vault forces a destroy and recreate."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.key_vault_soft_delete_retention_days == null || try(var.key_vault_soft_delete_retention_days >= 7 && var.key_vault_soft_delete_retention_days <= 90, false)
+    error_message = "key_vault_soft_delete_retention_days must be null or between 7 and 90."
+  }
+}
+
 # WARNING: the WordPress Blob Storage plugin points media URLs at the account's own
 # blob endpoint, so visitors fetch media directly from Azure rather than through the
 # CDN. Unless the blob endpoint is fronted by a CDN custom domain, set this to "Allow"

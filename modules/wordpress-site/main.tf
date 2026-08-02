@@ -79,6 +79,17 @@ locals {
     high_availability_mode = coalesce(var.database.high_availability_mode, "Disabled")
   }
 
+  # Key Vault lifecycle defaults with environment-aware settings.
+  # Purge protection is a production control: on nonprod, which is destroyed and rebuilt
+  # deliberately, it buys nothing and locks the vault name for the full retention window
+  # against everyone - see modules/key-vault/README.md.
+  # NOTE: both variables must default to null in variables.tf or these branches are
+  # unreachable, because optional()/non-null defaults are substituted before coalesce runs.
+  kv_config = {
+    purge_protection_enabled   = coalesce(var.key_vault_purge_protection_enabled, var.environment == "production")
+    soft_delete_retention_days = coalesce(var.key_vault_soft_delete_retention_days, var.environment == "production" ? 90 : 7)
+  }
+
   # App Service defaults
   # When using a shared plan, use the shared plan's SKU for feature detection (e.g., slot support)
   # This ensures the app-service module correctly determines what features are available
@@ -342,6 +353,12 @@ module "key_vault" {
 
   # Key Vault name suffix (avoids soft-delete conflicts)
   name_suffix = var.key_vault_name_suffix
+
+  # Vault lifecycle. Both are fixed by Azure at creation - purge protection can be
+  # turned on but never off, and the retention window cannot be updated - so changing
+  # either on an existing vault plans a destroy and recreate.
+  purge_protection_enabled   = local.kv_config.purge_protection_enabled
+  soft_delete_retention_days = local.kv_config.soft_delete_retention_days
 
   # Network rules. The App Service subnet is always allow-listed - it carries the
   # Microsoft.KeyVault service endpoint (see networking module) and the site's

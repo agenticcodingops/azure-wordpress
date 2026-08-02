@@ -38,7 +38,7 @@ Deploy multiple WordPress sites sharing a single App Service Plan for cost optim
 
 ## Version Pinning
 
-This example pins module sources to a specific release tag (`?ref=v2.0.0`). To use a different version:
+This example pins module sources to a specific release tag (`?ref=v3.0.0`). To use a different version:
 
 1. Check available versions on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page
 2. Update the `?ref=` tag for **both** `shared-infrastructure` and `wordpress-site` modules in `main.tf`

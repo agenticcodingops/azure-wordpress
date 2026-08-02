@@ -99,6 +99,38 @@ variables.
 > GitHub-hosted runners have a large, rotating egress range. Either use option 3, or a
 > self-hosted runner with a stable IP, or add the runner IP to the allow-list at deploy time.
 
+## Purge Protection and Vault Lifecycle
+
+`purge_protection_enabled` defaults to `true` and `soft_delete_retention_days` to `90`.
+Both are **fixed by Azure at creation**:
+
+- Purge protection can be enabled but **never disabled**. Terraform models a `true → false`
+  change as a destroy-and-recreate.
+- Soft-delete retention "can only be configured one time and cannot be updated", so changing
+  it also forces replacement.
+
+While a purge-protected vault is soft-deleted, **its name is unusable by anyone** for the
+full retention window. This is not a permissions problem — `az keyvault purge` returns
+`MethodNotAllowed` even for a principal holding Owner at subscription scope. There is no
+role, flag or support path that shortens it.
+
+Two consequences worth planning for:
+
+- **Name reuse.** Bump `name_suffix` when a purge-protected vault holds the name you want.
+  With purge protection *off*, no bump is needed: the provider's `purge_soft_delete_on_destroy`
+  (default `true`) purges the vault on destroy and frees the name immediately. Mind the
+  24-character limit on `kv-{site≤14}-{env}{suffix}`.
+- **Region pinning.** The provider's `recover_soft_deleted_key_vaults` also defaults to `true`,
+  so an apply that targets a soft-deleted name **recovers** the old vault instead of creating
+  one — and recovery restores it in its **original region**. Reusing a name during a region
+  migration silently strands the vault in the region you are migrating away from, while every
+  other resource moves. Bump `name_suffix` when changing `location`.
+
+The `wordpress-site` composition selects these by environment rather than taking this
+module's defaults — `true`/`90` in production, `false`/`7` in nonprod — via its
+`key_vault_purge_protection_enabled` and `key_vault_soft_delete_retention_days` variables.
+Calling this module directly keeps the safe defaults above.
+
 ## Validation Rules
 
 The module enforces these validations at plan time:
