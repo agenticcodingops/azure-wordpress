@@ -19,7 +19,8 @@ cd modules/<module> && terraform init -backend=false && terraform validate
 # Security scan
 trivy config . --severity HIGH,CRITICAL
 
-# Compliance scan (see Checkov section below)
+# Compliance scan. Checkov is deliberately NOT on PATH here (it would arm a dormant
+# pre-push hook) — see "Reproducing CI Locally" for the pinned, suffixed invocation.
 checkov -d . --framework terraform --quiet
 
 # Regenerate a module's README (CI enforces fail-on-diff)
@@ -33,7 +34,7 @@ terraform-docs markdown table --indent 2 --output-mode inject --output-file READ
 
 **Two-layer deployment model with explicit `depends_on`:**
 
-```
+```text
 Layer 1 (Foundation):  networking → dns-zones
 Layer 2 (Application): database, storage, key-vault → app-service → front-door/cloudflare
 ```
@@ -43,8 +44,9 @@ App Insights is created early (between layers) to break a circular dependency �
 **Composition module** (`modules/wordpress-site`) orchestrates everything. Consumers pass high-level objects (`database = {}`, `storage = {}`, `app_service = {}`) and the composition module fans out to sub-modules with environment-aware defaults.
 
 **Environment-aware defaults** in the composition module (not the sub-modules):
-- Production: 30-day backup retention, geo-redundant backup, GP_Standard_D2ds_v4 SKU, WAF Prevention mode, 90-day log retention
-- Nonprod: 7-day retention, no geo-redundancy, B_Standard_B2s SKU, WAF Detection mode, 30-day log retention
+
+- Production: 30-day backup retention, geo-redundant backup, GP_Standard_D2ds_v4 SKU, WAF Prevention mode, 90-day log retention, Key Vault purge protection on with 90-day soft-delete retention
+- Nonprod: 7-day retention, no geo-redundancy, B_Standard_B2s SKU, WAF Detection mode, 30-day log retention, Key Vault purge protection off with 7-day soft-delete retention
 
 These only fire for attributes whose `optional()` declaration carries **no default**, so
 `null` reaches the `coalesce()` in `main.tf`. An `optional(number, 7)` would make the
@@ -58,13 +60,21 @@ attribute's default off and select in the `*_config` local.
 
 ## Checkov skip_check Format
 
-**CRITICAL:** The `bridgecrewio/checkov-action` entrypoint uses unquoted `$INPUT_SKIP_CHECK`, causing bash word splitting. Always use a single comma-separated string with NO spaces:
+Use a single comma-separated string with NO spaces:
 
 ```yaml
 skip_check: CKV_TF_1,CKV_TF_2,CKV_AZURE_225
 ```
 
-Never use `>-` folded scalar or spaces after commas — it breaks the skip list silently.
+Never use a `>-` folded scalar — a multi-line skip list is not reassembled the way you expect.
+
+> **Corrected 2026-08-02.** This file previously claimed the action's entrypoint uses an
+> unquoted `$INPUT_SKIP_CHECK` and word-splits. That is **not true of the pinned image**:
+> `checkov 3.3.9`'s `github_action_resources/entrypoint.sh` builds `declare -a CKV_ARGS` via
+> an `add_csv` helper with every expansion quoted, splitting on comma only, and it even trims
+> one leading/trailing space per token. Keep the no-spaces convention (it is harmless and
+> portable), but do not reach for word splitting to explain a skip-list bug — it is not the
+> mechanism.
 
 ## terraform-docs
 
@@ -94,6 +104,8 @@ Update the `?ref=` references in README.md and examples/ to the version being re
 
 Four jobs: Format Check (tofu fmt), Validate (11 modules), Checkov, Documentation (terraform-docs). All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
 
+**`claude-review` fails on every PR** and has done since at least #21 — its `ANTHROPIC_API_KEY` secret is empty. `main` has no branch protection, so nothing is gated on it and prior PRs merged with it red. Don't chase it as a regression from your change.
+
 `validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
 
 ## Provider Version Pinning
@@ -107,9 +119,18 @@ Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure`
 
 ## Static Analysis Constraints
 
-**Checkov and Trivy resolve a plain variable's `default`, but cannot see through an `optional()` attribute inside an object-typed variable.** A secure default written as `storage = { network_rules_default_action = optional(string, "Deny") }` is reported as a misconfiguration (CKV_AZURE_35); the same default on a top-level variable passes. Verified: literal → pass, plain variable → pass, object attribute → fail, `coalesce()` via a `local` → fail.
+**Checkov and Trivy resolve a plain variable's `default`, but cannot see through an `optional()` attribute inside an object-typed variable.** A secure default written as `storage = { network_rules_default_action = optional(string, "Deny") }` is reported as a misconfiguration (CKV_AZURE_35); the same default on a top-level variable passes. Verified: literal → pass, plain variable → pass, object attribute → fail.
 
 This is why the Key Vault and Storage network settings are **top-level variables** (`key_vault_network_acls_*`, `storage_network_rules_*`) rather than attributes on the `key_vault`/`storage` objects. Keep security-relevant defaults flat.
+
+**An unresolvable value does not automatically fail — it depends on the check's base class.** This file previously generalised "`coalesce()` via a `local` → fail" from CKV_AZURE_35. That generalisation is wrong:
+
+- Checks deriving from `BaseResourceValueCheck` call `_is_variable_dependant()` *before* the equality test and return **UNKNOWN**, which is neither a pass nor a failure.
+- `CKV_AZURE_35` fails instead only because its check body is a bare string equality with no variable guard.
+
+Measured when v3.0.0 introduced `coalesce(var.key_vault_purge_protection_enabled, var.environment == "production")`: CKV_AZURE_110 moved PASSED → UNKNOWN, CKV_AZURE_42 stayed PASSED, and the run went **0 failed → 0 failed**. CI stayed green with no skip added. The real cost is silent: a check that used to be enforced simply stops being evaluated.
+
+**So: measure, don't assume.** Run checkov `-d .` from the repo root (never `-d modules/<x>` alone — the at-risk instance is the one rendered through the `module` call, and Checkov reports only that nested instance) before and after, and diff the failed-check sets. Do not pre-emptively add a skip.
 
 Terraform itself has the same indirection, with a sharper consequence: an `optional()` default is substituted **before** the value reaches any `coalesce()`, so `coalesce(var.database.backup_retention_days, ...)` can never see `null` while that attribute declares `optional(number, 7)`. Any environment-aware default written that way is dead code. Leave the object attribute's default off and select in the `*_config` local.
 
@@ -128,6 +149,17 @@ When `cdn_provider = "cloudflare"`, Cloudflare's live IPv4 egress ranges are add
 
 `azurerm_mysql_flexible_server.geo_redundant_backup_enabled` is **ForceNew** — Azure can only choose geo-redundancy at creation. Changing it on an existing server produces a plan that destroys and recreates it, and `modules/database` sets `prevent_destroy = false`. Never change this default without an explicit migration note. `sku_name` is *not* ForceNew: tier changes (including General Purpose → Burstable) are an in-place resize with a 60–120s restart.
 
+**Key Vault (v3.0.0) — the sharpest trap in the repo, because failure is an errored apply, not just data loss:**
+
+- `purge_protection_enabled` is one-way. Azure permits `false → true` **in place**, but never `true → false`; the reverse forces replacement. The asymmetry matters — hardening later is free.
+- `soft_delete_retention_days` "can only be configured one time and cannot be updated" — any change forces replacement.
+- **Replacing the vault fails unless `key_vault_name_suffix` is bumped in the same change.** Terraform destroys before it creates; the old vault soft-deletes still holding its name, and azurerm's `recover_soft_deleted_key_vaults` **defaults to `true`**, so the create step *recovers the old vault* rather than creating one — with purge protection still on, which the new config then tries to disable. Azure refuses.
+- A purge-protected soft-deleted vault locks its name for the full retention window against **everyone**: `az keyvault purge` returns `MethodNotAllowed` even for subscription Owner. No role or flag shortens it.
+- Recovery restores a vault **in its original region**. Reusing a name while changing `location` silently strands Key Vault in the old region — a data-residency violation. Always bump `key_vault_name_suffix` when changing region.
+- With purge protection *off*, none of this applies: `purge_soft_delete_on_destroy` (default `true`) purges on destroy and frees the name immediately.
+
+Vault names are capped at 24 chars — `kv-{site≤14}-{env}{suffix}` — so a long site name plus a 3-char suffix overflows.
+
 ## Composition vs Standalone Modules
 
 `modules/wordpress-site` does **not** instantiate `modules/monitoring`. It creates the Log Analytics Workspace and Application Insights inline so the App Insights connection string is available for Key Vault before App Service exists. Consequences:
@@ -136,6 +168,32 @@ When `cdn_provider = "cloudflare"`, Cloudflare's live IPv4 egress ranges are add
 - Changes to `modules/monitoring` do not affect consumers of `wordpress-site`.
 
 `modules/database` similarly has a `null_resource` guard rejecting Burstable SKUs in production, but the composition hardcodes `enforce_production_sku = false`, so that guard is unreachable through `wordpress-site`.
+
+## Verifying a Change Without Azure Credentials
+
+There is no test suite, and a real `terraform plan` needs credentials (`modules/key-vault` has `data "azurerm_client_config"`). Two techniques cover almost everything; both are offline and neither touches the repo.
+
+**1. `terraform console` for expression semantics.** Run against the real module, not a copy, with `TF_DATA_DIR` pointed outside the repo. This is how you prove an environment-aware default actually fires:
+
+```bash
+export TF_DATA_DIR=<scratch>/tfdata
+terraform -chdir=modules/wordpress-site init -backend=false
+BASE="-var project_name=x -var site_name=x -var location=eastus \
+      -var tenant_id=00000000-0000-0000-0000-0000000000aa -var custom_domain=x.example.com"
+echo 'jsonencode({raw=var.<new_var>, resolved=local.<x>_config})' \
+  | terraform -chdir=modules/wordpress-site console $BASE -var environment=production
+```
+
+Wrap in `jsonencode()` — bare `null` prints as a blank line and is easy to misread as "no output". Confirm the raw variable is `null` (or the `coalesce` fallback is dead code) and that an explicit `false` survives: `coalesce` skips `null` but **keeps `false` and `0`**, and skips `""`. Delete any `.terraform.lock.hcl` it leaves behind.
+
+**2. `terraform test` with `mock_provider` for a real plan.** Mocks the whole credential surface — with `cdn_provider = "direct"` the only live data source in the tree is `data.azurerm_client_config.current`, so one `mock_data` block suffices. The strongest available proof of backward compatibility is a **before/after plan differential**: extract `origin/main` and your working tree with `git archive` (use `git stash create` for the latter, so both sides are extracted identically and line-ending differences don't show up as spurious diffs), drop a byte-identical fixture in each, share one `.terraform.lock.hcl`, and diff the `-verbose` output. An empty diff means no plan change.
+
+Two constraints, both discovered the hard way:
+
+- The fixture **must** use a B-tier SKU (`app_service = { sku_name = "B1" }`). On S\*/P\* SKUs `azurerm_key_vault_access_policy.staging_slot` has `count = module.app_service.staging_slot_principal_id != null ? 1 : 0`, which is unknown at plan time on a greenfield plan — Terraform rejects it outright. `examples/basic-site` already uses B1.
+- Guard against vacuous results: an empty diff between two *failures* is also empty. Assert exit code 0, grep that the resource was positively planned, and grep its actual attribute values.
+
+Limits worth stating in any report: these are greenfield **create** plans, so they prove identical planned *arguments*, not provider-side diffing against real state — and mocks bypass `PlanResourceChange`, so **`# forces replacement` is invisible**. ForceNew claims must be sourced from the provider docs, not from these plans.
 
 ## Reproducing CI Locally
 
@@ -146,9 +204,15 @@ Pin to the exact versions CI uses, or results diverge:
 rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl
 for m in modules/*/; do (cd "$m" && terraform init -backend=false >/dev/null && terraform validate); done
 
-# Checkov 3.3.8 (CI's version) with the exact skip list from validate.yml
-pip install checkov==3.3.8
-python -m checkov.main -d . --quiet --framework terraform --compact --skip-check <list-from-validate.yml>
+# Checkov — CI runs 3.3.9, from `runs.image` in bridgecrewio/checkov-action@v12's
+# action.yml. v12 is a MOVING tag: re-read action.yml rather than trusting this number.
+#   gh api repos/bridgecrewio/checkov-action/contents/action.yml?ref=<v12-sha> \
+#     --jq '.content' | base64 -d | grep image:
+# Install SUFFIXED so plain `checkov` stays off PATH — see the hook warning below.
+pipx install --suffix=@339 checkov==3.3.9
+checkov@339 -d . --framework terraform -o json --skip-check <list-from-validate.yml>
+# Drop --quiet when comparing before/after: it hides PASSED and UNKNOWN, which is
+# exactly the signal you need (see Static Analysis Constraints).
 
 # terraform-docs 0.20.0 — the version terraform-docs/gh-actions@v1.4.1 bundles.
 # Regeneration is idempotent; an untouched module must produce a zero diff.
@@ -159,4 +223,6 @@ trivy config . --severity CRITICAL --skip-dirs .terraform
 
 Local hooks run via **lefthook**, not pre-commit (`lefthook install`). Pre-commit runs secret scanning, `terraform fmt` and Trivy CRITICAL on changed directories only; pre-push adds Checkov and tflint. Missing tools fail open with a warning. Disable with `LEFTHOOK=0 git commit`, or `global.local_hooks_enabled: false` in `scan-config.yaml`. Note the hooks scan **changed directories**, so touching a previously untouched module can surface pre-existing findings.
 
-`docs/` and `tests/` exist but are empty — there is no test suite, and `docs/runbooks/database-snapshot.md` referenced from `modules/database/main.tf` does not exist.
+**Installing Checkov arms a hook that is currently dormant.** `hooks/checkov.sh` does `require_tool checkov || exit 0`, so with Checkov absent from PATH the pre-push gate is a silent no-op. It also resolves `.checkov.yaml` from `.scanning/configs/`, which does not exist — so when it *does* run it runs with **no skip list at all**, and will flag many of the 23 checks `validate.yml` deliberately skips. Those findings are pre-existing and unrelated to your change; do not "fix" them. Keep Checkov off PATH (the `pipx --suffix` above), or use `LEFTHOOK=0 git push` once and say so in the PR. Do **not** commit `local_hooks_enabled: false` (repo-wide, disables the mandatory secret gate), and do **not** add a `.checkov.yaml` without also wiring `validate.yml` to it — that would create a third divergent policy source.
+
+`docs/` and `tests/` exist but are empty — there is no test suite (see "Verifying a Change Without Azure Credentials" above for what to do instead), and `docs/runbooks/database-snapshot.md` referenced from `modules/database/main.tf:109` does not exist.
