@@ -108,6 +108,52 @@ Four jobs: Format Check (tofu fmt), Validate (11 modules), Checkov, Documentatio
 
 `validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
 
+## Landing Stacked Work
+
+**Do not stack PRs in this repo.** On 2026-08-02 a three-PR stack silently lost an entire release:
+
+| PR | Base | Merged |
+|---|---|---|
+| #19 | `main` | 10:20:22 |
+| #20 | `fix/pin-azurerm-4x` | 10:21:28 |
+| #21 | `feat/key-vault-extra-secrets` | 10:21:47 |
+
+PR #19 was squash-merged into `main`, which deleted its head branch. PRs #20 and #21 then
+merged into branches that no longer fed anywhere. Both show **MERGED** in the GitHub UI;
+neither reached `main`. The gap went unnoticed until a later session found `extra_secrets` absent
+from `main` and re-landed all five commits via #23. Meanwhile release-please had already
+opened a release PR proposing a **major** version carrying the breaking network changes and
+none of the features that justified them.
+
+Three compounding traps, each of which hid the failure:
+
+1. **Squash-merge makes the base diverge.** The squash is a new commit object, so a branch
+   still holding the pre-squash original conflicts with `main` on any file both touched —
+   even though the two commits have byte-identical trees. `git diff --stat <original> <squash>`
+   prints nothing, and the merge still conflicts.
+
+2. **`git merge-tree` in its legacy three-argument form does not report conflicts.** It lists
+   files "changed in both" without emitting `<<<<<<<` markers, so a `grep -c '^<<<<<<<'`
+   conflict check returns `0` whether or not conflicts exist. Use a real trial merge:
+
+   ```bash
+   git checkout -B _conflicttest origin/main
+   git merge --no-commit --no-ff <branch>; git diff --name-only --diff-filter=U
+   git merge --abort; git checkout -; git branch -D _conflicttest
+   ```
+
+3. **GitHub schedules no `validate.yml` or `terraform-scan.yml` run on a CONFLICTING PR.**
+   Only Semgrep and the review bot fire, so the PR looks quiet rather than broken. Confirm
+   with `gh pr view <N> --json mergeable,mergeStateStatus` — `CONFLICTING`/`DIRTY` means CI
+   never ran, not that it passed.
+
+**Instead:** target `main` directly, one PR at a time; merge each fully and let release-please
+settle before opening the next. If a stacked branch already exists, merge `origin/main` **into
+it** and resolve there. Never rebase-and-drop to "remove the duplicate" — Git resolves the
+duplicate to a no-op anyway, and rewriting risks mangling the conventional-commit subjects
+release-please parses. For a multi-commit PR prefer a **merge commit** over a squash, so each
+`feat:`/`fix:` subject reaches `main` and gets its own changelog entry.
+
 ## Provider Version Pinning
 
 **Every module must declare `required_providers` with an upper bound.** Lock files are gitignored and CI runs `tofu init -backend=false` fresh, so an unconstrained module resolves the newest major and breaks:
