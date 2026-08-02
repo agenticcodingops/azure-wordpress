@@ -127,32 +127,61 @@ none of the features that justified them.
 
 Three compounding traps, each of which hid the failure:
 
-1. **Squash-merge makes the base diverge.** The squash is a new commit object, so a branch
-   still holding the pre-squash original conflicts with `main` on any file both touched —
-   even though the two commits have byte-identical trees. `git diff --stat <original> <squash>`
-   prints nothing, and the merge still conflicts.
+1. **A squash-merge makes the base diverge.** The squash is a new commit object holding the
+   same tree, so `git diff --stat <original> <squash>` prints nothing while the two are
+   ancestrally unrelated. A stacked branch still carrying the pre-squash original merges
+   cleanly wherever its later commits touch *different hunks*, and conflicts only where a
+   later delta overlaps a region the squash also rewrote — so a conflict is possible, not
+   guaranteed. In #23 exactly one file conflicted (`modules/wordpress-site/main.tf`); every
+   other file both sides had touched auto-merged.
 
-2. **`git merge-tree` in its legacy three-argument form does not report conflicts.** It lists
-   files "changed in both" without emitting `<<<<<<<` markers, so a `grep -c '^<<<<<<<'`
-   conflict check returns `0` whether or not conflicts exist. Use a real trial merge:
+2. **Detect conflicts with `merge-tree --write-tree`, not the legacy three-argument form.**
+   The legacy form *does* emit markers, but as unified-diff additions (`+<<<<<<< .our`), so
+   an anchored `grep '^<<<<<<<'` reports zero and reads as "clean". The modern form exits
+   non-zero on conflict, names the paths, and touches neither the worktree nor any branch —
+   no scratch branch to clobber:
 
    ```bash
-   git checkout -B _conflicttest origin/main
-   git merge --no-commit --no-ff <branch>; git diff --name-only --diff-filter=U
-   git merge --abort; git checkout -; git branch -D _conflicttest
+   git fetch -q origin            # a stale origin/main gives a false clean
+   if git merge-tree --write-tree origin/main <branch> >/dev/null; then
+     echo clean
+   else
+     git merge-tree --write-tree --name-only origin/main <branch> | sed -n '2,/^$/p'
+   fi
    ```
 
-3. **GitHub schedules no `validate.yml` or `terraform-scan.yml` run on a CONFLICTING PR.**
-   Only Semgrep and the review bot fire, so the PR looks quiet rather than broken. Confirm
-   with `gh pr view <N> --json mergeable,mergeStateStatus` — `CONFLICTING`/`DIRTY` means CI
-   never ran, not that it passed.
+3. **A conflicted PR gets no workflow runs at all.** Measured on #23: while it was
+   `CONFLICTING` there were **zero** runs against its head SHA — not `validate.yml`, not
+   `terraform-scan.yml`, and not Semgrep or the review bot either, despite those two having
+   no `branches:` filter. Runs from an earlier stacked PR on *other* SHAs sit in the same
+   list and are easy to misread as the current one, which makes a conflicted PR look quiet
+   rather than broken.
+
+   Mergeability alone does not prove this — a PR can pass CI and *later* go
+   `CONFLICTING`/`DIRTY` when `main` moves, which does not erase the earlier runs. Compare
+   runs against the current head SHA:
+
+   ```bash
+   git rev-parse --short HEAD
+   gh api "repos/agenticcodingops/azure-wordpress/actions/runs?branch=<branch>" \
+     -q '.workflow_runs[] | "\(.head_sha[0:7]) \(.conclusion // .status) \(.name)"'
+   ```
 
 **Instead:** target `main` directly, one PR at a time; merge each fully and let release-please
-settle before opening the next. If a stacked branch already exists, merge `origin/main` **into
-it** and resolve there. Never rebase-and-drop to "remove the duplicate" — Git resolves the
-duplicate to a no-op anyway, and rewriting risks mangling the conventional-commit subjects
-release-please parses. For a multi-commit PR prefer a **merge commit** over a squash, so each
-`feat:`/`fix:` subject reaches `main` and gets its own changelog entry.
+settle before opening the next. For a multi-commit PR prefer a **merge commit** over a squash,
+so each `feat:`/`fix:` subject reaches `main` and earns its own changelog entry.
+
+**Recovering an already-stacked branch** — two options, with a real trade-off:
+
+- *Merge `origin/main` into the branch and resolve there.* Keeps every commit message
+  verbatim, but leaves both the pre-squash commit and its squash as ancestors, so
+  release-please counts the change twice. On #23 that produced a duplicate `fix:` line **and**
+  a duplicate `BREAKING CHANGE:` bullet in #22, both removed by hand before releasing. Budget
+  for that edit.
+- *Rebuild on `main` with only the unlanded commits* —
+  `git rebase --onto origin/main <squashed-base> <branch>`. No duplicate entries, but it
+  rewrites SHAs, so force-push and re-request review. Keep the subjects intact either way:
+  release-please parses them.
 
 ## Provider Version Pinning
 
