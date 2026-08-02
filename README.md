@@ -557,8 +557,22 @@ resource "azurerm_key_vault_access_policy" "shared" {
 }
 ```
 
-`staging_slot_principal_id` is exported the same way, and is `null` on SKUs without slots
-(B-tier), so guard on it before using it.
+`staging_slot_principal_id` is exported the same way — but do **not** drive `count` from it.
+It is `null` on SKUs without slots (B-tier), yet on S\*/P\* tiers it is *unknown* until the
+slot is created, and Terraform rejects any plan whose `count` is unknown. Guard on the SKU
+you configured instead, which is known at plan time and mirrors the module's own
+`local.sku_supports_slots`:
+
+```hcl
+resource "azurerm_key_vault_access_policy" "shared_staging" {
+  count = can(regex("^(S|P)[0-9]", var.app_service_sku)) ? 1 : 0
+
+  key_vault_id       = azurerm_key_vault.shared.id
+  tenant_id          = data.azurerm_client_config.current.tenant_id
+  object_id          = module.wordpress_site.staging_slot_principal_id
+  secret_permissions = ["Get", "List"]
+}
+```
 
 ## Requirements
 
