@@ -104,15 +104,16 @@ Update the `?ref=` references in README.md and examples/ to the version being re
 
 Four jobs: Format Check (tofu fmt), Validate (11 modules), Checkov, Documentation (terraform-docs). All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
 
-**`claude-review` fails on every PR — the `CLAUDE_CODE_OAUTH_TOKEN` secret is expired, not the workflow.**
-`main` has no branch protection, so nothing is gated on it and prior PRs merged with it red. Don't
-chase it as a regression from your change.
+**`claude-review` was failing on every PR — an expired `CLAUDE_CODE_OAUTH_TOKEN`, not the workflow.
+Resolved 2026-08-02 by rotating the secret; it has been green since.** If you are reading a red
+`claude-review` on an older PR, that is the pre-rotation window, not a regression from your change.
+`main` has no branch protection, so nothing was ever gated on it and those PRs merged red.
 
 > **Corrected 2026-08-02.** This file previously blamed an empty `ANTHROPIC_API_KEY`. That is the
 > wrong secret: `claude-code-review.yml` passes `claude_code_oauth_token`, and `ANTHROPIC_API_KEY`
 > is *expected* to be empty. The workflow is fine and needs no edit.
 
-Evidence, in case it regresses again — the failure is deliberately hard to read, because the action
+Evidence, kept in case it regresses again — the failure is deliberately hard to read, because the action
 logs only `Claude execution failed: result is_error:true` and hides the message ("full output hidden
 for security"). Debug mode does **not** lift that redaction; only `show_full_output: true` does.
 Diagnose from the result record instead:
@@ -120,7 +121,8 @@ Diagnose from the result record instead:
 - **Expired credential:** `num_turns: 1`, `duration_ms` ≈ 2000, `total_cost_usd: 0` — rejected before
   any billable token. A genuine review reports 3–16 turns and a non-zero cost.
 - Runs here succeeded through **2026-06-15** on this same token, then every run from 2026-08-02
-  onward failed — 18 in a row across 9.6 h.
+  failed — 18 in a row across 9.6 h — until the rotation below ended the window. The first run on
+  the fresh token went green in 41 s, well clear of the ~2 s expired signature.
 - Same day, same `anthropics/claude-code-action@v1`, same Claude Code v2.1.220, same
   `claude-sonnet-5`, byte-identical workflow: `agenticcodingops/agentic-research-stack` **passed** at
   15:51 mid-window. The only difference is token age. That mid-window success also rules out an
