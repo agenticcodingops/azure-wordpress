@@ -13,6 +13,63 @@ This module creates a complete WordPress site deployment including:
 - App Service with managed identity
 - Optional monitoring and CDN
 
+## ⚠️ Upgrading to v3.0.0 — read before you apply
+
+v3.0.0 makes Key Vault purge protection and soft-delete retention environment-aware.
+
+**Production consumers who set neither new variable see no change at all** — the resolved
+values are still `true` and `90`, exactly what the module hardcoded before.
+
+**Nonprod deployments that leave both new inputs unset get a destroy-and-recreate of the
+Key Vault.** The new defaults are `purge_protection_enabled = false` and
+`soft_delete_retention_days = 7`, and neither can be reached in place on an existing vault:
+Azure permits *enabling* purge protection but never disabling it, and the retention window
+"can only be configured one time and cannot be updated". Terraform's only route to the new
+values is to replace the vault.
+
+Note the asymmetry — going the other way is free. Turning purge protection **on** for a
+nonprod vault is an in-place update and needs no rebuild or suffix change.
+
+### If you do nothing, the apply fails
+
+Terraform destroys before it creates. The old vault soft-deletes still holding its name,
+and because the azurerm provider's `recover_soft_deleted_key_vaults` feature defaults to
+`true`, the create step then *recovers that old vault* rather than making a new one — with
+purge protection still on, which the new configuration then tries to disable. Azure refuses.
+
+Pick one before upgrading:
+
+```hcl
+# A. Keep pre-v3.0.0 behaviour exactly. No replacement, no plan diff.
+key_vault_purge_protection_enabled   = true
+key_vault_soft_delete_retention_days = 90
+
+# B. Adopt the new nonprod defaults, and give the new vault a free name in the same apply.
+key_vault_name_suffix = "12"   # any value not already soft-deleted
+```
+
+Under option B the replacement vault is repopulated in the same apply, and no secret value
+is lost. `random_password.db` declares no `keepers`, so the existing database password is
+preserved and simply re-written into the new vault — **it is not rotated**, and the copy
+inside the soft-deleted vault stays valid until that vault is purged. `storage-key` and
+`appinsights-connection` are re-read from the live Storage and App Insights resources,
+which are not touched. Anything you pass through `extra_secrets` is re-uploaded from your
+own configuration. The App Service's `@Microsoft.KeyVault(...)` references are rewritten to
+the new vault automatically.
+
+Note the 24-character vault-name limit — `kv-{site≤14}-{env}{suffix}` — when choosing a suffix.
+
+### Why the default changed
+
+A purge-protected vault that is soft-deleted locks its name for the full retention period
+against **everyone**; `az keyvault purge` returns `MethodNotAllowed` even for a
+subscription Owner. On an environment that is deliberately destroyed and rebuilt, that
+turns every cycle into a code change. Turning purge protection off is what makes the name
+immediately reusable — the provider's `purge_soft_delete_on_destroy` (default `true`) then
+purges cleanly on destroy. The retention value is a secondary control.
+
+Production keeps purge protection precisely because that irreversibility is the point.
+
 ## ⚠️ Upgrading to v2.0.0 — read before you apply
 
 v2.0.0 changes four defaults in ways that **will take a working site down** if you upgrade
@@ -168,6 +225,8 @@ environment-aware. All are online, non-destructive changes.
 | <a name="input_key_vault_network_acls_ip_rules"></a> [key\_vault\_network\_acls\_ip\_rules](#input\_key\_vault\_network\_acls\_ip\_rules) | Public IPv4 addresses or CIDRs permitted to reach the Key Vault data plane. Add the deploying principal's egress IP (e.g. the CI runner). | `list(string)` | `[]` | no |
 | <a name="input_key_vault_network_acls_virtual_network_subnet_ids"></a> [key\_vault\_network\_acls\_virtual\_network\_subnet\_ids](#input\_key\_vault\_network\_acls\_virtual\_network\_subnet\_ids) | Extra subnet IDs permitted to reach the Key Vault data plane. The site's App Service subnet is always included. | `list(string)` | `[]` | no |
 | <a name="input_key_vault_public_network_access_enabled"></a> [key\_vault\_public\_network\_access\_enabled](#input\_key\_vault\_public\_network\_access\_enabled) | Allow unrestricted public access to the Key Vault data plane. Defaults to false (deny). Terraform is not a trusted Azure service, so its calls to create secrets need either an entry in key\_vault\_network\_acls\_ip\_rules or this set to true. | `bool` | `false` | no |
+| <a name="input_key_vault_purge_protection_enabled"></a> [key\_vault\_purge\_protection\_enabled](#input\_key\_vault\_purge\_protection\_enabled) | Enable Key Vault purge protection. Defaults by environment when unset: true in production, false in nonprod. WARNING: Azure permits enabling this but never disabling it, so changing it on an existing vault forces a destroy and recreate. | `bool` | `null` | no |
+| <a name="input_key_vault_soft_delete_retention_days"></a> [key\_vault\_soft\_delete\_retention\_days](#input\_key\_vault\_soft\_delete\_retention\_days) | Days a soft-deleted vault is retained (7-90). Defaults by environment when unset: 90 in production, 7 in nonprod. Azure fixes this at creation, so changing it on an existing vault forces a destroy and recreate. | `number` | `null` | no |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for all resources | `string` | n/a | yes |
 | <a name="input_monitoring"></a> [monitoring](#input\_monitoring) | Monitoring configuration | <pre>object({<br/>    log_analytics_workspace_id = optional(string, null)<br/>    retention_days             = optional(number)<br/>    alerts = optional(object({<br/>      http_5xx_threshold   = optional(number, 10)<br/>      high_cpu_threshold   = optional(number, 80)<br/>      db_failure_threshold = optional(number, 5)<br/>      alert_window_minutes = optional(number, 5)<br/>    }), {})<br/>  })</pre> | `{}` | no |
 | <a name="input_networking"></a> [networking](#input\_networking) | Networking configuration | <pre>object({<br/>    vnet_address_space           = optional(string, "10.0.0.0/16")<br/>    app_subnet_cidr              = optional(string, "10.0.0.0/24")<br/>    db_subnet_cidr               = optional(string, "10.0.1.0/24")<br/>    private_endpoint_subnet_cidr = optional(string, "10.0.2.0/24")<br/>  })</pre> | `{}` | no |
@@ -195,6 +254,7 @@ environment-aware. All are online, non-destructive changes.
 | <a name="output_app_service_id"></a> [app\_service\_id](#output\_app\_service\_id) | Web App ID |
 | <a name="output_app_service_name"></a> [app\_service\_name](#output\_app\_service\_name) | Web App name |
 | <a name="output_app_service_plan_id"></a> [app\_service\_plan\_id](#output\_app\_service\_plan\_id) | App Service Plan ID |
+| <a name="output_app_service_principal_id"></a> [app\_service\_principal\_id](#output\_app\_service\_principal\_id) | Web App managed identity principal ID. Use this to grant the site access to resources the module does not own, without re-reading the app via a data source. |
 | <a name="output_cdn_provider"></a> [cdn\_provider](#output\_cdn\_provider) | Active CDN provider |
 | <a name="output_cloudflare_dns_hostname"></a> [cloudflare\_dns\_hostname](#output\_cloudflare\_dns\_hostname) | DNS hostname managed by Cloudflare |
 | <a name="output_cloudflare_nameservers"></a> [cloudflare\_nameservers](#output\_cloudflare\_nameservers) | Cloudflare nameservers for this zone |

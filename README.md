@@ -172,7 +172,7 @@ sequenceDiagram
 ```hcl
 module "wordpress_site" {
   # Pin to a release version for stability - see Releases page for latest
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v2.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.0.0"
 
   project_name  = "myproject"
   site_name     = "blog"
@@ -289,7 +289,7 @@ Deploy multiple WordPress sites on a single App Service Plan:
 
 ```hcl
 module "shared" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v2.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v3.0.0"
 
   project_name       = "myproject"
   environment        = "nonprod"
@@ -298,7 +298,7 @@ module "shared" {
 }
 
 module "site1" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v2.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.0.0"
 
   project_name = "myproject"
   site_name    = "site1"
@@ -339,7 +339,7 @@ through `extra_secrets`, and surface them to WordPress as Key Vault references t
 
 ```hcl
 module "wordpress_site" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v2.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.0.0"
 
   # ... other configuration ...
 
@@ -443,6 +443,8 @@ Set any of these explicitly and your value is used; leave it unset and the value
 | `front_door.waf_mode` | `Prevention` | `Detection` | in-place |
 | `monitoring.retention_days` | 90 | 30 | in-place |
 | `app_service.health_check_path` | `/wp-includes/images/blank.gif` | same | in-place |
+| `key_vault_purge_protection_enabled` | `true` | `false` | in-place to enable; **replaces the vault** to disable |
+| `key_vault_soft_delete_retention_days` | 90 | 7 | **replaces the vault** |
 
 > **`geo_redundant_backup` is create-time only.** Azure can only choose geo-redundancy when
 > the MySQL Flexible Server is created, so azurerm marks it `ForceNew` — changing it on an
@@ -453,6 +455,17 @@ Set any of these explicitly and your value is used; leave it unset and the value
 > it was effectively `false` before and becomes `true` in production here. Set it explicitly
 > to `false` before upgrading, or take a backup and accept the replacement. New deployments
 > on v2.0.0+ are unaffected — the server is simply created with geo-redundancy on.
+>
+> **The two Key Vault settings are effectively create-time only — in one direction.** Purge
+> protection can be turned *on* in place, but never off; the retention window cannot be
+> updated at all. So the new nonprod values (`false`/`7`) are unreachable on an existing
+> vault and plan a **destroy and recreate**, while *hardening* a nonprod vault later is a
+> free in-place update. Upgrading an existing **nonprod** deployment that leaves both inputs
+> unset therefore replaces its vault, and the apply fails unless
+> `key_vault_name_suffix` is bumped in the same change — the soft-deleted vault still holds
+> the name, and the provider would recover it rather than create a new one. Set both to
+> `true`/`90` to keep the old behaviour. See
+> [`modules/wordpress-site/README.md`](modules/wordpress-site/README.md#️-upgrading-to-v300--read-before-you-apply).
 
 ### Blob Storage Protection
 
@@ -550,7 +563,7 @@ Always pin module references to a specific version tag to prevent unexpected cha
 
 ```hcl
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v2.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.0.0"
   # ...
 }
 ```

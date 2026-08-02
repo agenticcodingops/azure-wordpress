@@ -32,7 +32,7 @@ data "azurerm_client_config" "current" {}
 # Deploy WordPress site
 module "wordpress" {
   # Pin to a specific version tag for stability
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v2.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.0.0"
 
   project_name  = var.project_name
   site_name     = var.site_name

@@ -63,6 +63,11 @@ output "app_service_plan_id" {
   value       = module.app_service.plan_id
 }
 
+output "app_service_principal_id" {
+  description = "Web App managed identity principal ID. Use this to grant the site access to resources the module does not own, without re-reading the app via a data source."
+  value       = module.app_service.principal_id
+}
+
 output "staging_slot_hostname" {
   description = "Staging slot hostname"
   value       = module.app_service.staging_slot_hostname
