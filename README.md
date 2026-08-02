@@ -172,7 +172,7 @@ sequenceDiagram
 ```hcl
 module "wordpress_site" {
   # Pin to a release version for stability - see Releases page for latest
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v2.0.0"
 
   project_name  = "myproject"
   site_name     = "blog"
@@ -289,7 +289,7 @@ Deploy multiple WordPress sites on a single App Service Plan:
 
 ```hcl
 module "shared" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v1.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v2.0.0"
 
   project_name       = "myproject"
   environment        = "nonprod"
@@ -298,7 +298,7 @@ module "shared" {
 }
 
 module "site1" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v2.0.0"
 
   project_name = "myproject"
   site_name    = "site1"
@@ -329,6 +329,84 @@ module "site1" {
 - **Key Vault References**: Secrets loaded at runtime
 - **IP Restrictions**: Only Cloudflare IPs can reach origin (when enabled)
 - **TLS 1.2**: Minimum version enforced everywhere
+
+## Custom Secrets
+
+The composition module stores three secrets of its own in the site's Key Vault
+(`db-password`, `storage-key`, `appinsights-connection`). Consumers can add their own
+through `extra_secrets`, and surface them to WordPress as Key Vault references through
+`extra_secret_app_settings`:
+
+```hcl
+module "wordpress_site" {
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v2.0.0"
+
+  # ... other configuration ...
+
+  extra_secrets = {
+    "smtp-password" = var.smtp_relay_password
+  }
+
+  extra_secret_app_settings = {
+    "SMTP_PASSWORD" = "smtp-password"
+  }
+}
+```
+
+The module resolves `smtp-password` to
+`@Microsoft.KeyVault(SecretUri=https://<vault>/secrets/smtp-password)` internally and applies
+it to both the production app and the staging slot. Both managed identities already hold
+`Get`/`List` on secrets at vault scope, so nothing else is needed.
+
+Build the reference inside the module rather than in your own configuration: doing it
+consumer-side needs the module's `key_vault_uri` output fed back into that same module's
+input, which Terraform rejects as a self-referential cycle. The
+`key_vault_secret_versionless_uris` output is available if you need the URIs elsewhere.
+
+Module-owned secret names always win on collision, so `extra_secrets` cannot clobber the
+database password. Keys must be known at plan time.
+
+## Outbound Email (SMTP relay)
+
+**WordPress on App Service cannot send mail out of the box.** Azure blocks outbound port 25
+on all App Service plans, and the Linux WordPress container ships no MTA — `wp_mail()` fails
+silently, taking password resets, comment notifications and order confirmations with it.
+
+Use an authenticated relay on port 587 and an SMTP plugin (WP Mail SMTP, Post SMTP, or
+`WP_MAIL_SMTP` constants). Keep the password in Key Vault rather than in `wp-config.php` or
+the plugin's database row:
+
+```hcl
+extra_secrets = {
+  "smtp-password" = var.smtp_relay_password # e.g. a Google Workspace relay credential
+}
+
+app_service = {
+  extra_app_settings = {
+    "SMTP_HOST"       = "smtp-relay.gmail.com"
+    "SMTP_PORT"       = "587"
+    "SMTP_SECURE"     = "tls"
+    "SMTP_AUTH"       = "true"
+    "SMTP_USERNAME"   = "wordpress@example.com"
+    "SMTP_FROM"       = "wordpress@example.com"
+    "SMTP_FROM_NAME"  = "Example Site"
+  }
+}
+
+extra_secret_app_settings = {
+  "SMTP_PASSWORD" = "smtp-password"
+}
+```
+
+Notes:
+
+- **Port 25 is blocked and will not be unblocked.** Relays that only accept 25 will not work.
+- The exact setting names depend on which SMTP plugin you use — the module passes them
+  through verbatim and does not interpret them.
+- Google Workspace SMTP relay additionally requires the sending domain to be authorised in
+  the Workspace admin console; allow-listing by IP is impractical because App Service
+  outbound IPs change when the plan scales.
+- Add SPF/DKIM records for the relay to your DNS or mail will land in spam.
 
 ## Backup & Recovery
 
@@ -443,7 +521,7 @@ Always pin module references to a specific version tag to prevent unexpected cha
 
 ```hcl
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v1.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v2.0.0"
   # ...
 }
 ```

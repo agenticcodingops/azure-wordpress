@@ -16,9 +16,12 @@ locals {
   create_plan = var.use_shared_plan ? false : (var.plan_id == null)
   plan_id     = local.create_plan ? azurerm_service_plan.main[0].id : var.plan_id
 
-  # Check if SKU supports staging slots (Standard and Premium only, not Basic)
-  # Basic tier (B1, B2, B3) does NOT support deployment slots
-  sku_supports_slots = !startswith(var.sku_name, "B")
+  # Deployment slots exist on Standard (S*) and Premium (P*/Pv2/Pv3) only. Free (F1),
+  # Shared (D1) and Basic (B1-B3) have none. Allow-list rather than deny-list so an
+  # unrecognised or newly added tier fails closed (no slot) instead of erroring at apply.
+  # NOTE: var.sku_name's validation regex admits only B*/S*/P*, so today this is defence
+  # in depth - it keeps the guard correct if that regex is ever widened.
+  sku_supports_slots = can(regex("^(S|P)[0-9]", var.sku_name))
 
   # WordPress container image from MCR
   docker_image = "mcr.microsoft.com/appsvc/wordpress-debian-php:${var.docker_image_tag}"

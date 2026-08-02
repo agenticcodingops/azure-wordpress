@@ -10,7 +10,7 @@ Deploy a single WordPress site with Cloudflare CDN on Azure.
 
 ## Version Pinning
 
-This example pins module sources to a specific release tag (`?ref=v1.0.0`). To use a different version:
+This example pins module sources to a specific release tag (`?ref=v2.0.0`). To use a different version:
 
 1. Check available versions on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page
 2. Update the `?ref=` tag in `main.tf`
