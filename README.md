@@ -544,6 +544,48 @@ The module automatically handles these -- do NOT duplicate them in `extra_app_se
 Both production and staging slot managed identities are granted Key Vault `Get`/`List`
 access automatically, so `@Microsoft.KeyVault(SecretUri=...)` references resolve on both slots.
 
+To grant the site access to resources this module does **not** own (your own Key Vault,
+a storage account, a Service Bus namespace), use the exported principal IDs directly
+rather than re-reading the app with a `data "azurerm_linux_web_app"` block:
+
+```hcl
+resource "azurerm_key_vault_access_policy" "shared" {
+  key_vault_id       = azurerm_key_vault.shared.id
+  tenant_id          = data.azurerm_client_config.current.tenant_id
+  object_id          = module.wordpress_site.app_service_principal_id
+  secret_permissions = ["Get", "List"]
+}
+```
+
+`staging_slot_principal_id` is exported the same way — but do **not** drive `count` from it.
+It is `null` on SKUs without slots (B-tier), yet on S\*/P\* tiers it is *unknown* until the
+slot is created, and Terraform rejects any plan whose `count` is unknown. Guard on the SKU
+you configured instead, which is known at plan time and mirrors the module's own
+`local.sku_supports_slots`:
+
+Declare the SKU once and feed both the module and the `count`, so the two cannot drift:
+
+```hcl
+locals {
+  app_service_sku = "P1v3"
+}
+
+module "wordpress_site" {
+  # ...
+  app_service = { sku_name = local.app_service_sku }
+}
+
+resource "azurerm_key_vault_access_policy" "shared_staging" {
+  # Known at plan time. Mirrors the module's own local.sku_supports_slots.
+  count = can(regex("^(S|P)[0-9]", local.app_service_sku)) ? 1 : 0
+
+  key_vault_id       = azurerm_key_vault.shared.id
+  tenant_id          = data.azurerm_client_config.current.tenant_id
+  object_id          = module.wordpress_site.staging_slot_principal_id
+  secret_permissions = ["Get", "List"]
+}
+```
+
 ## Requirements
 
 | Name | Version |

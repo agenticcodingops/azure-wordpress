@@ -78,6 +78,21 @@ module "wordpress_sites" {
   shared_resource_group_name = module.shared.resource_group_name
   shared_plan_sku            = var.app_service_sku
 
+  # ---------------------------------------------------------------------------
+  # Data-plane network access. Both Key Vault and Storage DENY public access by
+  # default (v2.0.0+); leaving these unset makes a first apply fail. See
+  # examples/basic-site/main.tf for the full rationale and the tighter
+  # (IP-allow-list) alternative to opening the Key Vault endpoint.
+  # ---------------------------------------------------------------------------
+  key_vault_public_network_access_enabled = true
+  storage_network_rules_default_action    = "Allow"
+
+  # Key Vault lifecycle (v3.0.0) defaults by environment: production true/90,
+  # nonprod false/7. Set both explicitly to keep pre-v3.0.0 behaviour on an
+  # existing nonprod deployment and avoid a vault replacement.
+  #   key_vault_purge_protection_enabled   = true
+  #   key_vault_soft_delete_retention_days = 90
+
   # Cloudflare CDN
   cdn_provider = "cloudflare"
   cloudflare = {

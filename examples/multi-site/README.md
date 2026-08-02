@@ -46,6 +46,21 @@ This example pins module sources to a specific release tag (`?ref=v3.0.0`). To u
 
 > **Important:** Always use the same version tag for all modules to ensure compatibility.
 
+## Network Access Defaults
+
+From v2.0.0 Key Vault and Storage deny public data-plane access by default, so this example
+sets `key_vault_public_network_access_enabled = true` and
+`storage_network_rules_default_action = "Allow"` on every site — without them the first
+apply 403s creating vault secrets, and site media 403s for visitors. Both are applied per
+site inside the `for_each`, so every site in `var.sites` gets them. See
+[`examples/basic-site/README.md`](../basic-site/README.md#network-access-defaults) for the
+rationale and the tighter IP-allow-list alternative.
+
+From v3.0.0 Key Vault purge protection and soft-delete retention default by environment
+(`true`/90 production, `false`/7 nonprod). Because these are applied per site, adopting
+v3.0.0 on an existing **nonprod** multi-site deployment replaces **every** site's vault —
+each one needs its `key_vault_name_suffix` bumped, or both inputs pinned to `true`/`90`.
+
 ## Usage
 
 1. Copy and configure variables:
