@@ -85,6 +85,66 @@ variable "storage" {
   default = {}
 }
 
+# Data-plane network rules for Key Vault and Storage.
+#
+# These are deliberately top-level variables rather than attributes on the
+# `key_vault`/`storage` objects: static analysers (Checkov CKV_AZURE_35, and
+# Trivy) resolve a plain variable's default but cannot see through an
+# `optional()` object attribute, so the secure default would be reported as a
+# misconfiguration. `key_vault_name_suffix` already establishes this flat
+# convention in this module.
+
+variable "key_vault_public_network_access_enabled" {
+  description = "Allow unrestricted public access to the Key Vault data plane. Defaults to false (deny). Terraform is not a trusted Azure service, so its calls to create secrets need either an entry in key_vault_network_acls_ip_rules or this set to true."
+  type        = bool
+  default     = false
+}
+
+variable "key_vault_network_acls_ip_rules" {
+  description = "Public IPv4 addresses or CIDRs permitted to reach the Key Vault data plane. Add the deploying principal's egress IP (e.g. the CI runner)."
+  type        = list(string)
+  default     = []
+}
+
+variable "key_vault_network_acls_virtual_network_subnet_ids" {
+  description = "Extra subnet IDs permitted to reach the Key Vault data plane. The site's App Service subnet is always included."
+  type        = list(string)
+  default     = []
+}
+
+# WARNING: the WordPress Blob Storage plugin points media URLs at the account's own
+# blob endpoint, so visitors fetch media directly from Azure rather than through the
+# CDN. Unless the blob endpoint is fronted by a CDN custom domain, set this to "Allow"
+# or media will 403 for end users. See modules/storage/README.md.
+variable "storage_network_rules_default_action" {
+  description = "Default action for the storage account's network rules. Defaults to Deny. Set to 'Allow' if media is served straight from the blob endpoint rather than through a CDN custom domain."
+  type        = string
+  default     = "Deny"
+
+  validation {
+    condition     = contains(["Allow", "Deny"], var.storage_network_rules_default_action)
+    error_message = "Storage network rules default action must be 'Allow' or 'Deny'."
+  }
+}
+
+variable "storage_network_rules_bypass" {
+  description = "Traffic permitted to bypass the storage network rules. Valid values: AzureServices, Logging, Metrics, None."
+  type        = set(string)
+  default     = ["AzureServices"]
+}
+
+variable "storage_network_rules_ip_rules" {
+  description = "Extra public IPv4 addresses or CIDRs permitted to reach the storage data plane. Cloudflare's live IPv4 egress ranges are added automatically when cdn_provider = 'cloudflare'. Azure Storage rejects IPv6 CIDRs and /31-/32 prefixes."
+  type        = list(string)
+  default     = []
+}
+
+variable "storage_network_rules_virtual_network_subnet_ids" {
+  description = "Extra subnet IDs permitted to reach the storage data plane. The site's App Service subnet is always included."
+  type        = list(string)
+  default     = []
+}
+
 # App Service configuration
 variable "app_service" {
   description = "App Service configuration"

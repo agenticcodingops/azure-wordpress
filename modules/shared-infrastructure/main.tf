@@ -21,9 +21,11 @@ terraform {
   required_version = ">= 1.6.0"
 
   required_providers {
+    # Constrained to 4.x: this module uses arguments that azurerm 5.x renamed or
+    # removed. Without an upper bound, a fresh init resolves 5.x and fails.
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = ">= 4.0.0"
+      version = "~> 4.0"
     }
   }
 }

@@ -31,6 +31,17 @@ resource "azurerm_storage_account" "main" {
   # Infrastructure encryption
   infrastructure_encryption_enabled = true
 
+  # Data-plane network rules (AZU-0012). Denies by default; the composition module
+  # allow-lists the App Service subnet and, when Cloudflare is the CDN, Cloudflare's
+  # published IPv4 egress ranges. Container management still works either way -
+  # azurerm_storage_container uses the ARM control plane, which these rules do not gate.
+  network_rules {
+    default_action             = var.network_rules_default_action
+    bypass                     = var.network_rules_bypass
+    ip_rules                   = var.network_rules_ip_rules
+    virtual_network_subnet_ids = var.network_rules_virtual_network_subnet_ids
+  }
+
   # SAS policy for security (CKV2_AZURE_41)
   sas_policy {
     expiration_period = "7.00:00:00" # 7 days max SAS lifetime

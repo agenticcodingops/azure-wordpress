@@ -67,6 +67,38 @@ Configure the Microsoft Azure Storage plugin:
 - Container: `module.storage.container_name`
 - Access Key: Store in Key Vault
 
+## Network Rules
+
+The account **denies data-plane access by default** (`network_rules.default_action = "Deny"`,
+satisfying AZU-0012 / CKV_AZURE_36). `bypass = ["AzureServices"]` is retained.
+
+Container management is unaffected — `azurerm_storage_container` uses the ARM control
+plane, which network rules do not gate — so Terraform applies cleanly either way.
+
+**What Deny does break: media for site visitors.** The Microsoft WordPress container's
+Blob Storage plugin rewrites media URLs to the account's own endpoint
+(`https://<account>.blob.core.windows.net/...`). Browsers therefore fetch media **directly
+from Azure, not through your CDN**, from arbitrary end-user IPs that cannot be allow-listed.
+
+Pick one before deploying:
+
+| Situation | Setting |
+|---|---|
+| Blob endpoint fronted by a CDN custom domain (CNAME) | Keep `Deny`; allow-list the CDN's egress ranges via `network_rules_ip_rules` |
+| Media served straight from the blob endpoint (module default) | Set `network_rules_default_action = "Allow"` |
+| Private endpoint / VNet-only access | Keep `Deny`; add subnets via `network_rules_virtual_network_subnet_ids` |
+
+The `wordpress-site` composition module always allow-lists the site's App Service subnet
+(it carries the `Microsoft.Storage` service endpoint), and when `cdn_provider = "cloudflare"`
+it also allow-lists Cloudflare's live IPv4 egress ranges, fetched at apply time via
+`data.cloudflare_ip_ranges` — the programmatic approach Cloudflare
+[recommends](https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/)
+over hardcoding, since the ranges change occasionally.
+
+> **IPv4 only.** Azure Storage IP rules reject IPv6 CIDRs, so Cloudflare's IPv6 egress
+> ranges cannot be expressed here. Azure also rejects `/31` and `/32` prefixes — pass a
+> bare IP address instead.
+
 ## Validation Rules
 
 The module enforces these validations at plan time:
@@ -82,13 +114,16 @@ The module enforces these validations at plan time:
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
-No requirements.
+| Name | Version |
+|------|---------|
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.6.0 |
+| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | ~> 4.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | n/a |
+| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | ~> 4.0 |
 
 ## Modules
 
@@ -120,6 +155,10 @@ No modules.
 | <a name="input_lifecycle_snapshot_delete_days"></a> [lifecycle\_snapshot\_delete\_days](#input\_lifecycle\_snapshot\_delete\_days) | Days since creation before deleting old snapshots | `number` | `90` | no |
 | <a name="input_lifecycle_version_delete_days"></a> [lifecycle\_version\_delete\_days](#input\_lifecycle\_version\_delete\_days) | Days since creation before deleting old blob versions | `number` | `90` | no |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for resources | `string` | n/a | yes |
+| <a name="input_network_rules_bypass"></a> [network\_rules\_bypass](#input\_network\_rules\_bypass) | Traffic permitted to bypass the network rules. Valid values: AzureServices, Logging, Metrics, None. | `set(string)` | <pre>[<br/>  "AzureServices"<br/>]</pre> | no |
+| <a name="input_network_rules_default_action"></a> [network\_rules\_default\_action](#input\_network\_rules\_default\_action) | Default action for storage account network rules. 'Deny' is secure-by-default but blocks direct browser access to media; see the module README before changing. | `string` | `"Deny"` | no |
+| <a name="input_network_rules_ip_rules"></a> [network\_rules\_ip\_rules](#input\_network\_rules\_ip\_rules) | Public IPv4 addresses or CIDRs permitted to reach the storage data plane. Azure Storage does not accept IPv6 CIDRs, nor /31 and /32 prefixes (use a bare IP instead). | `list(string)` | `[]` | no |
+| <a name="input_network_rules_virtual_network_subnet_ids"></a> [network\_rules\_virtual\_network\_subnet\_ids](#input\_network\_rules\_virtual\_network\_subnet\_ids) | Subnet IDs permitted to reach the storage data plane. The subnets must carry the Microsoft.Storage service endpoint. | `list(string)` | `[]` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |
 | <a name="input_resource_group_name"></a> [resource\_group\_name](#input\_resource\_group\_name) | Name of the resource group | `string` | n/a | yes |
 | <a name="input_site_name"></a> [site\_name](#input\_site\_name) | Site name used for resource naming (lowercase, hyphens only) | `string` | n/a | yes |

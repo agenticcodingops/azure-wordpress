@@ -76,9 +76,21 @@ variable "purge_protection_enabled" {
 }
 
 variable "public_network_access_enabled" {
-  description = "Allow public network access (required for CI/CD deployment)"
+  description = "Allow unrestricted public network access to the vault data plane (network_acls default_action = Allow). Defaults to false, which denies by default. IMPORTANT: a denying vault with no ip_rules and no subnet ids is unreachable by Terraform itself, so secret creation will fail with 403 - allow-list your deployment principal via network_acls_ip_rules, or set this to true."
   type        = bool
-  default     = true
+  default     = false
+}
+
+variable "network_acls_ip_rules" {
+  description = "Public IPv4 addresses or CIDRs permitted to reach the vault data plane. Add the deploying principal's egress IP (e.g. the CI runner) so Terraform can manage secrets while default_action is Deny."
+  type        = list(string)
+  default     = []
+}
+
+variable "network_acls_virtual_network_subnet_ids" {
+  description = "Subnet IDs permitted to reach the vault data plane. The subnets must carry the Microsoft.KeyVault service endpoint."
+  type        = list(string)
+  default     = []
 }
 
 variable "name_suffix" {
