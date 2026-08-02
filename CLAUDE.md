@@ -182,17 +182,26 @@ Three compounding traps, each of which hid the failure:
    is unspecified. Measured here (git 2.54): unrelated histories give **128**, so branch on
    the status rather than using `if`/`else`. But **1 is not exclusively "conflict"** — an
    unresolvable ref also exits 1, printing `not something we can merge` on *stderr*. Redirect
-   only stdout, so that message stays visible. And fail closed if the fetch fails, or you
-   silently check a stale `origin/main` and get a false clean:
+   only stdout, so that message stays visible.
+
+   Capture the status immediately and re-exit with it. If you branch on `$?` and let the
+   conflict arm end in a `… | sed` pipeline, the script's own status becomes `sed`'s — **0** —
+   so wired into a gate it reports conflicts and then passes. Fail closed on the fetch too, or
+   you silently check a stale `origin/main` and get a false clean:
 
    ```bash
-   git fetch -q origin || { echo "fetch failed — refusing to check against a stale ref"; exit 1; }
-   git merge-tree --write-tree origin/main <branch> >/dev/null   # stderr intentionally not redirected
-   case $? in
+   #!/usr/bin/env bash
+   # conflict-check.sh <branch> — exit 0 clean, 1 conflict (or bad ref: see stderr), 2 no fetch
+   branch=$1
+   git fetch -q origin || { echo "fetch failed — refusing to check a stale ref" >&2; exit 2; }
+   git merge-tree --write-tree origin/main "$branch" >/dev/null   # stderr deliberately not redirected
+   status=$?
+   case $status in
      0) echo "clean" ;;
-     1) git merge-tree --write-tree --name-only origin/main <branch> | sed -n '2,/^$/p' ;;  # or a bad ref — check stderr
-     *) echo "merge-tree errored — check the refs" ;;
+     1) git merge-tree --write-tree --name-only origin/main "$branch" | sed -n '2,/^$/p' ;;
+     *) echo "merge-tree errored — check the refs" >&2 ;;
    esac
+   exit $status          # NOT the pipeline's status
    ```
 
 3. **A conflicted PR gets no `pull_request` workflow runs.** GitHub cannot build the merge
@@ -241,14 +250,22 @@ changelog. That is why release-please's own default recommendation is squash-mer
   replays "commits in `<branch>` not in `<upstream>`", so naming that commit is what excludes
   the already-landed work. Confirm before running it:
 
+  Confirm it against the **squash commit** — `<squash-commit>`, the commit the base PR
+  produced on `main` — not against `origin/main` itself. `origin/main` is a moving tip: any
+  unrelated commit landing after the squash makes the diff non-empty even when your base is
+  correct. (Measured: `git diff --stat 27443d7 origin/main` reports 20 files today, versus
+  empty against `8d81c74`.) Three separate checks:
+
   ```bash
-  git log --oneline <squashed-base>..<branch>     # must list ONLY the unlanded commits
-  git diff --stat <squashed-base> origin/main     # empty = same content, so it is the right base
+  git diff --stat <squashed-base> <squash-commit>              # empty  = same content, right base
+  git merge-base --is-ancestor <squash-commit> origin/main \
+    && echo "squash is on main"                                # confirms it actually landed
+  git log --oneline <squashed-base>..<branch>                  # must list ONLY unlanded commits
   ```
 
-  Worked example from #23: `<squashed-base>` was `27443d7`, whose tree is identical to the
-  squash `8d81c74` on `main`. Using the merge-base (`fd952bc`) instead would have replayed
-  `27443d7` as well and reintroduced the very duplicate this option exists to avoid.
+  Worked example from #23: `<squashed-base>` was `27443d7` and `<squash-commit>` was `8d81c74`
+  — identical trees. Using the merge-base (`fd952bc`) instead would have replayed `27443d7`
+  as well and reintroduced the very duplicate this option exists to avoid.
 
 Keep the subjects intact either way — release-please parses them.
 
