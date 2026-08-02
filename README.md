@@ -563,9 +563,21 @@ slot is created, and Terraform rejects any plan whose `count` is unknown. Guard 
 you configured instead, which is known at plan time and mirrors the module's own
 `local.sku_supports_slots`:
 
+Declare the SKU once and feed both the module and the `count`, so the two cannot drift:
+
 ```hcl
+locals {
+  app_service_sku = "P1v3"
+}
+
+module "wordpress_site" {
+  # ...
+  app_service = { sku_name = local.app_service_sku }
+}
+
 resource "azurerm_key_vault_access_policy" "shared_staging" {
-  count = can(regex("^(S|P)[0-9]", var.app_service_sku)) ? 1 : 0
+  # Known at plan time. Mirrors the module's own local.sku_supports_slots.
+  count = can(regex("^(S|P)[0-9]", local.app_service_sku)) ? 1 : 0
 
   key_vault_id       = azurerm_key_vault.shared.id
   tenant_id          = data.azurerm_client_config.current.tenant_id
