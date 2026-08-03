@@ -19,7 +19,7 @@ terraform {
     # or removed. Without an upper bound, a fresh init resolves 5.x and fails.
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 4.0"
+      version = "~> 5.0"
     }
     azapi = {
       source  = "azure/azapi"
