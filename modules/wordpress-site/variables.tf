@@ -231,7 +231,7 @@ variable "app_service_ftp_publish_basic_authentication_enabled" {
 }
 
 variable "app_service_webdeploy_publish_basic_authentication_enabled" {
-  description = "Enable basic authentication for WebDeploy/SCM publishing on the site and its staging slot. Defaults to true, matching the azurerm provider default. Azure requires SCM basic auth for FTP basic auth, so setting this false disables FTP basic auth as well."
+  description = "Enable basic authentication for WebDeploy/SCM publishing on the site and its staging slot. Defaults to true, matching the azurerm provider default. Disabling this stops FTP/S deployment from working, but does not change the FTP policy itself - ARM models the two as independent resources, so set app_service_ftp_publish_basic_authentication_enabled = false too."
   type        = bool
   default     = true
 }

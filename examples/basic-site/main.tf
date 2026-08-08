@@ -79,6 +79,10 @@ module "wordpress" {
   # gates: "Deny" without an entry covering you costs the Kudu SSH console, which
   # is the only route to a manual `wp core update --major`. Terraform is
   # unaffected either way -- it uses the ARM control plane, not Kudu.
+  #
+  # 203.0.113.10/32 below is TEST-NET-3, reserved for documentation and routed
+  # nowhere. REPLACE IT with your own egress address before uncommenting, or the
+  # Deny default will lock you out of Kudu on the first apply.
   # ---------------------------------------------------------------------------
   #   app_service_scm_ip_restrictions = [
   #     { ip_address = "203.0.113.10/32", name = "OperatorHome" },

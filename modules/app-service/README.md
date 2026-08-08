@@ -92,9 +92,18 @@ default to `true`, matching azurerm. Both are applied to the site **and** the sl
 its own independent flags, so a change that misses it still reads as compliant on the site resource
 alone.
 
-Setting `webdeploy_publish_basic_authentication_enabled = false` also disables FTP basic auth: Azure
-requires SCM basic auth for FTP basic auth. (`site_config.ftps_state` is already `Disabled` here, so
-FTP is closed at the transport layer regardless.)
+**Set both to `false`; the two are not coupled at the ARM layer.** Microsoft's prose that "SCM basic
+authentication is required for enabling FTP basic authentication" describes the *deployment* layer —
+turning SCM off stops FTP/S publishing from working — but ARM models `basicPublishingCredentialsPolicies/ftp`
+and `/scm` as independent singleton resources with separate update operations and no cross-validation,
+and azurerm reads each back verbatim into state. Disabling only WebDeploy therefore leaves the FTP
+policy reporting `allow = true`, which is what a compliance scanner will see. (`site_config.ftps_state`
+is already `Disabled` here, so FTP is closed at the transport layer either way.)
+
+Worth knowing when reasoning about diffs: azurerm's **Create** only calls `UpdateFtpAllowed` /
+`UpdateScmAllowed` when the value is `false` — it never transmits `Allow: true`. Leaving these at
+`true` is a genuine no-op, not an assertion. **Update** does send the real value, gated per-argument
+on `HasChange`.
 
 Per [Microsoft's fallback table](https://learn.microsoft.com/en-us/azure/app-service/configure-basic-auth-disable):
 
@@ -242,7 +251,7 @@ No modules.
 | <a name="input_storage_container_name"></a> [storage\_container\_name](#input\_storage\_container\_name) | Storage container name for media uploads | `string` | n/a | yes |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources | `map(string)` | `{}` | no |
 | <a name="input_use_shared_plan"></a> [use\_shared\_plan](#input\_use\_shared\_plan) | Set to true when using a shared App Service Plan. This avoids plan-time unknown value issues. | `bool` | `false` | no |
-| <a name="input_webdeploy_publish_basic_authentication_enabled"></a> [webdeploy\_publish\_basic\_authentication\_enabled](#input\_webdeploy\_publish\_basic\_authentication\_enabled) | Enable basic authentication for WebDeploy/SCM publishing. Defaults to true, matching the azurerm provider default. Azure requires SCM basic auth for FTP basic auth, so setting this false disables FTP basic auth as well. | `bool` | `true` | no |
+| <a name="input_webdeploy_publish_basic_authentication_enabled"></a> [webdeploy\_publish\_basic\_authentication\_enabled](#input\_webdeploy\_publish\_basic\_authentication\_enabled) | Enable basic authentication for WebDeploy/SCM publishing. Defaults to true, matching the azurerm provider default. Disabling this stops FTP/S deployment from working, but does not change the FTP policy itself - ARM models the two as independent resources, so set ftp\_publish\_basic\_authentication\_enabled = false too. | `bool` | `true` | no |
 | <a name="input_worker_count"></a> [worker\_count](#input\_worker\_count) | Number of workers (instances) | `number` | `1` | no |
 
 ## Outputs

@@ -155,8 +155,10 @@ resource "azurerm_linux_web_app" "main" {
   https_only = true
 
   # Publishing credentials. Both default to true, matching the azurerm provider
-  # default. Disabling webdeploy also disables FTP basic auth (Azure requires SCM
-  # basic auth for FTP basic auth) and breaks zip_deploy_file. See README.
+  # default; azurerm only calls the API when the value is false, so `true` is a
+  # true no-op. The two ARM policies are independent - disabling webdeploy stops
+  # FTP/S *deployment* from working but does not flip the FTP flag, so harden both
+  # explicitly. Disabling webdeploy also breaks zip_deploy_file. See README.
   ftp_publish_basic_authentication_enabled       = var.ftp_publish_basic_authentication_enabled
   webdeploy_publish_basic_authentication_enabled = var.webdeploy_publish_basic_authentication_enabled
 
