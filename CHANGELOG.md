@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0](https://github.com/agenticcodingops/azure-wordpress/compare/v3.0.0...v3.1.0) (2026-08-08)
+
+
+### Features
+
+* harden the SCM/Kudu plane, expose basic-auth publishing controls, re-export database_server_name ([#30](https://github.com/agenticcodingops/azure-wordpress/issues/30)) ([b860e9e](https://github.com/agenticcodingops/azure-wordpress/commit/b860e9e3f31f5692b4f940e4cbbdf5e5fad2b7be))
+
 ## [3.0.0](https://github.com/agenticcodingops/azure-wordpress/compare/v2.0.0...v3.0.0) (2026-08-02)
 
 
