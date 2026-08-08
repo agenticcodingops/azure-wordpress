@@ -32,6 +32,11 @@ output "database_server_id" {
   value       = module.database.server_id
 }
 
+output "database_server_name" {
+  description = "MySQL server name"
+  value       = module.database.server_name
+}
+
 output "database_server_fqdn" {
   description = "MySQL server FQDN"
   value       = module.database.server_fqdn
