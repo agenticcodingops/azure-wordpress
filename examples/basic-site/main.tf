@@ -32,7 +32,7 @@ data "azurerm_client_config" "current" {}
 # Deploy WordPress site
 module "wordpress" {
   # Pin to a specific version tag for stability
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"
 
   project_name  = var.project_name
   site_name     = var.site_name
@@ -68,6 +68,28 @@ module "wordpress" {
   # replacement -- see modules/wordpress-site/README.md.
   #   key_vault_purge_protection_enabled   = true
   #   key_vault_soft_delete_retention_days = 90
+
+  # ---------------------------------------------------------------------------
+  # SCM/Kudu posture (v3.1.0). The SCM endpoint is a SEPARATE gate from the
+  # Cloudflare IP restrictions below, and defaults to Allow -- so out of the box
+  # Kudu is internet-reachable even though the site is not. Left at the defaults
+  # here so this example applies cleanly; uncomment to close it.
+  #
+  # READ modules/app-service/README.md FIRST. Network and auth are independent
+  # gates: "Deny" without an entry covering you costs the Kudu SSH console, which
+  # is the only route to a manual `wp core update --major`. Terraform is
+  # unaffected either way -- it uses the ARM control plane, not Kudu.
+  # ---------------------------------------------------------------------------
+  #   app_service_scm_ip_restrictions = [
+  #     { ip_address = "203.0.113.10/32", name = "OperatorHome" },
+  #   ]
+  #   app_service_scm_ip_restriction_default_action = "Deny"
+
+  # Disabling basic-auth publishing keeps `az webapp ssh` (Azure CLI >= 2.48.1)
+  # and the Entra-authenticated Kudu UI; it breaks FTP, local Git, and the
+  # App Service build-service deploy paths. Both flags cover the staging slot too.
+  #   app_service_ftp_publish_basic_authentication_enabled       = false
+  #   app_service_webdeploy_publish_basic_authentication_enabled = false
 
   # Use Cloudflare for CDN (cost-optimized)
   cdn_provider = "cloudflare"

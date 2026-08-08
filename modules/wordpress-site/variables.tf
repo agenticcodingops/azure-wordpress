@@ -169,6 +169,73 @@ variable "storage_network_rules_virtual_network_subnet_ids" {
   default     = []
 }
 
+# SCM/Kudu network posture and publishing credentials for the App Service.
+#
+# Flat top-level variables rather than app_service object attributes, for the same
+# reason as the key_vault_/storage_ block above: static analysers resolve a plain
+# variable's default but cannot see through an optional() object attribute.
+#
+# All four default to the azurerm provider's own defaults, so upgrading from
+# v3.0.0 without setting them produces no plan diff. None is environment-aware:
+# making SCM 'Deny' in production only would lock an operator out of prod, the
+# exact site where Kudu access matters most.
+#
+# WARNING: the SCM endpoint is a separate gate from the main site's IP rules AND
+# a separate gate from authentication - both must pass. Setting the default action
+# to 'Deny' without a matching allow-list entry costs you the Kudu SSH console,
+# which is the only route to a manual `wp core update --major`. See
+# modules/app-service/README.md.
+
+variable "app_service_scm_ip_restrictions" {
+  description = "Allow-list for the App Service SCM/Kudu endpoint, applied to both the site and its staging slot. Exactly one of ip_address, service_tag or virtual_network_subnet_id must be set per entry. Empty (the default) preserves current provider behaviour."
+  type = list(object({
+    ip_address                = optional(string)
+    service_tag               = optional(string)
+    virtual_network_subnet_id = optional(string)
+    name                      = optional(string)
+    priority                  = optional(number)
+    action                    = optional(string, "Allow")
+    description               = optional(string)
+  }))
+  default = []
+
+  validation {
+    condition = alltrue([
+      for r in var.app_service_scm_ip_restrictions :
+      length([for v in [r.ip_address, r.service_tag, r.virtual_network_subnet_id] : v if v != null && v != ""]) == 1
+    ])
+    error_message = "Each app_service_scm_ip_restrictions entry must set exactly one of ip_address, service_tag, or virtual_network_subnet_id."
+  }
+
+  validation {
+    condition     = alltrue([for r in var.app_service_scm_ip_restrictions : contains(["Allow", "Deny"], r.action)])
+    error_message = "SCM IP restriction action must be 'Allow' or 'Deny'."
+  }
+}
+
+variable "app_service_scm_ip_restriction_default_action" {
+  description = "Default action for SCM/Kudu traffic matching no app_service_scm_ip_restrictions entry. Defaults to 'Allow', matching the azurerm provider default. Set to 'Deny' to close Kudu to everything not allow-listed."
+  type        = string
+  default     = "Allow"
+
+  validation {
+    condition     = contains(["Allow", "Deny"], var.app_service_scm_ip_restriction_default_action)
+    error_message = "SCM IP restriction default action must be 'Allow' or 'Deny'."
+  }
+}
+
+variable "app_service_ftp_publish_basic_authentication_enabled" {
+  description = "Enable basic authentication for FTP publishing on the site and its staging slot. Defaults to true, matching the azurerm provider default. FTP is already closed at the transport layer (ftps_state is Disabled)."
+  type        = bool
+  default     = true
+}
+
+variable "app_service_webdeploy_publish_basic_authentication_enabled" {
+  description = "Enable basic authentication for WebDeploy/SCM publishing on the site and its staging slot. Defaults to true, matching the azurerm provider default. Azure requires SCM basic auth for FTP basic auth, so setting this false disables FTP basic auth as well."
+  type        = bool
+  default     = true
+}
+
 # App Service configuration
 variable "app_service" {
   description = "App Service configuration"

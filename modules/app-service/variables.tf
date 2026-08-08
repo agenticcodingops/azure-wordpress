@@ -180,6 +180,72 @@ variable "front_door_id" {
   default     = ""
 }
 
+# SCM/Kudu network posture.
+#
+# The SCM endpoint (<app>.scm.azurewebsites.net) is a SEPARATE gate from the
+# ip_restriction rules driven by cdn_provider, and azurerm defaults it to "Allow".
+# Kudu offers a shell and read/write over the persisted /home of this app AND its
+# staging slot, so a site whose public plane admits only Cloudflare still has an
+# internet-reachable Kudu, protected by credentials alone.
+#
+# Note the provider default is a schema-level Default, not "leave Azure alone":
+# omitting these arguments materialises "Allow" into state and reverts any
+# out-of-band drift to "Deny" on the next apply.
+#
+# scm_use_main_ip_restriction is deliberately NOT exposed - see README.
+
+variable "scm_ip_restrictions" {
+  description = "Allow-list for the SCM/Kudu endpoint. Exactly one of ip_address, service_tag or virtual_network_subnet_id must be set per entry. Empty (the default) preserves current provider behaviour."
+  type = list(object({
+    ip_address                = optional(string)
+    service_tag               = optional(string)
+    virtual_network_subnet_id = optional(string)
+    name                      = optional(string)
+    priority                  = optional(number)
+    action                    = optional(string, "Allow")
+    description               = optional(string)
+  }))
+  default = []
+
+  # azurerm enforces this mutual exclusion inside ExpandIpRestrictions at APPLY
+  # time, so without this a malformed entry plans clean and dies mid-apply.
+  validation {
+    condition = alltrue([
+      for r in var.scm_ip_restrictions :
+      length([for v in [r.ip_address, r.service_tag, r.virtual_network_subnet_id] : v if v != null && v != ""]) == 1
+    ])
+    error_message = "Each scm_ip_restrictions entry must set exactly one of ip_address, service_tag, or virtual_network_subnet_id."
+  }
+
+  validation {
+    condition     = alltrue([for r in var.scm_ip_restrictions : contains(["Allow", "Deny"], r.action)])
+    error_message = "SCM IP restriction action must be 'Allow' or 'Deny'."
+  }
+}
+
+variable "scm_ip_restriction_default_action" {
+  description = "Default action for SCM/Kudu traffic matching no scm_ip_restrictions entry. Defaults to 'Allow', matching the azurerm provider default, so existing consumers see no plan diff. Set to 'Deny' to close Kudu to everything not allow-listed."
+  type        = string
+  default     = "Allow"
+
+  validation {
+    condition     = contains(["Allow", "Deny"], var.scm_ip_restriction_default_action)
+    error_message = "SCM IP restriction default action must be 'Allow' or 'Deny'."
+  }
+}
+
+variable "ftp_publish_basic_authentication_enabled" {
+  description = "Enable basic authentication for FTP publishing. Defaults to true, matching the azurerm provider default. Note site_config.ftps_state is already 'Disabled' here, so FTP is closed at the transport layer regardless."
+  type        = bool
+  default     = true
+}
+
+variable "webdeploy_publish_basic_authentication_enabled" {
+  description = "Enable basic authentication for WebDeploy/SCM publishing. Defaults to true, matching the azurerm provider default. Azure requires SCM basic auth for FTP basic auth, so setting this false disables FTP basic auth as well."
+  type        = bool
+  default     = true
+}
+
 variable "extra_app_settings" {
   description = "Additional app settings to merge with the default WordPress settings (e.g., WP_ENVIRONMENT_TYPE, custom plugin config)"
   type        = map(string)
