@@ -456,6 +456,14 @@ module "app_service" {
   cloudflare_ipv4_cidr_blocks = var.cdn_provider == "cloudflare" ? data.cloudflare_ip_ranges.current[0].ipv4_cidrs : null
   cloudflare_ipv6_cidr_blocks = var.cdn_provider == "cloudflare" ? data.cloudflare_ip_ranges.current[0].ipv6_cidrs : null
 
+  # SCM/Kudu network posture and publishing credentials. Passed straight through:
+  # none of these is environment-aware, and every default matches the azurerm
+  # provider default, so an upgrade from v3.0.0 is zero-diff.
+  scm_ip_restrictions                            = var.app_service_scm_ip_restrictions
+  scm_ip_restriction_default_action              = var.app_service_scm_ip_restriction_default_action
+  ftp_publish_basic_authentication_enabled       = var.app_service_ftp_publish_basic_authentication_enabled
+  webdeploy_publish_basic_authentication_enabled = var.app_service_webdeploy_publish_basic_authentication_enabled
+
   tags = local.common_tags
 
   # Explicit dependency on Layer 1 and other Layer 2 modules

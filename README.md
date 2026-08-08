@@ -172,7 +172,7 @@ sequenceDiagram
 ```hcl
 module "wordpress_site" {
   # Pin to a release version for stability - see Releases page for latest
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"
 
   project_name  = "myproject"
   site_name     = "blog"
@@ -289,7 +289,7 @@ Deploy multiple WordPress sites on a single App Service Plan:
 
 ```hcl
 module "shared" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v3.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v3.1.0"
 
   project_name       = "myproject"
   environment        = "nonprod"
@@ -298,7 +298,7 @@ module "shared" {
 }
 
 module "site1" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"
 
   project_name = "myproject"
   site_name    = "site1"
@@ -339,7 +339,7 @@ through `extra_secrets`, and surface them to WordPress as Key Vault references t
 
 ```hcl
 module "wordpress_site" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"
 
   # ... other configuration ...
 
@@ -605,7 +605,7 @@ Always pin module references to a specific version tag to prevent unexpected cha
 
 ```hcl
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"
   # ...
 }
 ```

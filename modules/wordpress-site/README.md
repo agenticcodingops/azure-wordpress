@@ -13,6 +13,63 @@ This module creates a complete WordPress site deployment including:
 - App Service with managed identity
 - Optional monitoring and CDN
 
+## Upgrading to v3.1.0
+
+Additive. Every new input defaults to the azurerm provider's own default, so **the SCM and
+publishing-credential controls produce no plan diff** if you set nothing.
+
+One change is not zero-diff, and it is the only one: two app settings are renamed and their values
+corrected. `PHP_MAX_EXECUTION_TIME` and `PHP_MAX_INPUT_VARS` become `MAX_EXECUTION_TIME` and
+`MAX_INPUT_VARS`, because the Microsoft container reads those names **without** the `PHP_` prefix —
+the prefixed forms were inert and never did anything. The values move to the container's documented
+defaults (`120` and `10000`); the old `2000` for input vars was 80% below the real default and would
+have become a live regression had the names simply been corrected. **Runtime behaviour is unchanged**
+— `max_execution_time` was and stays 120, `max_input_vars` was and stays 10000. The cost is one
+`app_settings` diff and an app restart on the site and its staging slot.
+
+`PHP_MEMORY_LIMIT` is the correct name and *is* live. It stays at `256M` against a 512M container
+default — deliberate, because one B1/S1 plan (1.75 GB) carries several sites plus staging slots and
+512M per PHP worker widens the OOM blast radius. Override it via `app_service.extra_app_settings` on
+a larger plan.
+
+### Hardening the SCM/Kudu endpoint
+
+The SCM endpoint (`<app>.scm.azurewebsites.net`, plus a separate one for the staging slot) is a
+different gate from the `ip_restriction` rules `cdn_provider` drives, and azurerm defaults it to
+`Allow`. Kudu offers a shell and read/write over the persisted `/home`, so a site restricted to
+Cloudflare still had an internet-reachable Kudu before v3.1.0.
+
+```hcl
+module "wordpress" {
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"
+
+  # ... existing configuration ...
+
+  app_service_scm_ip_restrictions = [
+    { ip_address = "203.0.113.10/32", name = "OperatorHome" },
+  ]
+  app_service_scm_ip_restriction_default_action = "Deny"
+
+  app_service_ftp_publish_basic_authentication_enabled       = false
+  app_service_webdeploy_publish_basic_authentication_enabled = false
+}
+```
+
+**Read [modules/app-service/README.md](../app-service/README.md#scmkudu-network-posture) before
+adopting `Deny`.** In short: the network gate and the authentication gate are independent and both
+must pass, so `Deny` without an allow-list entry covering you costs the Kudu SSH console — Azure's
+documented route for WP-CLI, and the only way to run the manual `wp core update --major` the
+Microsoft container requires. `scm_use_main_ip_restriction` is deliberately not exposed for the same
+reason. Terraform itself is unaffected either way; it uses the ARM control plane, not Kudu.
+
+Disabling basic auth keeps `az webapp ssh` (Azure CLI ≥ 2.48.1) and the Entra-authenticated Kudu
+browser UI, and breaks FTP, local Git, and build-service deploys. Kudu UI access additionally needs
+the `Microsoft.Web/sites/publish/Action` RBAC operation — Reader is not enough.
+
+Set **both** basic-auth flags, not just the WebDeploy one. ARM models the FTP and SCM publishing
+policies as independent resources, so disabling WebDeploy alone leaves the FTP policy still reporting
+`allow = true` even though FTP/S publishing has stopped working.
+
 ## ⚠️ Upgrading to v3.0.0 — read before you apply
 
 v3.0.0 makes Key Vault purge protection and soft-delete retention environment-aware.
@@ -212,6 +269,10 @@ environment-aware. All are online, non-destructive changes.
 |------|-------------|------|---------|:--------:|
 | <a name="input_alert_recipients"></a> [alert\_recipients](#input\_alert\_recipients) | Email addresses for alert notifications | `list(string)` | `[]` | no |
 | <a name="input_app_service"></a> [app\_service](#input\_app\_service) | App Service configuration | <pre>object({<br/>    plan_id                        = optional(string, null)<br/>    use_shared_plan                = optional(bool, false)<br/>    sku_name                       = optional(string, "P1v3")<br/>    always_on                      = optional(bool, true)<br/>    health_check_path              = optional(string)<br/>    worker_count                   = optional(number, 1)<br/>    extra_app_settings             = optional(map(string), {})<br/>    extra_sticky_app_setting_names = optional(list(string), [])<br/>    sticky_connection_string_names = optional(list(string), [])<br/>    staging_app_settings_override  = optional(map(string), {})<br/>    staging_always_on              = optional(bool, false)<br/>  })</pre> | `{}` | no |
+| <a name="input_app_service_ftp_publish_basic_authentication_enabled"></a> [app\_service\_ftp\_publish\_basic\_authentication\_enabled](#input\_app\_service\_ftp\_publish\_basic\_authentication\_enabled) | Enable basic authentication for FTP publishing on the site and its staging slot. Defaults to true, matching the azurerm provider default. FTP is already closed at the transport layer (ftps\_state is Disabled). | `bool` | `true` | no |
+| <a name="input_app_service_scm_ip_restriction_default_action"></a> [app\_service\_scm\_ip\_restriction\_default\_action](#input\_app\_service\_scm\_ip\_restriction\_default\_action) | Default action for SCM/Kudu traffic matching no app\_service\_scm\_ip\_restrictions entry. Defaults to 'Allow', matching the azurerm provider default. Set to 'Deny' to close Kudu to everything not allow-listed. | `string` | `"Allow"` | no |
+| <a name="input_app_service_scm_ip_restrictions"></a> [app\_service\_scm\_ip\_restrictions](#input\_app\_service\_scm\_ip\_restrictions) | Allow-list for the App Service SCM/Kudu endpoint, applied to both the site and its staging slot. Exactly one of ip\_address, service\_tag or virtual\_network\_subnet\_id must be set per entry. Empty (the default) preserves current provider behaviour. | <pre>list(object({<br/>    ip_address                = optional(string)<br/>    service_tag               = optional(string)<br/>    virtual_network_subnet_id = optional(string)<br/>    name                      = optional(string)<br/>    priority                  = optional(number)<br/>    action                    = optional(string, "Allow")<br/>    description               = optional(string)<br/>  }))</pre> | `[]` | no |
+| <a name="input_app_service_webdeploy_publish_basic_authentication_enabled"></a> [app\_service\_webdeploy\_publish\_basic\_authentication\_enabled](#input\_app\_service\_webdeploy\_publish\_basic\_authentication\_enabled) | Enable basic authentication for WebDeploy/SCM publishing on the site and its staging slot. Defaults to true, matching the azurerm provider default. Disabling this stops FTP/S deployment from working, but does not change the FTP policy itself - ARM models the two as independent resources, so set app\_service\_ftp\_publish\_basic\_authentication\_enabled = false too. | `bool` | `true` | no |
 | <a name="input_cdn_provider"></a> [cdn\_provider](#input\_cdn\_provider) | CDN provider: 'cloudflare' (uses Cloudflare CDN/WAF), 'azure\_front\_door' (uses Azure Front Door), 'direct' (no CDN) | `string` | `"direct"` | no |
 | <a name="input_cloudflare"></a> [cloudflare](#input\_cloudflare) | Cloudflare configuration | <pre>object({<br/>    enabled                        = optional(bool, false)<br/>    account_id                     = optional(string, "")<br/>    domain                         = optional(string, "")<br/>    subdomain                      = optional(string, "")<br/>    proxied                        = optional(bool, true)<br/>    enable_waf                     = optional(bool, false) # Default false for Free plan compatibility<br/>    enable_page_rules              = optional(bool, true)  # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)<br/>    enable_cache_rules             = optional(bool, false) # Requires paid plan<br/>    enable_zone_setting_overrides  = optional(bool, false) # Some settings can't be modified on Free plan<br/>    enable_wordpress_optimizations = optional(bool, true)<br/>  })</pre> | `{}` | no |
 | <a name="input_custom_domain"></a> [custom\_domain](#input\_custom\_domain) | Custom domain for the WordPress site | `string` | n/a | yes |
@@ -264,6 +325,7 @@ environment-aware. All are online, non-destructive changes.
 | <a name="output_database_name"></a> [database\_name](#output\_database\_name) | WordPress database name |
 | <a name="output_database_server_fqdn"></a> [database\_server\_fqdn](#output\_database\_server\_fqdn) | MySQL server FQDN |
 | <a name="output_database_server_id"></a> [database\_server\_id](#output\_database\_server\_id) | MySQL server ID |
+| <a name="output_database_server_name"></a> [database\_server\_name](#output\_database\_server\_name) | MySQL server name |
 | <a name="output_front_door_endpoint_hostname"></a> [front\_door\_endpoint\_hostname](#output\_front\_door\_endpoint\_hostname) | Front Door endpoint hostname (for DNS CNAME) |
 | <a name="output_front_door_profile_id"></a> [front\_door\_profile\_id](#output\_front\_door\_profile\_id) | Front Door profile ID |
 | <a name="output_front_door_resource_guid"></a> [front\_door\_resource\_guid](#output\_front\_door\_resource\_guid) | Front Door profile resource GUID (for App Service IP restriction) |

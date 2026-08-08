@@ -20,7 +20,7 @@ inputs (it was missing `project_name`, `name_suffix` and all three `network_acls
 
 ```hcl
 module "key_vault" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/key-vault?ref=v3.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/key-vault?ref=v3.1.0"
 
   project_name        = "trackroutinely"
   site_name           = "workout-tracker"

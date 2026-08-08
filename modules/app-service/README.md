@@ -30,39 +30,100 @@ The following settings are sticky to deployment slots:
 
 This ensures staging slot uses staging URL, not production URL.
 
-## Inputs
+## SCM/Kudu Network Posture
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| site_name | Site name | string | - | yes |
-| environment | Environment | string | - | yes |
-| location | Azure region | string | - | yes |
-| resource_group_name | Resource group | string | - | yes |
-| app_subnet_id | App subnet ID | string | - | yes |
-| plan_id | Existing plan ID (null = create new) | string | null | no |
-| sku_name | App Service Plan SKU | string | "P1v3" | no |
-| always_on | Keep app loaded | bool | true | no |
-| database_host | MySQL server FQDN | string | - | yes |
-| database_name | MySQL database name | string | - | yes |
-| database_username | MySQL username | string | - | yes |
-| key_vault_uri | Key Vault URI | string | - | yes |
-| database_password_secret_uri | DB password secret URI | string | - | yes |
-| storage_account_name | Storage account name | string | - | yes |
-| storage_container_name | Storage container name | string | - | yes |
-| storage_access_key_secret_uri | Storage key secret URI | string | - | yes |
-| custom_domain | Custom domain | string | - | yes |
-| tags | Resource tags | map(string) | {} | no |
+The SCM endpoint — `https://<app>.scm.azurewebsites.net`, and separately
+`https://<app>-staging.scm.azurewebsites.net` for the slot — is **not** covered by the
+`ip_restriction` rules that `cdn_provider` drives. It is a distinct gate, and azurerm defaults it
+to `Allow`. Kudu offers a shell and read/write access to the persisted `/home` holding WordPress
+core, `wp-config.php` and the theme, so until v3.1.0 a site whose public plane admitted only
+Cloudflare still had an internet-reachable Kudu, guarded by credentials alone.
 
-## Outputs
+Set `scm_ip_restrictions` and `scm_ip_restriction_default_action = "Deny"` to close it. Both apply
+to the site **and** its staging slot.
 
-| Name | Description |
-|------|-------------|
-| id | Web App ID |
-| name | Web App name |
-| default_hostname | Default hostname |
-| principal_id | Managed identity principal ID |
-| plan_id | App Service Plan ID |
-| staging_slot_id | Staging slot ID |
+```hcl
+scm_ip_restrictions = [
+  { ip_address = "203.0.113.10/32", name = "OperatorHome" },
+  # A self-hosted runner inside the VNet is better than allow-listing a
+  # third party's egress range:
+  { virtual_network_subnet_id = azurerm_subnet.runners.id, description = "CI runner" },
+]
+scm_ip_restriction_default_action = "Deny"
+```
+
+Exactly one of `ip_address`, `service_tag` or `virtual_network_subnet_id` must be set per entry —
+the module validates this at **plan** time, because azurerm only enforces it during apply. `name`
+defaults to `ScmRule-<index>` and `priority` to `100 + <index>`.
+
+### Three things that bite
+
+**1. Network and authentication are independent gates, and both must pass.** Setting the default
+action to `Deny` without an allow-list entry that covers you costs the Kudu SSH console even with
+valid credentials. That console is Azure's documented route for WP-CLI, and the Microsoft container
+ships WordPress 6.6.1 — steady state 6.6.5 after the entrypoint's one-time `wp core update --minor`,
+which then disables major auto-update. Getting to a current WordPress is a manual
+`wp core update --major` over that console. Lock it out and you lose the only path to a patched
+WordPress.
+
+**2. `scm_use_main_ip_restriction` is deliberately not exposed.** azurerm defaults it to `false` and
+this module leaves it there. Setting it `true` makes SCM inherit the *main* site's rules — on a
+Cloudflare or Front Door site those are CDN egress ranges plus the Azure health probe with `Deny` as
+the default, so Kudu becomes unreachable from every operator address. It is the same lockout as (1),
+just harder to see coming. Whether it also overrides `scm_ip_restriction_default_action` is
+undocumented by Microsoft (verified 2026-08-08), which is a second reason to avoid it. Use an
+explicit `scm_ip_restrictions` entry instead.
+
+**3. Terraform itself is unaffected — GitHub-hosted runners are the real problem.** Terraform manages
+this app through the ARM control plane, never through Kudu, so tightening SCM does not break
+`terraform apply`. But GitHub-hosted runners egress from a wide, rotating range published at
+`api.github.com/meta`; allow-listing it admits a large third-party surface for marginal benefit. A
+self-hosted runner in the VNet (`virtual_network_subnet_id`) or an Azure-native deploy identity is
+the better answer.
+
+Finally, note the provider default is a schema-level `Default`, not "leave Azure alone". Omitting
+these arguments materialises `Allow` into state, so an SCM restriction applied by hand in the portal
+is reverted on the next apply. Manage it here or it will not stay.
+
+## Publishing Credentials
+
+`ftp_publish_basic_authentication_enabled` and `webdeploy_publish_basic_authentication_enabled` both
+default to `true`, matching azurerm. Both are applied to the site **and** the slot — the slot carries
+its own independent flags, so a change that misses it still reads as compliant on the site resource
+alone.
+
+**Set both to `false`; the two are not coupled at the ARM layer.** Microsoft's prose that "SCM basic
+authentication is required for enabling FTP basic authentication" describes the *deployment* layer —
+turning SCM off stops FTP/S publishing from working — but ARM models `basicPublishingCredentialsPolicies/ftp`
+and `/scm` as independent singleton resources with separate update operations and no cross-validation,
+and azurerm reads each back verbatim into state. Disabling only WebDeploy therefore leaves the FTP
+policy reporting `allow = true`, which is what a compliance scanner will see. (`site_config.ftps_state`
+is already `Disabled` here, so FTP is closed at the transport layer either way.)
+
+Worth knowing when reasoning about diffs: azurerm's **Create** only calls `UpdateFtpAllowed` /
+`UpdateScmAllowed` when the value is `false` — it never transmits `Allow: true`. Leaving these at
+`true` is a genuine no-op, not an assertion. **Update** does send the real value, gated per-argument
+on `HasChange`.
+
+Per [Microsoft's fallback table](https://learn.microsoft.com/en-us/azure/app-service/configure-basic-auth-disable):
+
+| Still works | Breaks |
+|---|---|
+| `az webapp ssh`, `az webapp create-remote-connection` — Entra fallback, **Azure CLI ≥ 2.48.1** | FTP, local Git |
+| Kudu browser UI via Entra SSO | GitHub / Bitbucket / Azure Repos with the *App Service build service* |
+| Azure Pipelines via **service connection**; `AzureWebApp` task | Azure Pipelines wired with a *publish profile* |
+| GitHub Actions using OIDC / user-assigned identity | Existing GitHub Actions using basic auth |
+| Maven and Gradle plugins | `https://<app>.scm.azurewebsites.net/basicauth` |
+
+Two operational preconditions:
+
+- **RBAC.** Browser access to Kudu needs the `Microsoft.Web/sites/publish/Action` operation —
+  Website Contributor, Logic Apps Standard Developer, Contributor or Owner. **Reader is not
+  sufficient**, with or without basic auth.
+- **Azure Policy drift.** Remediation policies exist for both flags
+  (`f493116f-3b7f-4ab3-bf80-0c2af35e46c2` for FTP, `2c034a29-2a5f-4857-b120-f800fe5549ae` for SCM).
+  A subscription-level assignment will flip them under Terraform and produce perpetual drift; check
+  for one before treating the Terraform value as authoritative.
 
 ## Usage
 
@@ -171,12 +232,15 @@ No modules.
 | <a name="input_extra_sticky_app_setting_names"></a> [extra\_sticky\_app\_setting\_names](#input\_extra\_sticky\_app\_setting\_names) | Additional app setting names to mark as sticky (slot-specific, not swapped) | `list(string)` | `[]` | no |
 | <a name="input_front_door_enabled"></a> [front\_door\_enabled](#input\_front\_door\_enabled) | DEPRECATED: Use cdn\_provider instead. Whether Front Door is enabled. | `bool` | `true` | no |
 | <a name="input_front_door_id"></a> [front\_door\_id](#input\_front\_door\_id) | Azure Front Door resource GUID (required when cdn\_provider = azure\_front\_door) | `string` | `""` | no |
+| <a name="input_ftp_publish_basic_authentication_enabled"></a> [ftp\_publish\_basic\_authentication\_enabled](#input\_ftp\_publish\_basic\_authentication\_enabled) | Enable basic authentication for FTP publishing. Defaults to true, matching the azurerm provider default. Note site\_config.ftps\_state is already 'Disabled' here, so FTP is closed at the transport layer regardless. | `bool` | `true` | no |
 | <a name="input_health_check_path"></a> [health\_check\_path](#input\_health\_check\_path) | Path for health check endpoint (use a lightweight static file, not the homepage) | `string` | `"/wp-includes/images/blank.gif"` | no |
 | <a name="input_key_vault_uri"></a> [key\_vault\_uri](#input\_key\_vault\_uri) | Key Vault URI for secret references | `string` | n/a | yes |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for resources | `string` | n/a | yes |
 | <a name="input_plan_id"></a> [plan\_id](#input\_plan\_id) | ID of existing App Service Plan. If null, a new plan is created. | `string` | `null` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |
 | <a name="input_resource_group_name"></a> [resource\_group\_name](#input\_resource\_group\_name) | Name of the resource group | `string` | n/a | yes |
+| <a name="input_scm_ip_restriction_default_action"></a> [scm\_ip\_restriction\_default\_action](#input\_scm\_ip\_restriction\_default\_action) | Default action for SCM/Kudu traffic matching no scm\_ip\_restrictions entry. Defaults to 'Allow', matching the azurerm provider default, so existing consumers see no plan diff. Set to 'Deny' to close Kudu to everything not allow-listed. | `string` | `"Allow"` | no |
+| <a name="input_scm_ip_restrictions"></a> [scm\_ip\_restrictions](#input\_scm\_ip\_restrictions) | Allow-list for the SCM/Kudu endpoint. Exactly one of ip\_address, service\_tag or virtual\_network\_subnet\_id must be set per entry. Empty (the default) preserves current provider behaviour. | <pre>list(object({<br/>    ip_address                = optional(string)<br/>    service_tag               = optional(string)<br/>    virtual_network_subnet_id = optional(string)<br/>    name                      = optional(string)<br/>    priority                  = optional(number)<br/>    action                    = optional(string, "Allow")<br/>    description               = optional(string)<br/>  }))</pre> | `[]` | no |
 | <a name="input_site_name"></a> [site\_name](#input\_site\_name) | Site name used for resource naming (lowercase, hyphens only) | `string` | n/a | yes |
 | <a name="input_sku_name"></a> [sku\_name](#input\_sku\_name) | App Service Plan SKU (P1v3 recommended for production) | `string` | `"P1v3"` | no |
 | <a name="input_staging_always_on"></a> [staging\_always\_on](#input\_staging\_always\_on) | Keep the staging slot always loaded (set to false to save cost) | `bool` | `false` | no |
@@ -187,6 +251,7 @@ No modules.
 | <a name="input_storage_container_name"></a> [storage\_container\_name](#input\_storage\_container\_name) | Storage container name for media uploads | `string` | n/a | yes |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources | `map(string)` | `{}` | no |
 | <a name="input_use_shared_plan"></a> [use\_shared\_plan](#input\_use\_shared\_plan) | Set to true when using a shared App Service Plan. This avoids plan-time unknown value issues. | `bool` | `false` | no |
+| <a name="input_webdeploy_publish_basic_authentication_enabled"></a> [webdeploy\_publish\_basic\_authentication\_enabled](#input\_webdeploy\_publish\_basic\_authentication\_enabled) | Enable basic authentication for WebDeploy/SCM publishing. Defaults to true, matching the azurerm provider default. Disabling this stops FTP/S deployment from working, but does not change the FTP policy itself - ARM models the two as independent resources, so set ftp\_publish\_basic\_authentication\_enabled = false too. | `bool` | `true` | no |
 | <a name="input_worker_count"></a> [worker\_count](#input\_worker\_count) | Number of workers (instances) | `number` | `1` | no |
 
 ## Outputs

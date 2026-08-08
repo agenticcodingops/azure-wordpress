@@ -92,10 +92,25 @@ locals {
     # Required when using VNet integration with private MySQL
     "WEBSITE_DNS_SERVER" = "168.63.129.16"
 
-    # PHP configuration
-    "PHP_MEMORY_LIMIT"       = "256M"
-    "PHP_MAX_EXECUTION_TIME" = "120"
-    "PHP_MAX_INPUT_VARS"     = "2000"
+    # PHP configuration.
+    #
+    # PHP_MEMORY_LIMIT is the real (prefixed) name and IS read by the container:
+    # documented default 512M, "can only be decreased". 256M is DELIBERATE - one
+    # B1/S1 plan (1.75 GB) carries two sites plus staging slots, so 512M per PHP
+    # worker widens the OOM blast radius on shared compute. Consumers on a larger
+    # plan can raise it via extra_app_settings.
+    "PHP_MEMORY_LIMIT" = "256M"
+
+    # These two take NO prefix - the container reads MAX_EXECUTION_TIME and
+    # MAX_INPUT_VARS. The PHP_-prefixed names this module used through v3.0.0 were
+    # inert; the container never read them. Both are now pinned at the documented
+    # default, which is also the documented maximum ("can only be decreased"), so
+    # they are explicit no-ops rather than tuning knobs. Do NOT carry the old
+    # PHP_MAX_INPUT_VARS value of 2000 across: against the real default of 10000
+    # that is an 80% cut, and PHP truncates over-limit POSTs silently. max_input_vars
+    # is INI_PERDIR, so a plugin cannot recover from it with ini_set() at runtime.
+    "MAX_EXECUTION_TIME" = "120"   # default 120, max 120
+    "MAX_INPUT_VARS"     = "10000" # default 10000, max 10000
 
     # WordPress cron - use built-in wp-cron.php (triggered on page loads)
     # Set to "true" only after provisioning an external cron replacement (Azure Functions, etc.)
@@ -138,6 +153,14 @@ resource "azurerm_linux_web_app" "main" {
 
   # Security settings
   https_only = true
+
+  # Publishing credentials. Both default to true, matching the azurerm provider
+  # default; azurerm only calls the API when the value is false, so `true` is a
+  # true no-op. The two ARM policies are independent - disabling webdeploy stops
+  # FTP/S *deployment* from working but does not flip the FTP flag, so harden both
+  # explicitly. Disabling webdeploy also breaks zip_deploy_file. See README.
+  ftp_publish_basic_authentication_enabled       = var.ftp_publish_basic_authentication_enabled
+  webdeploy_publish_basic_authentication_enabled = var.webdeploy_publish_basic_authentication_enabled
 
   # VNet integration for database access
   virtual_network_subnet_id = var.app_subnet_id
@@ -223,6 +246,31 @@ resource "azurerm_linux_web_app" "main" {
 
     # Default action: Deny when using CDN (cloudflare or azure_front_door), Allow otherwise
     ip_restriction_default_action = local.effective_cdn_provider != "direct" ? "Deny" : "Allow"
+
+    # =========================================================================
+    # SCM/KUDU IP RESTRICTIONS - a SEPARATE gate from the rules above
+    # =========================================================================
+    # scm_use_main_ip_restriction is intentionally left at the provider default
+    # (false). Inheriting the main rules would admit only Cloudflare/Front Door
+    # and lock Kudu out from every operator address - including the SSH console
+    # that is the only route to a manual `wp core update --major`. See README.
+    #
+    # No health-probe rule is needed here: 168.63.129.16/32 probes the main site,
+    # never SCM.
+    dynamic "scm_ip_restriction" {
+      for_each = var.scm_ip_restrictions
+      content {
+        ip_address                = scm_ip_restriction.value.ip_address
+        service_tag               = scm_ip_restriction.value.service_tag
+        virtual_network_subnet_id = scm_ip_restriction.value.virtual_network_subnet_id
+        name                      = coalesce(scm_ip_restriction.value.name, "ScmRule-${scm_ip_restriction.key}")
+        priority                  = coalesce(scm_ip_restriction.value.priority, 100 + scm_ip_restriction.key)
+        action                    = scm_ip_restriction.value.action
+        description               = scm_ip_restriction.value.description
+      }
+    }
+
+    scm_ip_restriction_default_action = var.scm_ip_restriction_default_action
   }
 
   # App settings (default WordPress settings merged with extra settings from consumer)
@@ -278,6 +326,11 @@ resource "azurerm_linux_web_app_slot" "staging" {
 
   # Security settings
   https_only = true
+
+  # The slot carries its OWN publishing-credential flags. A hardening change that
+  # misses the slot still reads as compliant on the site resource alone.
+  ftp_publish_basic_authentication_enabled       = var.ftp_publish_basic_authentication_enabled
+  webdeploy_publish_basic_authentication_enabled = var.webdeploy_publish_basic_authentication_enabled
 
   # VNet integration
   virtual_network_subnet_id = var.app_subnet_id
@@ -349,6 +402,24 @@ resource "azurerm_linux_web_app_slot" "staging" {
     }
 
     ip_restriction_default_action = local.effective_cdn_provider != "direct" ? "Deny" : "Allow"
+
+    # SCM/Kudu restrictions for the slot. The slot has its own SCM endpoint at
+    # <app>-staging.scm.azurewebsites.net, so it needs the same treatment as the
+    # main app. Same rules are applied to both.
+    dynamic "scm_ip_restriction" {
+      for_each = var.scm_ip_restrictions
+      content {
+        ip_address                = scm_ip_restriction.value.ip_address
+        service_tag               = scm_ip_restriction.value.service_tag
+        virtual_network_subnet_id = scm_ip_restriction.value.virtual_network_subnet_id
+        name                      = coalesce(scm_ip_restriction.value.name, "ScmRule-${scm_ip_restriction.key}")
+        priority                  = coalesce(scm_ip_restriction.value.priority, 100 + scm_ip_restriction.key)
+        action                    = scm_ip_restriction.value.action
+        description               = scm_ip_restriction.value.description
+      }
+    }
+
+    scm_ip_restriction_default_action = var.scm_ip_restriction_default_action
   }
 
   # Staging-specific settings (WP_HOME/WP_SITEURL are sticky)

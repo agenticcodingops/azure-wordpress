@@ -145,7 +145,7 @@ This project uses [Semantic Versioning](https://semver.org/) (`vMAJOR.MINOR.PATC
 2. Release-please automatically creates/updates a Release PR with the bumped version and updated CHANGELOG
 3. A maintainer reviews and merges the Release PR when ready to cut a release
 4. Release-please creates the git tag (e.g., `v3.0.0`) and GitHub Release automatically
-5. Consumers pin to the new version: `source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.0.0"`
+5. Consumers pin to the new version: `source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"`
 
 **Breaking change examples:**
 
