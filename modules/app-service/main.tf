@@ -92,10 +92,25 @@ locals {
     # Required when using VNet integration with private MySQL
     "WEBSITE_DNS_SERVER" = "168.63.129.16"
 
-    # PHP configuration
-    "PHP_MEMORY_LIMIT"       = "256M"
-    "PHP_MAX_EXECUTION_TIME" = "120"
-    "PHP_MAX_INPUT_VARS"     = "2000"
+    # PHP configuration.
+    #
+    # PHP_MEMORY_LIMIT is the real (prefixed) name and IS read by the container:
+    # documented default 512M, "can only be decreased". 256M is DELIBERATE - one
+    # B1/S1 plan (1.75 GB) carries two sites plus staging slots, so 512M per PHP
+    # worker widens the OOM blast radius on shared compute. Consumers on a larger
+    # plan can raise it via extra_app_settings.
+    "PHP_MEMORY_LIMIT" = "256M"
+
+    # These two take NO prefix - the container reads MAX_EXECUTION_TIME and
+    # MAX_INPUT_VARS. The PHP_-prefixed names this module used through v3.0.0 were
+    # inert; the container never read them. Both are now pinned at the documented
+    # default, which is also the documented maximum ("can only be decreased"), so
+    # they are explicit no-ops rather than tuning knobs. Do NOT carry the old
+    # PHP_MAX_INPUT_VARS value of 2000 across: against the real default of 10000
+    # that is an 80% cut, and PHP truncates over-limit POSTs silently. max_input_vars
+    # is INI_PERDIR, so a plugin cannot recover from it with ini_set() at runtime.
+    "MAX_EXECUTION_TIME" = "120"   # default 120, max 120
+    "MAX_INPUT_VARS"     = "10000" # default 10000, max 10000
 
     # WordPress cron - use built-in wp-cron.php (triggered on page loads)
     # Set to "true" only after provisioning an external cron replacement (Azure Functions, etc.)
