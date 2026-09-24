@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.1](https://github.com/agenticcodingops/azure-wordpress/compare/v4.0.0...v4.0.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **wordpress-site:** count the staging-slot Key Vault policy on the SKU ([#52](https://github.com/agenticcodingops/azure-wordpress/issues/52)) ([7edb097](https://github.com/agenticcodingops/azure-wordpress/commit/7edb0970d72250c8dcf0f22842a4e09e77f029fa))
+
 ## [4.0.0](https://github.com/agenticcodingops/azure-wordpress/compare/v3.1.0...v4.0.0) (2026-09-24)
 
 
