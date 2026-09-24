@@ -165,6 +165,17 @@ SHAs because the job holds a write token and the OAuth secret. Two consequences 
   cannot post on another PR. If a clean PR gets no "no issues found" summary, look for a
   permission denial in the job log: the review used some other `gh pr comment` form.
 
+**`--comment` and the allow-list were still not enough (#49 posted nothing, 5 and 25 denials).**
+Reproduced locally with the same CLI version, `--plugin-dir` pointing at the plugin, and
+`--setting-sources project`. The job log hides the full output, and turning `show_full_output` on
+would publish it in this public repo's logs. Left to itself, the model fetches the head SHA with
+`gh api`, reads large saved output through the shell, and writes comment bodies as heredocs. The
+allow-list denies all three, so nothing is posted. The prompt now appends **POSTING RULES**
+(`gh pr view --json headRefOid`, the Read tool, the inline-comment tool, `--body-file` written with
+`Write`). With them the summary went out as `gh pr comment <N> --repo … --body-file …`, which the
+bound rule allows. Each full review costs roughly $1–5 of subscription usage, because the plugin
+runs Opus sub-agents.
+
 `validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
 
 ## Commit Metadata Guard (.github/workflows/commit-hygiene.yml)
