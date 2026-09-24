@@ -151,6 +151,57 @@ workflow's historical "successes" are exactly that — a skip, not a review.
 
 `validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
 
+## Commit Metadata Guard (.github/workflows/commit-hygiene.yml)
+
+Policy, prohibited items and setup live in [AGENTS.md](AGENTS.md). What follows is the
+repo-specific behaviour it does not cover.
+
+**The allow-list carries three addresses, and two of them exist only for merges made on
+github.com.** `.githooks/allowed-authors.txt` is read by the `commit-msg` and `pre-push` hooks
+*and* by the workflow, so one edit changes every layer at once.
+
+| Address | Why it is listed |
+| --- | --- |
+| `hassan.abbas@agenticcodingops.com` | The local `git config user.email`. Local commits use this one. |
+| `vibecoddingops@outlook.com` | The GitHub account's commit email. It authors every web-UI merge on `main`, and every release-please commit (`RELEASE_PLEASE_TOKEN` belongs to that account). |
+| `noreply@github.com` | GitHub's web-flow committer on every web-UI merge. |
+
+Without the last two, every push to `main` fails the check: at setup, 60 of the 76 commits on
+`main` used only those two identities.
+
+**Two automated sources stay red, and the allow-list cannot fix either:**
+
+- **Dependabot.** `identity_check` rejects any `[bot]` or `bot@` address *before* it reads the
+  allow-list, so listing `49699333+dependabot[bot]@users.noreply.github.com` changes nothing.
+  GitHub's squash merge also adds a `Co-authored-by: dependabot[bot]` trailer, which
+  `branding_scan` rejects on its own. Dependabot PRs fail, and so does the push to `main` when
+  one merges.
+- **release-please PRs.** The PR body ends with release-please's standard "generated with
+  Release Please" footer, which matches `BRANDING_ERE`. Only the PR check fails: the release
+  commit and its squash merge (`chore(main): release X.Y.Z (#N)`) are clean, so the push to
+  `main` passes.
+
+`main` has no branch protection, so both show red without blocking anything. Fixing either
+means exempting those branches in the workflow or changing the guard — a policy decision.
+Do not "fix" it by adding bot addresses to the allow-list; it cannot work.
+
+**Branches cut before the guard fail it.** Their commits carry the old attribution trailers
+(`feat/scm-network-posture` has four). They fail Commit Hygiene until reworded.
+
+**Hooks vanish on those same branches.** `core.hooksPath` is per clone, not per branch. Check
+out a branch without `.githooks/` and git runs **no** hooks — not the guard, not lefthook —
+silently. Merge `main` into it, or `git config --unset core.hooksPath` while on it (lefthook's
+`.git/hooks` shims run again) and re-run `sh .githooks/install.sh` afterwards.
+
+**Branded paths trip the guard.** This file, the agent settings directory and two workflows
+have a vendor name in their path. Naming one in a commit subject or PR body is blocked, so
+describe it instead ("the project guidance file").
+
+**`commit-msg` treats `#` lines as comments; `pre-push` and CI do not.** In the editor buffer
+those lines really are comments — they include the branch name and the staged-file list — but
+`git commit -m` stores them verbatim. A byline written as `# ...` therefore passes `commit-msg`
+and is caught at push.
+
 ## Landing Stacked Work
 
 **Do not stack PRs in this repo.** On 2026-08-02 a three-PR stack silently lost an entire release:

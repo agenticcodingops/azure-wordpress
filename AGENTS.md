@@ -31,7 +31,10 @@ files to satisfy this policy.
 
 - Every commit must be authored **and** committed by the identity in
   `git config user.name` / `git config user.email`, and that address must be listed in
-  `.githooks/allowed-authors.txt`.
+  `.githooks/allowed-authors.txt`. The list's other entries exist only so that merges
+  made on github.com pass CI; the comments in the file say which is which.
+- Never add a bot address to the list. The guard rejects `[bot]` and `bot@` addresses
+  before it reads the list, so the entry would do nothing.
 - Never pass `--author`, and never set `GIT_AUTHOR_*` / `GIT_COMMITTER_*` to commit as
   anyone else.
 
@@ -60,7 +63,7 @@ fresh clone needs it. The hooks in `.githooks/` also run the lefthook scanners, 
 ## Enforcement layers
 
 | Layer | Where | What it catches | What gets past it |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Agent settings | `.claude/settings.json` (`attribution`) | Stops that agent from adding trailers, bylines or session links in the first place | Any other tool, or a human |
 | `commit-msg` hook | `.githooks/commit-msg` | Branded message, unlisted author or committer — at commit time | `--no-verify`; lines starting with `#`, which it treats as comments even when `git commit -m` keeps them |
 | `pre-push` hook | `.githooks/pre-push` | Every outgoing commit's message and both identities, ref names, annotated tag messages. Also scans `#` lines | `--no-verify`; a clone that never ran `install.sh` |
