@@ -1,19 +1,34 @@
 #!/bin/sh
-# Rejects vendor/tool attribution in the commit message, and any author or committer
-# whose address is not in .githooks/allowed-authors.txt. Policy: AGENTS.md.
+# Rejects vendor/tool attribution in the commit message, and any author or committer that
+# is not exactly the configured git identity or is not in .githooks/allowed-authors.txt.
+# Policy: AGENTS.md.
 
 root=$(git rev-parse --show-toplevel) || exit 1
+allow="$root/.githooks/allowed-authors.txt"
+[ -f "$allow" ] || { printf 'BLOCKED: %s is missing; refusing to commit without it.\n' "$allow" >&2; exit 1; }
 . "$root/.githooks/branding-guard.sh"
 
+ident() { git var "$1" | sed 's/ [0-9][0-9]* [-+][0-9][0-9][0-9][0-9]$//'; }   # "Name <email>"
 email_of() { sed -n 's/^.*<\([^>]*\)>.*$/\1/p'; }
 
 fail=0
 branding_scan "commit message" <"$1" || fail=1
-identity_check "$(git var GIT_AUTHOR_IDENT | email_of)" author "this commit" || fail=1
-identity_check "$(git var GIT_COMMITTER_IDENT | email_of)" committer "this commit" || fail=1
+
+# The allow-list also carries GitHub-side merge identities (for CI), so it alone would let a
+# local commit claim one of them. Local commits must be the configured identity, exactly.
+want="$(git config user.name) <$(git config user.email)>"
+for var in GIT_AUTHOR_IDENT GIT_COMMITTER_IDENT; do
+    role=$(printf '%s' "$var" | sed 's/^GIT_\(.*\)_IDENT$/\1/' | tr 'A-Z' 'a-z')
+    got=$(ident "$var")
+    if [ "$got" != "$want" ]; then
+        printf 'BLOCKED: %s "%s" is not the configured identity "%s".\n' "$role" "$got" "$want" >&2
+        fail=1
+    fi
+    identity_check "$(printf '%s' "$got" | email_of)" "$role" "this commit" || fail=1
+done
 
 if [ "$fail" -ne 0 ]; then
-    printf '\nCommit rejected. Rewrite the message (or fix user.email); do not use --no-verify.\n' >&2
+    printf '\nCommit rejected. Rewrite the message, or drop the identity override; do not use --no-verify.\n' >&2
     exit 1
 fi
 exit 0

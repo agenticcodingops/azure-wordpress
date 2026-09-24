@@ -162,12 +162,22 @@ github.com.** `.githooks/allowed-authors.txt` is read by the `commit-msg` and `p
 
 | Address | Why it is listed |
 | --- | --- |
-| `hassan.abbas@agenticcodingops.com` | The local `git config user.email`. Local commits use this one. |
+| `hassan.abbas@agenticcodingops.com` | The local `git config user.email`. |
 | `vibecoddingops@outlook.com` | The GitHub account's commit email. It authors every web-UI merge on `main`, and every release-please commit (`RELEASE_PLEASE_TOKEN` belongs to that account). |
 | `noreply@github.com` | GitHub's web-flow committer on every web-UI merge. |
 
 Without the last two, every push to `main` fails the check: at setup, 60 of the 76 commits on
-`main` used only those two identities.
+`main` used only those two identities. Listing them would also let a local commit claim one, so
+`commit-msg` additionally requires author and committer to equal `git config user.name` /
+`user.email` exactly. `pre-push` and CI check only the allow-list — they must accept commits
+GitHub made — so a `--no-verify` commit that claims a GitHub-side identity still gets through.
+
+**The PR check cannot be weakened from inside the PR.** It runs on `pull_request_target`, which
+takes the workflow, the guard and the allow-list from `main` and reads the PR's commits, title
+and body only as data. Two consequences: a PR that edits any of those files is judged by
+`main`'s version until it merges, and the PR that introduced the workflow had no PR check at all
+(only the advisory push run). Never add a step to that workflow that checks out or executes the
+PR head — under `pull_request_target` that is the classic privileged-checkout hole.
 
 **Two automated sources stay red, and the allow-list cannot fix either:**
 
@@ -190,8 +200,8 @@ Do not "fix" it by adding bot addresses to the allow-list; it cannot work.
 
 **Hooks vanish on those same branches.** `core.hooksPath` is per clone, not per branch. Check
 out a branch without `.githooks/` and git runs **no** hooks — not the guard, not lefthook —
-silently. Merge `main` into it, or `git config --unset core.hooksPath` while on it (lefthook's
-`.git/hooks` shims run again) and re-run `sh .githooks/install.sh` afterwards.
+silently. Merge `main` into it before committing there. Do not unset `core.hooksPath` to get
+lefthook back: that trades the metadata guard for the scanners, and AGENTS.md forbids it.
 
 **Branded paths trip the guard.** This file, the agent settings directory and two workflows
 have a vendor name in their path. Naming one in a commit subject or PR body is blocked, so

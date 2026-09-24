@@ -6,6 +6,8 @@
 # Git supplies "<local ref> <local sha> <remote ref> <remote sha>" lines on stdin.
 
 root=$(git rev-parse --show-toplevel) || exit 1
+allow="$root/.githooks/allowed-authors.txt"
+[ -f "$allow" ] || { printf 'BLOCKED: %s is missing; refusing to push without it.\n' "$allow" >&2; exit 1; }
 . "$root/.githooks/branding-guard.sh"
 
 # branding_scan drops '#' lines because they are comments in the commit-msg buffer. A
