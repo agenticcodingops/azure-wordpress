@@ -149,6 +149,22 @@ byte-identical to the copy on the default branch; any PR that touches it makes t
 with "Workflow validation failed" and report **green** without reviewing anything. Several of this
 workflow's historical "successes" are exactly that — a skip, not a review.
 
+**Until 2026-09-24 a green review also meant nothing was posted.** The token rotated that day
+worked (4 turns, non-zero cost), yet no comment ever appeared. Not a permission problem — the
+action swaps in its own app token. The `code-review` plugin posts **only** when its prompt carries
+`--comment` ("If `--comment` argument was NOT provided, stop here"), and its `gh` and
+inline-comment tools must be allowed through `claude_args --allowedTools`, mirroring the plugin's
+own `allowed-tools` frontmatter. The workflow now passes both, and pins both actions to commit
+SHAs because the job holds a write token and the OAuth secret. Two consequences worth knowing:
+
+- The plugin stops if it has already commented on the PR, so it reviews a PR **once**, on open,
+  not on every push. It also skips PRs it judges automated or trivial.
+- A green check with no comment can still mean "skipped" (see above) — check the PR for the
+  review comment before treating it as a clean review.
+- `gh pr comment` is allowed only for the triggering PR, by number or by URL, so injected PR text
+  cannot post on another PR. If a clean PR gets no "no issues found" summary, look for a
+  permission denial in the job log: the review used some other `gh pr comment` form.
+
 `validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
 
 ## Commit Metadata Guard (.github/workflows/commit-hygiene.yml)
