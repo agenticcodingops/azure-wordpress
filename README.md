@@ -616,6 +616,8 @@ Available versions are listed on the [Releases](https://github.com/agenticcoding
 
 v4.0.0 moves every module onto azurerm `~> 5.6`. The root module must require that same constraint, or `terraform init` cannot resolve a provider. No module inputs change. Run `terraform plan` before the first apply. Key Vault purge protection, soft-delete retention, and MySQL geo-redundant backup are unchanged by this release, and each of them is costly to change after the resource exists.
 
+The provider no longer registers resource providers unless asked: `resource_provider_registrations` defaults to `none`, and `skip_provider_registration` is removed. Set `resource_provider_registrations = "legacy"` to keep the previous automatic set. Plan-time location and resource-provider checks also default off. Set `features.enhanced_validation.locations` and `features.enhanced_validation.resource_providers` to `true` to keep catching those at plan time. The examples set all three.
+
 ### Upgrading Versions
 
 1. Check the [CHANGELOG](CHANGELOG.md) for the target version
