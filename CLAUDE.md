@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Commit metadata policy: read [AGENTS.md](AGENTS.md) first.** No vendor or AI-tool names in
+commit messages, trailers, branch names, tags or PR text; every commit authored and committed
+by the configured git identity; never `--no-verify`. Run `sh .githooks/install.sh` once per clone.
+
 ## Project Overview
 
 Reusable Terraform/OpenTofu modules for deploying WordPress on Azure. The consumer repo (trackroutinely) calls the composition module at `modules/wordpress-site`, which orchestrates 10 sub-modules in a two-layer dependency model.
@@ -384,7 +388,7 @@ checkov@339 -d . --framework terraform -o json --skip-check <list-from-validate.
 trivy config . --severity CRITICAL --skip-dirs .terraform
 ```
 
-Local hooks run via **lefthook**, not pre-commit (`lefthook install`). Pre-commit runs secret scanning, `terraform fmt` and Trivy CRITICAL on changed directories only; pre-push adds Checkov and tflint. Missing tools fail open with a warning. Disable with `LEFTHOOK=0 git commit`, or `global.local_hooks_enabled: false` in `scan-config.yaml`. Note the hooks scan **changed directories**, so touching a previously untouched module can surface pre-existing findings.
+Local hooks run via **lefthook**, not pre-commit, but are entered through `.githooks/` (`sh .githooks/install.sh` sets `core.hooksPath`), which runs the commit-metadata guard and then hands off to `lefthook run --no-auto-install`. Do not run `lefthook install`: it refuses while `core.hooksPath` is set, and its `--reset-hooks-path` escape hatch disables the guard. Pre-commit runs secret scanning, `terraform fmt` and Trivy CRITICAL on changed directories only; pre-push adds Checkov and tflint. Missing tools fail open with a warning. Disable the scanners with `LEFTHOOK=0 git commit` (the metadata guard still runs), or `global.local_hooks_enabled: false` in `scan-config.yaml`. Note the hooks scan **changed directories**, so touching a previously untouched module can surface pre-existing findings.
 
 **Installing Checkov arms a hook that is currently dormant.** `hooks/checkov.sh` does `require_tool checkov || exit 0`, so with Checkov absent from PATH the pre-push gate is a silent no-op. It also resolves `.checkov.yaml` from `.scanning/configs/`, which does not exist — so when it *does* run it runs with **no skip list at all**, and will flag many of the 23 checks `validate.yml` deliberately skips. Those findings are pre-existing and unrelated to your change; do not "fix" them. Keep Checkov off PATH (the `pipx --suffix` above), or use `LEFTHOOK=0 git push` once and say so in the PR. Do **not** commit `local_hooks_enabled: false` (repo-wide, disables the mandatory secret gate), and do **not** add a `.checkov.yaml` without also wiring `validate.yml` to it — that would create a third divergent policy source.
 

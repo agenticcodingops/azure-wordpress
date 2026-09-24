@@ -1,0 +1,89 @@
+# ============================================================================
+# Commit Hygiene — rejects vendor/tool attribution in commit metadata: commit messages and
+# trailers, author/committer identity, branch names, and PR title and body. Applies the
+# same scanner as the local hooks (.githooks/branding-guard.sh). This is the one layer
+# `git commit --no-verify` / `git push --no-verify` cannot skip. Policy: AGENTS.md.
+# ============================================================================
+name: Commit Hygiene
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  commit-metadata:
+    name: Commit Metadata
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan commits, branch name and PR text
+        shell: bash
+        env:
+          # Event text reaches the script only through env, never via ${{ }} inside run:.
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          . .githooks/branding-guard.sh
+
+          # branding_scan drops '#' lines (commit-msg buffer comments). Stored messages and
+          # PR text have no comments — a '## Heading' is content — so scan those lines too.
+          uncomment() { sed 's/^[[:space:]]*#*//'; }
+          is_zero() { [ -z "$(printf '%s' "$1" | tr -d 0)" ]; }
+          fail=0
+
+          # A failing rev-list aborts the step (bash -e), so an unresolvable range fails closed.
+          if [ "$EVENT_NAME" = pull_request ]; then
+            commits=$(git rev-list "$BASE_SHA..$HEAD_SHA")
+          elif is_zero "$AFTER"; then
+            echo "Branch deletion; nothing to scan."
+            exit 0
+          elif ! is_zero "$BEFORE" && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            commits=$(git rev-list "$BEFORE..$AFTER")
+          elif [ "$BRANCH" != "$DEFAULT_BRANCH" ]; then
+            echo "::notice::No usable before-SHA (new branch or rewritten history); scanning commits not on $DEFAULT_BRANCH."
+            commits=$(git rev-list "$AFTER" --not "origin/$DEFAULT_BRANCH")
+          else
+            echo "::warning::No usable before-SHA on $DEFAULT_BRANCH (rewritten history?); scanning the pushed tip only."
+            commits=$(git rev-list -n 1 "$AFTER")
+          fi
+
+          echo "Scanning $(printf '%s' "$commits" | grep -c .) commit(s)."
+          for c in $commits; do
+            short=$(git rev-parse --short "$c")
+            git log -1 --format=%B "$c" | uncomment | branding_scan "commit $short" || fail=1
+            identity_check "$(git log -1 --format=%ae "$c")" author "$short" || fail=1
+            identity_check "$(git log -1 --format=%ce "$c")" committer "$short" || fail=1
+          done
+
+          if printf '%s\n' "$BRANCH" | grep -q -i -E "$BRANDING_ERE"; then
+            echo "BLOCKED: branch name $BRANCH contains a vendor/tool name." >&2
+            fail=1
+          fi
+
+          if [ "$EVENT_NAME" = pull_request ]; then
+            printf '%s\n' "$PR_TITLE" | uncomment | branding_scan "PR title" || fail=1
+            printf '%s\n' "$PR_BODY" | uncomment | branding_scan "PR body" || fail=1
+          fi
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Commit metadata carries vendor/tool attribution or an unlisted identity. See AGENTS.md."
+            exit 1
+          fi
+          echo "Commit metadata is clean."

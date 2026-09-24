@@ -1,0 +1,4 @@
+# Addresses allowed to author or commit in this repository — one per line, matched
+# exactly and case-insensitively. Lines starting with '#' are ignored. Enforced by the
+# commit-msg and pre-push hooks and by the Commit Hygiene workflow. Policy: AGENTS.md.
+hassan.abbas@agenticcodingops.com

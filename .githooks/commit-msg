@@ -1,0 +1,19 @@
+#!/bin/sh
+# Rejects vendor/tool attribution in the commit message, and any author or committer
+# whose address is not in .githooks/allowed-authors.txt. Policy: AGENTS.md.
+
+root=$(git rev-parse --show-toplevel) || exit 1
+. "$root/.githooks/branding-guard.sh"
+
+email_of() { sed -n 's/^.*<\([^>]*\)>.*$/\1/p'; }
+
+fail=0
+branding_scan "commit message" <"$1" || fail=1
+identity_check "$(git var GIT_AUTHOR_IDENT | email_of)" author "this commit" || fail=1
+identity_check "$(git var GIT_COMMITTER_IDENT | email_of)" committer "this commit" || fail=1
+
+if [ "$fail" -ne 0 ]; then
+    printf '\nCommit rejected. Rewrite the message (or fix user.email); do not use --no-verify.\n' >&2
+    exit 1
+fi
+exit 0
