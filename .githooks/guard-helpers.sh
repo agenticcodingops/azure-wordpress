@@ -5,7 +5,8 @@
 # branding_scan drops '#' lines because they are comments in the commit-msg buffer. A
 # stored message or PR text has no comments left — `git commit -m` keeps '#' lines
 # verbatim, and a '## Heading' is content — so strip the markers and scan those lines.
-uncomment() { sed 's/^[[:space:]]*#*//'; }
+# Strip the whole leading run of spaces and markers: '# #text' must not survive as ' #text'.
+uncomment() { sed 's/^[[:space:]#]*//'; }
 
 is_zero() { [ -z "$(printf '%s' "$1" | tr -d 0)" ]; }
 
