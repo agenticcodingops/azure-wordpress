@@ -179,10 +179,21 @@ and body only as data. Two consequences: a PR that edits any of those files is j
 (only the advisory push run). Never add a step to that workflow that checks out or executes the
 PR head — under `pull_request_target` that is the classic privileged-checkout hole.
 
-**Direct pushes to `main` are the remaining gap.** Push runs take everything from the pushed
-revision, the workflow file included, so a direct push can weaken the guard, the allow-list or
-the workflow and be judged by its own weakened copy. No workflow change can close this; only
-branch protection that requires pull requests can, and `main` has none.
+**Direct pushes to `main` are closed only while the `required-PR` ruleset is active.** Push runs
+take everything from the pushed revision, the workflow file included, so a direct push can
+weaken the guard, the allow-list or the workflow and be judged by its own weakened copy. No
+workflow change can close this; the repository ruleset `required-PR` (id `23947709`, targets the
+default branch, requires a PR) does. It was created on 2026-09-24 with enforcement **disabled**, so
+check before relying on it — it must print `active`:
+
+```bash
+gh api repos/agenticcodingops/azure-wordpress/rulesets/23947709 --jq .enforcement
+```
+
+That ruleset also requires one approving review and has no bypass actors. GitHub does not let
+an author approve their own PR, so a sole maintainer cannot merge anything while both hold. Set
+approvals to 0, or add the admin role as a bypass actor in **pull request** mode (bypass inside
+PRs only, never for direct pushes) — `always` mode would reopen the direct-push gap.
 
 **Two automated sources stay red, and the allow-list cannot fix either:**
 
@@ -196,7 +207,7 @@ branch protection that requires pull requests can, and `main` has none.
   commit and its squash merge (`chore(main): release X.Y.Z (#N)`) are clean, so the push to
   `main` passes.
 
-`main` has no branch protection, so both show red without blocking anything. Fixing either
+No status check is required on `main`, so both show red without blocking anything. Fixing either
 means exempting those branches in the workflow or changing the guard — a policy decision.
 Do not "fix" it by adding bot addresses to the allow-list; it cannot work.
 
@@ -208,9 +219,15 @@ out a branch without `.githooks/` and git runs **no** hooks — not the guard, n
 silently. Merge `main` into it before committing there. Do not unset `core.hooksPath` to get
 lefthook back: that trades the metadata guard for the scanners, and AGENTS.md forbids it.
 
-**Branded paths trip the guard.** This file, the agent settings directory and two workflows
-have a vendor name in their path. Naming one in a commit subject or PR body is blocked, so
-describe it instead ("the project guidance file").
+**Branded paths trip the guard.** This file, the agent settings directory, two workflows and the
+dependency-update config (`.github/` + the bot's name + `.yml`) have a vendor name in their path.
+Naming one in a commit subject or PR body is blocked, so describe it instead ("the project
+guidance file", "the dependency-update config").
+
+**The dependency-update bot's own name is on the vendor list.** `BRANDING_ERE` includes it, so
+the word cannot appear in a commit message, branch or tag name, tag message, or PR title or body
+— including a human's "revert the bot's azurerm bump" commit. Refer to the PR number instead
+("revert #29"). It is also rejected as an author or committer name.
 
 **`commit-msg` treats `#` lines as comments; `pre-push` and CI do not.** In the editor buffer
 those lines really are comments — they include the branch name and the staged-file list — but

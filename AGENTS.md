@@ -26,6 +26,8 @@ files to satisfy this policy.
   Naming a file whose path contains one trips the guard too, so describe the file
   instead ("the agent settings file", "the project guidance file").
 - A model name used as an author, co-author or trailer identity.
+- The dependency-update bot's name. It is on the list too, so write "#29" or "the
+  automated azurerm bump", and "the dependency-update config" for its config file.
 
 ### Identity
 
@@ -69,4 +71,4 @@ fresh clone needs it. The hooks in `.githooks/` also run the lefthook scanners, 
 | Agent settings | `.claude/settings.json` (`attribution`) | Stops that agent from adding trailers, bylines or session links in the first place | Any other tool, or a human |
 | `commit-msg` hook | `.githooks/commit-msg` | Branded message; author or committer that is not exactly the configured identity, or not allow-listed — at commit time | `--no-verify`; lines starting with `#`, which it treats as comments even when `git commit -m` keeps them |
 | `pre-push` hook | `.githooks/pre-push` | Every outgoing commit's message, allow-listed addresses and names; ref names; annotated tag messages. Also scans `#` lines | `--no-verify`; a clone that never ran `install.sh` |
-| CI | `.github/workflows/commit-hygiene.yml` | The same scan on every branch and tag push and every PR, plus the PR title and body. The PR check runs `main`'s copy of the workflow and guard, so a PR cannot weaken it | Nothing done locally — the only layer `--no-verify` cannot skip. A direct push to `main` can rewrite its own check, because `main` has no branch protection |
+| CI | `.github/workflows/commit-hygiene.yml` | The same scan on every branch and tag push and every PR, plus the PR title and body. The PR check runs `main`'s copy of the workflow and guard, so a PR cannot weaken it | Nothing done locally — the only layer `--no-verify` cannot skip. A direct push to `main` can rewrite its own check unless the `required-PR` ruleset is active |

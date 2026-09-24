@@ -1,9 +1,10 @@
 #!/bin/sh
 # Shared branding/authorship scanner. Single source of truth for the patterns.
 
-BRANDING_ERE='claude|anthropic|copilot|cursor|gemini|openai|chatgpt|codex|claude\.ai|co-?authored[- ]with|generated with|🤖'
+BRANDING_ERE='claude|anthropic|copilot|cursor|gemini|openai|chatgpt|codex|dependabot|claude\.ai|co-?authored[- ]with|generated with|🤖'
 TRAILER_ERE='^[[:space:]]*(co-authored-by|claude-session|assisted-by|generated-by)[[:space:]]*:'
-MODEL_ERE='(^|[^a-z])(opus|sonnet|haiku|fable|gpt-?[0-9])[[:space:]]*[0-9.]*[[:space:]]*(\(|<|$)'
+# A GPT model matches on its prefix alone, so suffixed names (GPT-4o, GPT-4.1 mini) are caught.
+MODEL_ERE='(^|[^a-z])((opus|sonnet|haiku|fable)[[:space:]]*[0-9.]*[[:space:]]*(\(|<|$)|gpt-?[0-9])'
 
 branding_scan() {
     _label="$1"; _msg=$(cat); _found=0
