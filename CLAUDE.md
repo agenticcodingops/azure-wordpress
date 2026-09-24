@@ -161,6 +161,9 @@ SHAs because the job holds a write token and the OAuth secret. Two consequences 
   not on every push. It also skips PRs it judges automated or trivial.
 - A green check with no comment can still mean "skipped" (see above) — check the PR for the
   review comment before treating it as a clean review.
+- `gh pr comment` is allowed only for the triggering PR, by number or by URL, so injected PR text
+  cannot post on another PR. If a clean PR gets no "no issues found" summary, look for a
+  permission denial in the job log: the review used some other `gh pr comment` form.
 
 `validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
 
