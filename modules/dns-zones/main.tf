@@ -16,11 +16,10 @@ resource "azurerm_private_dns_zone" "mysql" {
 # Link Private DNS Zone to VNet
 # This enables name resolution for MySQL within the VNet
 resource "azurerm_private_dns_zone_virtual_network_link" "mysql" {
-  name                  = "link-mysql-${var.site_name}"
-  resource_group_name   = var.resource_group_name
-  private_dns_zone_name = azurerm_private_dns_zone.mysql.name
-  virtual_network_id    = var.vnet_id
-  registration_enabled  = false
+  name                 = "link-mysql-${var.site_name}"
+  private_dns_zone_id  = azurerm_private_dns_zone.mysql.id
+  virtual_network_id   = var.vnet_id
+  registration_enabled = false
 
   tags = merge(var.tags, {
     Site = var.site_name

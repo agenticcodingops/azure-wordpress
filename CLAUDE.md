@@ -380,7 +380,7 @@ Keep the subjects intact either way — release-please parses them.
 
 **Every module must declare `required_providers` with an upper bound.** Lock files are gitignored and CI runs `tofu init -backend=false` fresh, so an unconstrained module resolves the newest major and breaks:
 
-- `azurerm` is pinned `~> 4.0`. On 5.x, six of eleven modules fail to validate (`enable_rbac_authorization` → `rbac_authorization_enabled`, subnet `service_endpoints` removed, `private_dns_zone_name` → `private_dns_zone_id`, `minimum_tls_version`/`behavior_on_match` removed).
+- `azurerm` is pinned `~> 5.6` in every module, and the bound is identical on purpose. The composition module calls the sub-modules, so Terraform intersects the constraints; one module on a different major cannot init. v4.0.0 moved the tree off 4.x. The 4.x code used arguments that 5.x renamed or removed (`enable_rbac_authorization`, subnet `service_endpoints`, `private_dns_zone_name`, Front Door `minimum_tls_version` and `behavior_on_match`, diagnostic `metric` blocks). Those names are history. A later major breaks the same way if a single module moves alone.
 - `cloudflare` is pinned `~> 5.0`. `data.cloudflare_ip_ranges` renamed its attributes across majors: 4.x exposes `ipv4_cidr_blocks`/`ipv6_cidr_blocks`, 5.x exposes `ipv4_cidrs`/`ipv6_cidrs`. This repo uses the 5.x names.
 
 Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure` declare theirs inline in `main.tf`. Adding a module without constraints reintroduces the breakage silently — it only surfaces when a new provider major ships.

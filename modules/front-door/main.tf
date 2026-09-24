@@ -76,8 +76,8 @@ resource "azurerm_cdn_frontdoor_custom_domain" "main" {
   host_name                = var.custom_domain
 
   tls {
-    certificate_type    = "ManagedCertificate"
-    minimum_tls_version = "TLS12"
+    certificate_type = "ManagedCertificate"
+    minimum_version  = "TLS12"
   }
 }
 
@@ -211,23 +211,24 @@ resource "azurerm_cdn_frontdoor_rule" "cache_static" {
   name                      = "CacheStaticAssets"
   cdn_frontdoor_rule_set_id = azurerm_cdn_frontdoor_rule_set.caching.id
   order                     = 1
-  behavior_on_match         = "Continue"
+  behaviour_on_match        = "Continue"
 
   conditions {
-    url_file_extension_condition {
-      operator         = "Equal"
-      match_values     = ["css", "js", "jpg", "jpeg", "png", "gif", "ico", "woff", "woff2", "ttf", "svg"]
-      negate_condition = false
-      transforms       = ["Lowercase"]
+    request_file_extension {
+      operator   = "Equal"
+      values     = ["css", "js", "jpg", "jpeg", "png", "gif", "ico", "woff", "woff2", "ttf", "svg"]
+      transforms = ["Lowercase"]
     }
   }
 
   actions {
-    route_configuration_override_action {
-      cache_behavior                = "OverrideAlways"
-      cache_duration                = "${format("%02d", floor(var.cache_static_minutes / 60))}:${format("%02d", var.cache_static_minutes % 60)}:00"
-      compression_enabled           = true
-      query_string_caching_behavior = "UseQueryString"
+    route_configuration_override {
+      caching {
+        behaviour              = "OverrideAlways"
+        duration               = "${format("%02d", floor(var.cache_static_minutes / 60))}:${format("%02d", var.cache_static_minutes % 60)}:00"
+        compression_enabled    = true
+        query_string_behaviour = "UseQueryString"
+      }
     }
   }
 }
@@ -237,23 +238,26 @@ resource "azurerm_cdn_frontdoor_rule" "cache_uploads" {
   name                      = "CacheUploads"
   cdn_frontdoor_rule_set_id = azurerm_cdn_frontdoor_rule_set.caching.id
   order                     = 2
-  behavior_on_match         = "Continue"
+  behaviour_on_match        = "Continue"
 
   conditions {
-    url_path_condition {
-      operator         = "BeginsWith"
-      match_values     = ["/wp-content/uploads/"]
-      negate_condition = false
-      transforms       = ["Lowercase"]
+    # 5.x request_path values omit the leading slash. BeginsWith "wp-content/uploads/"
+    # matches the same paths as the 4.x BeginsWith "/wp-content/uploads/".
+    request_path {
+      operator   = "BeginsWith"
+      values     = ["wp-content/uploads/"]
+      transforms = ["Lowercase"]
     }
   }
 
   actions {
-    route_configuration_override_action {
-      cache_behavior                = "OverrideAlways"
-      cache_duration                = "${format("%02d", floor(var.cache_uploads_minutes / 60))}:${format("%02d", var.cache_uploads_minutes % 60)}:00"
-      compression_enabled           = true
-      query_string_caching_behavior = "IgnoreQueryString"
+    route_configuration_override {
+      caching {
+        behaviour              = "OverrideAlways"
+        duration               = "${format("%02d", floor(var.cache_uploads_minutes / 60))}:${format("%02d", var.cache_uploads_minutes % 60)}:00"
+        compression_enabled    = true
+        query_string_behaviour = "IgnoreQueryString"
+      }
     }
   }
 }
@@ -263,20 +267,23 @@ resource "azurerm_cdn_frontdoor_rule" "no_cache_admin" {
   name                      = "NoCacheAdmin"
   cdn_frontdoor_rule_set_id = azurerm_cdn_frontdoor_rule_set.caching.id
   order                     = 0 # Highest priority
-  behavior_on_match         = "Stop"
+  behaviour_on_match        = "Stop"
 
   conditions {
-    url_path_condition {
-      operator         = "BeginsWith"
-      match_values     = ["/wp-admin/", "/wp-login.php"]
-      negate_condition = false
-      transforms       = ["Lowercase"]
+    # 5.x request_path values omit the leading slash. BeginsWith these values
+    # matches the same paths as the 4.x BeginsWith "/wp-admin/" and "/wp-login.php".
+    request_path {
+      operator   = "BeginsWith"
+      values     = ["wp-admin/", "wp-login.php"]
+      transforms = ["Lowercase"]
     }
   }
 
   actions {
-    route_configuration_override_action {
-      cache_behavior = "Disabled"
+    route_configuration_override {
+      caching {
+        behaviour = "Disabled"
+      }
     }
   }
 }
