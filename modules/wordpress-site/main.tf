@@ -494,7 +494,10 @@ resource "azurerm_key_vault_access_policy" "app_service_update" {
 
 # Key Vault access policy for staging slot managed identity
 resource "azurerm_key_vault_access_policy" "staging_slot" {
-  count = module.app_service.staging_slot_principal_id != null ? 1 : 0
+  # Count on the SKU, not on staging_slot_principal_id: that ID is unknown until the slot
+  # exists, so on S*/P* a greenfield plan fails with "Invalid count argument". This mirrors
+  # the app-service module's local.sku_supports_slots on the exact SKU it receives.
+  count = can(regex("^(S|P)[0-9]", local.app_config.sku_name)) ? 1 : 0
 
   key_vault_id = module.key_vault.id
   tenant_id    = var.tenant_id
