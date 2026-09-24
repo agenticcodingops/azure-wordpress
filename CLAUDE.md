@@ -176,6 +176,13 @@ allow-list denies all three, so nothing is posted. The prompt now appends **POST
 bound rule allows. Each full review costs roughly $1–5 of subscription usage, because the plugin
 runs Opus sub-agents.
 
+The plugin's own frontmatter lists an **unbound** `Bash(gh pr comment:*)`. Measured on CLI
+2.1.281 (the version the pinned action installs), that grant authorizes nothing in a
+non-interactive run: with our allow-list omitting `gh pr comment`, both local runs had
+`gh pr comment 48 …` denied. The PR boundary therefore rests on our `--allowedTools`. Re-measure
+it before bumping the action pin, because a CLI that honours command frontmatter in print mode
+would widen it to every PR in the repo.
+
 `validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
 
 ## Commit Metadata Guard (.github/workflows/commit-hygiene.yml)
