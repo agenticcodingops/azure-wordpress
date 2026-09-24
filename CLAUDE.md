@@ -179,21 +179,23 @@ and body only as data. Two consequences: a PR that edits any of those files is j
 (only the advisory push run). Never add a step to that workflow that checks out or executes the
 PR head — under `pull_request_target` that is the classic privileged-checkout hole.
 
-**Direct pushes to `main` are closed only while the `required-PR` ruleset is active.** Push runs
-take everything from the pushed revision, the workflow file included, so a direct push can
-weaken the guard, the allow-list or the workflow and be judged by its own weakened copy. No
-workflow change can close this; the repository ruleset `required-PR` (id `23947709`, targets the
-default branch, requires a PR) does. It was created on 2026-09-24 with enforcement **disabled**, so
-check before relying on it — it must print `active`:
+**Branch protection is what closes direct pushes to `main` — keep it on.** Push runs take
+everything from the pushed revision, the workflow file included, so a direct push could weaken
+the guard, the allow-list or the workflow and be judged by its own weakened copy. No workflow
+change can close that. Since 2026-09-24 two layers on the default branch require a PR:
+
+- the repository ruleset `required-PR` (id `23947709`): active, **no bypass actors**, and it also
+  blocks deletion and force-push. This is the layer that actually stops a direct push.
+- a classic branch-protection rule on `main`. Its `enforce_admins` is off, so on its own it
+  would let an admin push directly; the ruleset covers that.
+
+Both require **0** approvals, on purpose. GitHub does not let an author approve their own PR, so
+with a sole maintainer any non-zero count blocks every merge (it blocked #46 until changed). If
+bypass actors are ever added, use **pull request** mode only — `always` reopens direct pushes.
 
 ```bash
-gh api repos/agenticcodingops/azure-wordpress/rulesets/23947709 --jq .enforcement
+gh api repos/agenticcodingops/azure-wordpress/rulesets/23947709 --jq .enforcement   # must be: active
 ```
-
-That ruleset also requires one approving review and has no bypass actors. GitHub does not let
-an author approve their own PR, so a sole maintainer cannot merge anything while both hold. Set
-approvals to 0, or add the admin role as a bypass actor in **pull request** mode (bypass inside
-PRs only, never for direct pushes) — `always` mode would reopen the direct-push gap.
 
 **Two automated sources stay red, and the allow-list cannot fix either:**
 
