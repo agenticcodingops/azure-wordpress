@@ -7,6 +7,7 @@ root=$(git rev-parse --show-toplevel) || exit 1
 allow="$root/.githooks/allowed-authors.txt"
 [ -f "$allow" ] || { printf 'BLOCKED: %s is missing; refusing to commit without it.\n' "$allow" >&2; exit 1; }
 . "$root/.githooks/branding-guard.sh"
+. "$root/.githooks/guard-helpers.sh"
 
 ident() { git var "$1" | sed 's/ [0-9][0-9]* [-+][0-9][0-9][0-9][0-9]$//'; }   # "Name <email>"
 email_of() { sed -n 's/^.*<\([^>]*\)>.*$/\1/p'; }
@@ -25,6 +26,7 @@ for var in GIT_AUTHOR_IDENT GIT_COMMITTER_IDENT; do
         fail=1
     fi
     identity_check "$(printf '%s' "$got" | email_of)" "$role" "this commit" || fail=1
+    name_check "$(printf '%s' "$got" | sed 's/ <[^>]*>$//')" "$role" "this commit" || fail=1
 done
 
 if [ "$fail" -ne 0 ]; then

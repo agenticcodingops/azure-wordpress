@@ -9,13 +9,7 @@ root=$(git rev-parse --show-toplevel) || exit 1
 allow="$root/.githooks/allowed-authors.txt"
 [ -f "$allow" ] || { printf 'BLOCKED: %s is missing; refusing to push without it.\n' "$allow" >&2; exit 1; }
 . "$root/.githooks/branding-guard.sh"
-
-# branding_scan drops '#' lines because they are comments in the commit-msg buffer. A
-# stored message has no comments left — `git commit -m` keeps '#' lines verbatim — so
-# strip the markers here and scan those lines as content.
-uncomment() { sed 's/^[[:space:]]*#*//'; }
-
-is_zero() { [ -z "$(printf '%s' "$1" | tr -d 0)" ]; }
+. "$root/.githooks/guard-helpers.sh"
 
 input=$(cat)
 fail=0
@@ -57,6 +51,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         git log -1 --format=%B "$c" | uncomment | branding_scan "commit $short" || fail=1
         identity_check "$(git log -1 --format=%ae "$c")" author "$short" || fail=1
         identity_check "$(git log -1 --format=%ce "$c")" committer "$short" || fail=1
+        name_check "$(git log -1 --format=%an "$c")" author "$short" || fail=1
+        name_check "$(git log -1 --format=%cn "$c")" committer "$short" || fail=1
     done
 done <<EOF
 $input

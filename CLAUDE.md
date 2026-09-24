@@ -179,6 +179,11 @@ and body only as data. Two consequences: a PR that edits any of those files is j
 (only the advisory push run). Never add a step to that workflow that checks out or executes the
 PR head — under `pull_request_target` that is the classic privileged-checkout hole.
 
+**Direct pushes to `main` are the remaining gap.** Push runs take everything from the pushed
+revision, the workflow file included, so a direct push can weaken the guard, the allow-list or
+the workflow and be judged by its own weakened copy. No workflow change can close this; only
+branch protection that requires pull requests can, and `main` has none.
+
 **Two automated sources stay red, and the allow-list cannot fix either:**
 
 - **Dependabot.** `identity_check` rejects any `[bot]` or `bot@` address *before* it reads the

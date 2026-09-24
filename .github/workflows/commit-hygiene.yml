@@ -9,8 +9,9 @@
 # of this workflow, the guard and the allow-list. A PR cannot weaken its own check by
 # editing any of them; its commits, title and body are only ever read as data. Never add a
 # step that checks out or executes code from the PR head. Push runs use the pushed
-# revision's copy, so on a feature branch they are advisory; on the default branch that
-# copy is whatever review merged.
+# revision's copy of everything, this file included, so they are advisory: a direct push
+# to the default branch can rewrite the check it is judged by. Only branch protection
+# that requires pull requests closes that path.
 # ============================================================================
 name: Commit Hygiene
 
@@ -54,15 +55,11 @@ jobs:
         run: |
           # Fail closed if the policy files are missing: identity_check passes everything
           # when the allow-list is absent.
-          for f in .githooks/branding-guard.sh .githooks/allowed-authors.txt; do
+          for f in .githooks/branding-guard.sh .githooks/guard-helpers.sh .githooks/allowed-authors.txt; do
             [ -f "$f" ] || { echo "::error::$f is missing; refusing to pass without it."; exit 1; }
           done
           . .githooks/branding-guard.sh
-
-          # branding_scan drops '#' lines (commit-msg buffer comments). Stored messages and
-          # PR text have no comments — a '## Heading' is content — so scan those lines too.
-          uncomment() { sed 's/^[[:space:]]*#*//'; }
-          is_zero() { [ -z "$(printf '%s' "$1" | tr -d 0)" ]; }
+          . .githooks/guard-helpers.sh    # uncomment, is_zero, name_check
           fail=0
 
           # A failing git command aborts the step (bash -e), so an unresolvable range fails closed.
@@ -93,6 +90,8 @@ jobs:
             git log -1 --format=%B "$c" | uncomment | branding_scan "commit $short" || fail=1
             identity_check "$(git log -1 --format=%ae "$c")" author "$short" || fail=1
             identity_check "$(git log -1 --format=%ce "$c")" committer "$short" || fail=1
+            name_check "$(git log -1 --format=%an "$c")" author "$short" || fail=1
+            name_check "$(git log -1 --format=%cn "$c")" committer "$short" || fail=1
           done
 
           if printf '%s\n' "$REF_NAME" | grep -q -i -E "$BRANDING_ERE"; then

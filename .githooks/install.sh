@@ -10,7 +10,8 @@ set -e
 root=$(git rev-parse --show-toplevel)
 git -C "$root" config core.hooksPath .githooks
 chmod +x "$root/.githooks/commit-msg" "$root/.githooks/pre-commit" "$root/.githooks/pre-push" \
-    "$root/.githooks/branding-guard.sh" "$root/.githooks/install.sh" 2>/dev/null || true
+    "$root/.githooks/branding-guard.sh" "$root/.githooks/guard-helpers.sh" \
+    "$root/.githooks/install.sh" 2>/dev/null || true
 echo "core.hooksPath = .githooks (commit-msg, pre-commit, pre-push)"
 
 email=$(git -C "$root" config user.email || true)

@@ -35,6 +35,8 @@ files to satisfy this policy.
   made on github.com pass CI; the comments in the file say which is which.
 - Never add a bot address to the list. The guard rejects `[bot]` and `bot@` addresses
   before it reads the list, so the entry would do nothing.
+- Names count as identity too: an author or committer name that is a vendor, bot or
+  model name is rejected even on an allow-listed address.
 - Never pass `--author`, and never set `GIT_AUTHOR_*` / `GIT_COMMITTER_*` to commit as
   anyone else.
 
@@ -66,5 +68,5 @@ fresh clone needs it. The hooks in `.githooks/` also run the lefthook scanners, 
 | --- | --- | --- | --- |
 | Agent settings | `.claude/settings.json` (`attribution`) | Stops that agent from adding trailers, bylines or session links in the first place | Any other tool, or a human |
 | `commit-msg` hook | `.githooks/commit-msg` | Branded message; author or committer that is not exactly the configured identity, or not allow-listed — at commit time | `--no-verify`; lines starting with `#`, which it treats as comments even when `git commit -m` keeps them |
-| `pre-push` hook | `.githooks/pre-push` | Every outgoing commit's message and allow-listed identities, ref names, annotated tag messages. Also scans `#` lines | `--no-verify`; a clone that never ran `install.sh` |
-| CI | `.github/workflows/commit-hygiene.yml` | The same scan on every branch and tag push and every PR, plus the PR title and body. The PR check runs `main`'s copy of the workflow and guard, so a PR cannot weaken it | Nothing done locally — the only layer `--no-verify` cannot skip |
+| `pre-push` hook | `.githooks/pre-push` | Every outgoing commit's message, allow-listed addresses and names; ref names; annotated tag messages. Also scans `#` lines | `--no-verify`; a clone that never ran `install.sh` |
+| CI | `.github/workflows/commit-hygiene.yml` | The same scan on every branch and tag push and every PR, plus the PR title and body. The PR check runs `main`'s copy of the workflow and guard, so a PR cannot weaken it | Nothing done locally — the only layer `--no-verify` cannot skip. A direct push to `main` can rewrite its own check, because `main` has no branch protection |
