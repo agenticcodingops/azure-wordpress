@@ -41,7 +41,7 @@ Cloudflare still had an internet-reachable Kudu before v3.1.0.
 
 ```hcl
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.0.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.0.1"
 
   # ... existing configuration ...
 

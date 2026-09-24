@@ -476,8 +476,8 @@ Wrap in `jsonencode()` — bare `null` prints as a blank line and is easy to mis
 
 Two constraints, both discovered the hard way:
 
-- The fixture **must** use a B-tier SKU (`app_service = { sku_name = "B1" }`). On S\*/P\* SKUs `azurerm_key_vault_access_policy.staging_slot` has `count = module.app_service.staging_slot_principal_id != null ? 1 : 0`, which is unknown at plan time on a greenfield plan — Terraform rejects it outright. `examples/basic-site` already uses B1.
-- Guard against vacuous results: an empty diff between two *failures* is also empty. Assert exit code 0, grep that the resource was positively planned, and grep its actual attribute values.
+- Either tier works as a fixture since v4.0.1 (`app_service = { sku_name = "B1" }` or `"S1"`). Through v4.0.0, `azurerm_key_vault_access_policy.staging_slot` counted on `module.app_service.staging_slot_principal_id != null`, which is unknown on a greenfield S\*/P\* plan, so every first S\*/P\* plan failed with `Invalid count argument` — real deploys too, not just mocks. It now counts on the SKU, mirroring `local.sku_supports_slots`. Measured on TF 1.9.8: S1 dedicated and S1 shared-plan plans pass, and a B1 plan is byte-identical before and after the fix.
+- Guard against vacuous results: an empty diff between two *failures* is also empty. Assert exit code 0, grep that the resource was positively planned, and grep its actual attribute values. The fixture's names must pass the module's own validation (`project_name` 2–24 chars, `site_name` 2–22): with `site_name = "x"` both sides fail on variables before any plan, identically.
 
 Limits worth stating in any report: these are greenfield **create** plans, so they prove identical planned *arguments*, not provider-side diffing against real state — and mocks bypass `PlanResourceChange`, so **`# forces replacement` is invisible**. ForceNew claims must be sourced from the provider docs, not from these plans.
 
