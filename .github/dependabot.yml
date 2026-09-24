@@ -12,6 +12,12 @@ updates:
       - "terraform"
     commit-message:
       prefix: "chore(deps)"
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # Terraform module updates
   - package-ecosystem: "terraform"
@@ -23,6 +29,12 @@ updates:
     labels:
       - "dependencies"
       - "terraform"
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions updates
   - package-ecosystem: "github-actions"
