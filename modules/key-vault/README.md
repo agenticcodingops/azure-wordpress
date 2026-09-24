@@ -20,7 +20,7 @@ inputs (it was missing `project_name`, `name_suffix` and all three `network_acls
 
 ```hcl
 module "key_vault" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/key-vault?ref=v3.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/key-vault?ref=v4.0.0"
 
   project_name        = "trackroutinely"
   site_name           = "workout-tracker"
@@ -140,13 +140,13 @@ The module enforces these validations at plan time:
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.6.0 |
-| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | ~> 4.0 |
+| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | ~> 5.6 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | ~> 4.0 |
+| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | ~> 5.6 |
 
 ## Modules
 

@@ -41,8 +41,14 @@ resource "azurerm_subnet" "app" {
     }
   }
 
-  # Required for App Service VNet integration
-  service_endpoints = ["Microsoft.Storage", "Microsoft.KeyVault"]
+  # Required for App Service VNet integration. Same two services as the 4.x list.
+  service_endpoint {
+    service = "Microsoft.Storage"
+  }
+
+  service_endpoint {
+    service = "Microsoft.KeyVault"
+  }
 }
 
 # Database Subnet

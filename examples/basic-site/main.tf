@@ -7,7 +7,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = ">= 4.0.0"
+      version = "~> 5.6"
     }
     cloudflare = {
       source  = "cloudflare/cloudflare"
@@ -18,8 +18,18 @@ terraform {
 
 # Configure providers
 provider "azurerm" {
-  features {}
-  subscription_id = var.azure_subscription_id
+  # 5.x defaults this to "none". "legacy" is the 4.x registration set.
+  resource_provider_registrations = "legacy"
+  subscription_id                 = var.azure_subscription_id
+
+  features {
+    # 5.x turns both of these off. They were on in 4.x, so plan still
+    # rejects an unknown location or resource provider.
+    enhanced_validation {
+      locations          = true
+      resource_providers = true
+    }
+  }
 }
 
 provider "cloudflare" {
@@ -32,7 +42,7 @@ data "azurerm_client_config" "current" {}
 # Deploy WordPress site
 module "wordpress" {
   # Pin to a specific version tag for stability
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.0.0"
 
   project_name  = var.project_name
   site_name     = var.site_name

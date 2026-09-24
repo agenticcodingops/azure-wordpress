@@ -29,7 +29,7 @@ resource "azurerm_key_vault" "main" {
   enabled_for_deployment          = false
   enabled_for_disk_encryption     = false
   enabled_for_template_deployment = false
-  enable_rbac_authorization       = false # Use access policies
+  rbac_authorization_enabled      = false # Use access policies
   purge_protection_enabled        = var.purge_protection_enabled
   soft_delete_retention_days      = var.soft_delete_retention_days
 

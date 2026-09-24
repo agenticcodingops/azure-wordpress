@@ -41,7 +41,7 @@ Cloudflare still had an internet-reachable Kudu before v3.1.0.
 
 ```hcl
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.0.0"
 
   # ... existing configuration ...
 
@@ -212,7 +212,7 @@ environment-aware. All are online, non-destructive changes.
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.6.0 |
 | <a name="requirement_azapi"></a> [azapi](#requirement\_azapi) | >= 1.12.0 |
-| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | ~> 4.0 |
+| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | ~> 5.6 |
 | <a name="requirement_cloudflare"></a> [cloudflare](#requirement\_cloudflare) | ~> 5.0 |
 | <a name="requirement_random"></a> [random](#requirement\_random) | >= 3.5.0 |
 | <a name="requirement_time"></a> [time](#requirement\_time) | >= 0.9.0 |
@@ -222,7 +222,7 @@ environment-aware. All are online, non-destructive changes.
 | Name | Version |
 |------|---------|
 | <a name="provider_azapi"></a> [azapi](#provider\_azapi) | >= 1.12.0 |
-| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | ~> 4.0 |
+| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | ~> 5.6 |
 | <a name="provider_cloudflare"></a> [cloudflare](#provider\_cloudflare) | ~> 5.0 |
 | <a name="provider_random"></a> [random](#provider\_random) | >= 3.5.0 |
 | <a name="provider_time"></a> [time](#provider\_time) | >= 0.9.0 |

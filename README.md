@@ -172,7 +172,7 @@ sequenceDiagram
 ```hcl
 module "wordpress_site" {
   # Pin to a release version for stability - see Releases page for latest
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.0.0"
 
   project_name  = "myproject"
   site_name     = "blog"
@@ -289,7 +289,7 @@ Deploy multiple WordPress sites on a single App Service Plan:
 
 ```hcl
 module "shared" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v3.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.0.0"
 
   project_name       = "myproject"
   environment        = "nonprod"
@@ -298,7 +298,7 @@ module "shared" {
 }
 
 module "site1" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.0.0"
 
   project_name = "myproject"
   site_name    = "site1"
@@ -339,7 +339,7 @@ through `extra_secrets`, and surface them to WordPress as Key Vault references t
 
 ```hcl
 module "wordpress_site" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.0.0"
 
   # ... other configuration ...
 
@@ -591,7 +591,7 @@ resource "azurerm_key_vault_access_policy" "shared_staging" {
 | Name | Version |
 |------|---------|
 | terraform | >= 1.6.0 |
-| azurerm | >= 4.0.0 |
+| azurerm | ~> 5.6 |
 | azapi | >= 1.12.0 |
 | cloudflare | >= 4.0.0 |
 
@@ -605,12 +605,18 @@ Always pin module references to a specific version tag to prevent unexpected cha
 
 ```hcl
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v3.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.0.0"
   # ...
 }
 ```
 
 Available versions are listed on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page.
+
+### Upgrading from v3 to v4
+
+v4.0.0 moves every module onto azurerm `~> 5.6`. The root module must require that same constraint, or `terraform init` cannot resolve a provider. No module inputs change. Run `terraform plan` before the first apply. Key Vault purge protection, soft-delete retention, and MySQL geo-redundant backup are unchanged by this release, and each of them is costly to change after the resource exists.
+
+The provider no longer registers resource providers unless asked: `resource_provider_registrations` defaults to `none`, and `skip_provider_registration` is removed. Set `resource_provider_registrations = "legacy"` to keep the previous automatic set. Plan-time location and resource-provider checks also default off. Set `features.enhanced_validation.locations` and `features.enhanced_validation.resource_providers` to `true` to keep catching those at plan time. The examples set all three.
 
 ### Upgrading Versions
 
