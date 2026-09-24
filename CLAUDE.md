@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Commit metadata policy: read [AGENTS.md](AGENTS.md) first.** No vendor or AI-tool names in
+commit messages, trailers, branch names, tags or PR text; every commit authored and committed
+by the configured git identity; never `--no-verify`. Run `sh .githooks/install.sh` once per clone.
+
 ## Project Overview
 
 Reusable Terraform/OpenTofu modules for deploying WordPress on Azure. The consumer repo (trackroutinely) calls the composition module at `modules/wordpress-site`, which orchestrates 10 sub-modules in a two-layer dependency model.
@@ -146,6 +150,91 @@ with "Workflow validation failed" and report **green** without reviewing anythin
 workflow's historical "successes" are exactly that — a skip, not a review.
 
 `validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
+
+## Commit Metadata Guard (.github/workflows/commit-hygiene.yml)
+
+Policy, prohibited items and setup live in [AGENTS.md](AGENTS.md). What follows is the
+repo-specific behaviour it does not cover.
+
+**The allow-list carries three addresses, and two of them exist only for merges made on
+github.com.** `.githooks/allowed-authors.txt` is read by the `commit-msg` and `pre-push` hooks
+*and* by the workflow, so one edit changes every layer at once.
+
+| Address | Why it is listed |
+| --- | --- |
+| `hassan.abbas@agenticcodingops.com` | The local `git config user.email`. |
+| `vibecoddingops@outlook.com` | The GitHub account's commit email. It authors every web-UI merge on `main`, and every release-please commit (`RELEASE_PLEASE_TOKEN` belongs to that account). |
+| `noreply@github.com` | GitHub's web-flow committer on every web-UI merge. |
+
+Without the last two, every push to `main` fails the check: at setup, 60 of the 76 commits on
+`main` used only those two identities. Listing them would also let a local commit claim one, so
+`commit-msg` additionally requires author and committer to equal `git config user.name` /
+`user.email` exactly. `pre-push` and CI check only the allow-list — they must accept commits
+GitHub made — so a `--no-verify` commit that claims a GitHub-side identity still gets through.
+
+**The PR check cannot be weakened from inside the PR.** It runs on `pull_request_target`, which
+takes the workflow, the guard and the allow-list from `main` and reads the PR's commits, title
+and body only as data. Two consequences: a PR that edits any of those files is judged by
+`main`'s version until it merges, and the PR that introduced the workflow had no PR check at all
+(only the advisory push run). Never add a step to that workflow that checks out or executes the
+PR head — under `pull_request_target` that is the classic privileged-checkout hole.
+
+**Branch protection is what closes direct pushes to `main` — keep it on.** Push runs take
+everything from the pushed revision, the workflow file included, so a direct push could weaken
+the guard, the allow-list or the workflow and be judged by its own weakened copy. No workflow
+change can close that. Since 2026-09-24 two layers on the default branch require a PR:
+
+- the repository ruleset `required-PR` (id `23947709`): active, **no bypass actors**, and it also
+  blocks deletion and force-push. This is the layer that actually stops a direct push.
+- a classic branch-protection rule on `main`. Its `enforce_admins` is off, so on its own it
+  would let an admin push directly; the ruleset covers that.
+
+Both require **0** approvals, on purpose. GitHub does not let an author approve their own PR, so
+with a sole maintainer any non-zero count blocks every merge (it blocked #46 until changed). If
+bypass actors are ever added, use **pull request** mode only — `always` reopens direct pushes.
+
+```bash
+gh api repos/agenticcodingops/azure-wordpress/rulesets/23947709 --jq .enforcement   # must be: active
+```
+
+**Two automated sources stay red, and the allow-list cannot fix either:**
+
+- **Dependabot.** `identity_check` rejects any `[bot]` or `bot@` address *before* it reads the
+  allow-list, so listing `49699333+dependabot[bot]@users.noreply.github.com` changes nothing.
+  GitHub's squash merge also adds a `Co-authored-by: dependabot[bot]` trailer, which
+  `branding_scan` rejects on its own. Dependabot PRs fail, and so does the push to `main` when
+  one merges.
+- **release-please PRs.** The PR body ends with release-please's standard "generated with
+  Release Please" footer, which matches `BRANDING_ERE`. Only the PR check fails: the release
+  commit and its squash merge (`chore(main): release X.Y.Z (#N)`) are clean, so the push to
+  `main` passes.
+
+No status check is required on `main`, so both show red without blocking anything. Fixing either
+means exempting those branches in the workflow or changing the guard — a policy decision.
+Do not "fix" it by adding bot addresses to the allow-list; it cannot work.
+
+**Branches cut before the guard fail it.** Their commits carry the old attribution trailers
+(`feat/scm-network-posture` has four). They fail Commit Hygiene until reworded.
+
+**Hooks vanish on those same branches.** `core.hooksPath` is per clone, not per branch. Check
+out a branch without `.githooks/` and git runs **no** hooks — not the guard, not lefthook —
+silently. Merge `main` into it before committing there. Do not unset `core.hooksPath` to get
+lefthook back: that trades the metadata guard for the scanners, and AGENTS.md forbids it.
+
+**Branded paths trip the guard.** This file, the agent settings directory, two workflows and the
+dependency-update config (`.github/` + the bot's name + `.yml`) have a vendor name in their path.
+Naming one in a commit subject or PR body is blocked, so describe it instead ("the project
+guidance file", "the dependency-update config").
+
+**The dependency-update bot's own name is on the vendor list.** `BRANDING_ERE` includes it, so
+the word cannot appear in a commit message, branch or tag name, tag message, or PR title or body
+— including a human's "revert the bot's azurerm bump" commit. Refer to the PR number instead
+("revert #29"). It is also rejected as an author or committer name.
+
+**`commit-msg` treats `#` lines as comments; `pre-push` and CI do not.** In the editor buffer
+those lines really are comments — they include the branch name and the staged-file list — but
+`git commit -m` stores them verbatim. A byline written as `# ...` therefore passes `commit-msg`
+and is caught at push.
 
 ## Landing Stacked Work
 
@@ -384,7 +473,7 @@ checkov@339 -d . --framework terraform -o json --skip-check <list-from-validate.
 trivy config . --severity CRITICAL --skip-dirs .terraform
 ```
 
-Local hooks run via **lefthook**, not pre-commit (`lefthook install`). Pre-commit runs secret scanning, `terraform fmt` and Trivy CRITICAL on changed directories only; pre-push adds Checkov and tflint. Missing tools fail open with a warning. Disable with `LEFTHOOK=0 git commit`, or `global.local_hooks_enabled: false` in `scan-config.yaml`. Note the hooks scan **changed directories**, so touching a previously untouched module can surface pre-existing findings.
+Local hooks run via **lefthook**, not pre-commit, but are entered through `.githooks/` (`sh .githooks/install.sh` sets `core.hooksPath`), which runs the commit-metadata guard and then hands off to `lefthook run --no-auto-install`. Do not run `lefthook install`: it refuses while `core.hooksPath` is set, and its `--reset-hooks-path` escape hatch disables the guard. Pre-commit runs secret scanning, `terraform fmt` and Trivy CRITICAL on changed directories only; pre-push adds Checkov and tflint. Missing tools fail open with a warning. Disable the scanners with `LEFTHOOK=0 git commit` (the metadata guard still runs), or `global.local_hooks_enabled: false` in `scan-config.yaml`. Note the hooks scan **changed directories**, so touching a previously untouched module can surface pre-existing findings.
 
 **Installing Checkov arms a hook that is currently dormant.** `hooks/checkov.sh` does `require_tool checkov || exit 0`, so with Checkov absent from PATH the pre-push gate is a silent no-op. It also resolves `.checkov.yaml` from `.scanning/configs/`, which does not exist — so when it *does* run it runs with **no skip list at all**, and will flag many of the 23 checks `validate.yml` deliberately skips. Those findings are pre-existing and unrelated to your change; do not "fix" them. Keep Checkov off PATH (the `pipx --suffix` above), or use `LEFTHOOK=0 git push` once and say so in the PR. Do **not** commit `local_hooks_enabled: false` (repo-wide, disables the mandatory secret gate), and do **not** add a `.checkov.yaml` without also wiring `validate.yml` to it — that would create a third divergent policy source.
 

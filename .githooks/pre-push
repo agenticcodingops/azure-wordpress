@@ -1,0 +1,75 @@
+#!/bin/sh
+# Backstop for commits made with --no-verify: scans everything this push would publish —
+# every outgoing commit's message, author and committer, plus ref names and annotated tag
+# messages — then hands off to the lefthook pre-push scanners. Policy: AGENTS.md.
+#
+# Git supplies "<local ref> <local sha> <remote ref> <remote sha>" lines on stdin.
+
+root=$(git rev-parse --show-toplevel) || exit 1
+allow="$root/.githooks/allowed-authors.txt"
+[ -f "$allow" ] || { printf 'BLOCKED: %s is missing; refusing to push without it.\n' "$allow" >&2; exit 1; }
+. "$root/.githooks/branding-guard.sh"
+. "$root/.githooks/guard-helpers.sh"
+
+input=$(cat)
+fail=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -n "$local_sha" ] || continue
+    is_zero "$local_sha" && continue        # deleting a remote ref publishes nothing
+
+    name=${remote_ref#refs/heads/}
+    name=${name#refs/tags/}
+    if printf '%s\n' "$name" | grep -q -i -E "$BRANDING_ERE"; then
+        printf 'BLOCKED: ref name %s contains a vendor/tool name.\n' "$name" >&2
+        fail=1
+    fi
+
+    case $remote_ref in
+    refs/tags/*)
+        if [ "$(git cat-file -t "$local_sha")" = tag ]; then
+            git cat-file tag "$local_sha" | sed '1,/^$/d' \
+                | sed '/^-----BEGIN [A-Z ]*SIGNATURE-----/,$d' | uncomment \
+                | branding_scan "tag $name message" || fail=1
+        fi
+        ;;
+    esac
+
+    if is_zero "$remote_sha" \
+        || ! commits=$(git rev-list "$remote_sha..$local_sha" 2>/dev/null); then
+        # New ref, or a remote tip this clone has never fetched: scan whatever no
+        # remote-tracking ref already contains.
+        if ! commits=$(git rev-list "$local_sha" --not --remotes=); then
+            printf 'BLOCKED: cannot compute the commits being pushed to %s.\n' "$remote_ref" >&2
+            fail=1
+            continue
+        fi
+    fi
+
+    for c in $commits; do
+        short=$(git rev-parse --short "$c")
+        git log -1 --format=%B "$c" | uncomment | branding_scan "commit $short" || fail=1
+        identity_check "$(git log -1 --format=%ae "$c")" author "$short" || fail=1
+        identity_check "$(git log -1 --format=%ce "$c")" committer "$short" || fail=1
+        name_check "$(git log -1 --format=%an "$c")" author "$short" || fail=1
+        name_check "$(git log -1 --format=%cn "$c")" committer "$short" || fail=1
+    done
+done <<EOF
+$input
+EOF
+
+if [ "$fail" -ne 0 ]; then
+    printf '\nPush rejected. Reword the offending commits, rename the ref, or fix the identity\n' >&2
+    printf '(git commit --amend --reset-author). Do not use --no-verify.\n' >&2
+    exit 1
+fi
+
+# core.hooksPath points here, so lefthook's own shims in .git/hooks no longer run.
+# --no-auto-install stops lefthook from writing its shims into this directory.
+[ "$LEFTHOOK" = 0 ] || [ "$LEFTHOOK" = false ] && exit 0
+if command -v "${LEFTHOOK_BIN:-lefthook}" >/dev/null 2>&1; then
+    printf '%s\n' "$input" | "${LEFTHOOK_BIN:-lefthook}" run --no-auto-install pre-push "$@"
+    exit $?
+fi
+printf 'pre-push: lefthook not found; the lefthook pre-push scanners were skipped.\n' >&2
+exit 0

@@ -58,13 +58,17 @@ git checkout -b docs/update-readme
    - [checkov](https://www.checkov.io/)
    - [terraform-docs](https://terraform-docs.io/)
 
-2. Configure local hooks (recommended):
+2. Configure local hooks (required, once per clone):
    ```bash
-   lefthook install
+   sh .githooks/install.sh
    ```
-   The hooks are configured in `lefthook.yml` and dispatch through `hooks/dispatcher.sh`.
-   To skip them for a single command, use `LEFTHOOK=0 git commit ...`; to disable them
-   entirely, set `global.local_hooks_enabled: false` in `scan-config.yaml`.
+   This points `core.hooksPath` at `.githooks/`, which enforces the commit-metadata
+   policy in [AGENTS.md](AGENTS.md) and then runs the lefthook scanners configured in
+   `lefthook.yml` (dispatched through `hooks/dispatcher.sh`). Do not also run
+   `lefthook install`. To skip the scanners for a single command, use
+   `LEFTHOOK=0 git commit ...`; to disable them entirely, set
+   `global.local_hooks_enabled: false` in `scan-config.yaml`. Neither switch disables
+   the commit-metadata guard.
 
 ### Terraform Formatting Requirements
 

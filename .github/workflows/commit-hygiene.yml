@@ -1,0 +1,118 @@
+# ============================================================================
+# Commit Hygiene — rejects vendor/tool attribution in commit metadata: commit messages and
+# trailers, author/committer identity, branch and tag names, annotated tag messages, and PR
+# title and body. Applies the same scanner as the local hooks (.githooks/branding-guard.sh).
+# This is the one layer `git commit --no-verify` / `git push --no-verify` cannot skip.
+# Policy: AGENTS.md.
+#
+# Trust model. The PR check uses pull_request_target, so it runs the default branch's copy
+# of this workflow, the guard and the allow-list. A PR cannot weaken its own check by
+# editing any of them; its commits, title and body are only ever read as data. Never add a
+# step that checks out or executes code from the PR head. Push runs use the pushed
+# revision's copy of everything, this file included, so they are advisory: a direct push
+# to the default branch can rewrite the check it is judged by. Only branch protection
+# that requires pull requests closes that path.
+# ============================================================================
+name: Commit Hygiene
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  commit-metadata:
+    name: Commit Metadata
+    runs-on: ubuntu-latest
+    steps:
+      # pull_request_target checks out the default branch, not the PR.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan commits, ref name, tag message and PR text
+        shell: bash
+        env:
+          # Event text reaches the script only through env, never via ${{ }} inside run:.
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REF_NAME: ${{ github.head_ref || github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # Fail closed if the policy files are missing: identity_check passes everything
+          # when the allow-list is absent.
+          for f in .githooks/branding-guard.sh .githooks/guard-helpers.sh .githooks/allowed-authors.txt; do
+            [ -f "$f" ] || { echo "::error::$f is missing; refusing to pass without it."; exit 1; }
+          done
+          . .githooks/branding-guard.sh
+          . .githooks/guard-helpers.sh    # uncomment, is_zero, name_check
+          fail=0
+
+          # A failing git command aborts the step (bash -e), so an unresolvable range fails closed.
+          if [ "$EVENT_NAME" = pull_request_target ]; then
+            # Fork heads are not under refs/heads; fetch the PR head as data.
+            git fetch --no-tags --quiet origin "+refs/pull/$PR_NUMBER/head:refs/remotes/pull/$PR_NUMBER/head"
+            commits=$(git rev-list "$BASE_SHA..$HEAD_SHA")
+          elif is_zero "$AFTER"; then
+            echo "Ref deletion; nothing to scan."
+            exit 0
+          elif ! is_zero "$BEFORE" && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            commits=$(git rev-list "$BEFORE..$AFTER")
+          elif [ "$REF_TYPE" = tag ] || [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
+            echo "::notice::No usable before-SHA (new ref or rewritten history); scanning commits not on $DEFAULT_BRANCH."
+            commits=$(git rev-list "$AFTER" --not "origin/$DEFAULT_BRANCH")
+          else
+            echo "::warning::No usable before-SHA on $DEFAULT_BRANCH (rewritten history?); scanning its entire history."
+            commits=$(git rev-list "$AFTER")
+          fi
+          echo "Scanning $(printf '%s' "$commits" | grep -c .) commit(s)."
+
+          # Untrusted text is echoed below; stop the runner parsing it as workflow commands.
+          stop_token=$(openssl rand -hex 16)
+          echo "::stop-commands::$stop_token"
+
+          for c in $commits; do
+            short=$(git rev-parse --short "$c")
+            git log -1 --format=%B "$c" | uncomment | branding_scan "commit $short" || fail=1
+            identity_check "$(git log -1 --format=%ae "$c")" author "$short" || fail=1
+            identity_check "$(git log -1 --format=%ce "$c")" committer "$short" || fail=1
+            name_check "$(git log -1 --format=%an "$c")" author "$short" || fail=1
+            name_check "$(git log -1 --format=%cn "$c")" committer "$short" || fail=1
+          done
+
+          if printf '%s\n' "$REF_NAME" | grep -q -i -E "$BRANDING_ERE"; then
+            echo "BLOCKED: ref name $REF_NAME contains a vendor/tool name." >&2
+            fail=1
+          fi
+
+          if [ "$REF_TYPE" = tag ] && [ "$(git cat-file -t "refs/tags/$REF_NAME")" = tag ]; then
+            git cat-file tag "refs/tags/$REF_NAME" | sed '1,/^$/d' \
+              | sed '/^-----BEGIN [A-Z ]*SIGNATURE-----/,$d' | uncomment \
+              | branding_scan "tag $REF_NAME message" || fail=1
+          fi
+
+          if [ "$EVENT_NAME" = pull_request_target ]; then
+            printf '%s\n' "$PR_TITLE" | uncomment | branding_scan "PR title" || fail=1
+            printf '%s\n' "$PR_BODY" | uncomment | branding_scan "PR body" || fail=1
+          fi
+
+          echo "::$stop_token::"
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Commit metadata carries vendor/tool attribution or an unlisted identity. See AGENTS.md."
+            exit 1
+          fi
+          echo "Commit metadata is clean."

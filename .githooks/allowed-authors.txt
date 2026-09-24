@@ -1,0 +1,11 @@
+# Addresses allowed to author or commit in this repository — one per line, matched
+# exactly and case-insensitively. Lines starting with '#' are ignored. Enforced by the
+# commit-msg and pre-push hooks and by the Commit Hygiene workflow. Policy: AGENTS.md.
+hassan.abbas@agenticcodingops.com
+
+# GitHub-side identities, so merges made on github.com pass the Commit Hygiene workflow.
+# The GitHub account's commit email: it authors every web-UI merge, and every
+# release-please commit (made with RELEASE_PLEASE_TOKEN).
+vibecoddingops@outlook.com
+# GitHub's web-flow committer on every web-UI merge.
+noreply@github.com

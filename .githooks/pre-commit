@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs the lefthook pre-commit scanners (secret scan, terraform fmt, Trivy). core.hooksPath
+# points here, so lefthook's own shims in .git/hooks no longer run; without this hand-off
+# the mandatory secret gate would silently stop. --no-auto-install stops lefthook from
+# writing its shims into this directory.
+
+[ "$LEFTHOOK" = 0 ] || [ "$LEFTHOOK" = false ] && exit 0
+if command -v "${LEFTHOOK_BIN:-lefthook}" >/dev/null 2>&1; then
+    exec "${LEFTHOOK_BIN:-lefthook}" run --no-auto-install pre-commit "$@"
+fi
+printf 'pre-commit: lefthook not found; the lefthook pre-commit scanners were skipped.\n' >&2
+exit 0

@@ -1,0 +1,2 @@
+# The versioned hooks are POSIX sh, which a CRLF checkout (core.autocrlf=true) breaks.
+.githooks/** text eol=lf

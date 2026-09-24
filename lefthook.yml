@@ -6,7 +6,9 @@
 # dispatcher honors it and skips everything), or `LEFTHOOK=0 git commit`. CI is
 # unaffected either way. See docs/LOCAL-HOOKS-TOGGLE.md in the platform repo.
 #
-# Install once after cloning:  lefthook install
+# Install once after cloning:  sh .githooks/install.sh
+# (NOT `lefthook install`: core.hooksPath points at .githooks/, whose hooks run the
+# commit-metadata guard and then call `lefthook run --no-auto-install <hook>`.)
 # ============================================================================
 min_version: 1.6.0
 
