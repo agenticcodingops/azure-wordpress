@@ -13,6 +13,31 @@ This module creates a complete WordPress site deployment including:
 - App Service with managed identity
 - Optional monitoring and CDN
 
+## Upgrading to v4.0.2
+
+A bug fix. Against v4.0.1 state it plans **no changes**: the only difference is a new read of the
+deploying principal. Upgrade before your next site addition or removal, tag change or storage change.
+
+Through v4.0.1 the Key Vault module read the deploying principal (`azurerm_client_config`) itself.
+That module is called with a module-level `depends_on`, so the read was deferred to apply time
+whenever any `depends_on` target (networking, storage or App Insights) had a pending change. Under
+`for_each` a change to *any* instance counts. Adding or removing a sibling site, a tags change, or any
+storage change (with `cdn_provider = "cloudflare"`, that includes a change to Cloudflare's published
+IPv4 ranges) therefore made every existing site's `azurerm_key_vault_access_policy.terraform` show
+`object_id` and `tenant_id` as `(known after apply)`, and planned its replacement. On Azure that
+replacement is create-then-destroy, the create is refused because the vault already holds a policy
+for that object ID, and a retry plans the same replacement again. v4.0.2 reads the principal in this
+module, outside that `depends_on`, and passes it in.
+
+**Do not put `depends_on` on your own call to this module.** It defers every data source inside the
+module, the new read included, so the replacement comes back whenever one of your `depends_on`
+targets has a pending change. Express ordering through input references instead.
+
+**If you gate plans:** `module.key_vault.data.azurerm_client_config.current will be read during apply`
+can still appear. It is harmless, because that read is now only the standalone fallback and its value
+is unused here. Gate on the policy itself: `azurerm_key_vault_access_policy.terraform` must be neither
+updated nor replaced, and its `object_id` must stay known.
+
 ## Upgrading to v3.1.0
 
 Additive. Every new input defaults to the azurerm provider's own default, so **the SCM and
@@ -41,7 +66,7 @@ Cloudflare still had an internet-reachable Kudu before v3.1.0.
 
 ```hcl
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.0.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.0.2"
 
   # ... existing configuration ...
 
@@ -261,6 +286,7 @@ environment-aware. All are online, non-destructive changes.
 | [azurerm_resource_group.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/resource_group) | resource |
 | [random_password.db](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/password) | resource |
 | [time_sleep.dns_propagation](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
+| [azurerm_client_config.current](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config) | data source |
 | [cloudflare_ip_ranges.current](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/data-sources/ip_ranges) | data source |
 
 ## Inputs

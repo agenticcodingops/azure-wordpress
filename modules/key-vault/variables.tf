@@ -46,6 +46,18 @@ variable "tenant_id" {
   type        = string
 }
 
+variable "deployer_object_id" {
+  description = "Object ID of the principal running Terraform, which gets the secret-management access policy. Null (the default) makes the module read azurerm_client_config itself. Pass it in when this module is called with depends_on: a data source inside such a module is deferred whenever a depends_on target changes, and a deferred ID forces the policy to be replaced."
+  type        = string
+  default     = null
+}
+
+variable "deployer_tenant_id" {
+  description = "Tenant ID of the principal running Terraform, used on its access policy. Null (the default) makes the module read azurerm_client_config itself. Pass it together with deployer_object_id."
+  type        = string
+  default     = null
+}
+
 variable "app_service_principal_id" {
   description = "Principal ID of the App Service managed identity"
   type        = string

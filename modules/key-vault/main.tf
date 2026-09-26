@@ -1,11 +1,21 @@
 # Key Vault Module - Layer 2 Application
 # Creates Key Vault for secrets management with managed identity access
 
+# Standalone fallback for the deploying principal. It carries no count on purpose: a
+# count keyed on var.deployer_object_id fails with "Invalid count argument" whenever
+# that input is unknown at plan time. When the caller passes the IDs in, this read is
+# unused, and it may still print "will be read during apply" when this module is
+# called with depends_on. That line is harmless; the access policy uses the inputs.
 data "azurerm_client_config" "current" {}
 
 locals {
   # Short environment suffix for naming
   env_suffix = var.environment == "nonprod" ? "np" : "prod"
+
+  # Deploying principal for the Terraform access policy: the caller's value when set,
+  # else this module's own read.
+  deployer_object_id = var.deployer_object_id != null ? var.deployer_object_id : data.azurerm_client_config.current.object_id
+  deployer_tenant_id = var.deployer_tenant_id != null ? var.deployer_tenant_id : data.azurerm_client_config.current.tenant_id
 
   # Key Vault names have 24 char limit - abbreviate
   # Pattern: kv-{site}-{env}{suffix} (site max ~14, env = 2-4, suffix = configurable)
@@ -73,8 +83,8 @@ resource "azurerm_key_vault_access_policy" "app_service" {
 # Access policy for Terraform (current deployment principal)
 resource "azurerm_key_vault_access_policy" "terraform" {
   key_vault_id = azurerm_key_vault.main.id
-  tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = data.azurerm_client_config.current.object_id
+  tenant_id    = local.deployer_tenant_id
+  object_id    = local.deployer_object_id
 
   # Full secret management for deployment
   secret_permissions = [

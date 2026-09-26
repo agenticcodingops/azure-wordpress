@@ -20,7 +20,7 @@ inputs (it was missing `project_name`, `name_suffix` and all three `network_acls
 
 ```hcl
 module "key_vault" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/key-vault?ref=v4.0.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/key-vault?ref=v4.0.2"
 
   project_name        = "trackroutinely"
   site_name           = "workout-tracker"
@@ -167,6 +167,8 @@ No modules.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_app_service_principal_id"></a> [app\_service\_principal\_id](#input\_app\_service\_principal\_id) | Principal ID of the App Service managed identity | `string` | n/a | yes |
+| <a name="input_deployer_object_id"></a> [deployer\_object\_id](#input\_deployer\_object\_id) | Object ID of the principal running Terraform, which gets the secret-management access policy. Null (the default) makes the module read azurerm\_client\_config itself. Pass it in when this module is called with depends\_on: a data source inside such a module is deferred whenever a depends\_on target changes, and a deferred ID forces the policy to be replaced. | `string` | `null` | no |
+| <a name="input_deployer_tenant_id"></a> [deployer\_tenant\_id](#input\_deployer\_tenant\_id) | Tenant ID of the principal running Terraform, used on its access policy. Null (the default) makes the module read azurerm\_client\_config itself. Pass it together with deployer\_object\_id. | `string` | `null` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for resources | `string` | n/a | yes |
 | <a name="input_name_suffix"></a> [name\_suffix](#input\_name\_suffix) | Suffix appended to Key Vault name to avoid conflicts with soft-deleted vaults. Bump this when a vault with purge protection is soft-deleted and the name must be reused. | `string` | `"9"` | no |

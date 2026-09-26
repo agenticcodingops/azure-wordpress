@@ -50,6 +50,18 @@ data "cloudflare_ip_ranges" "current" {
   count = var.cdn_provider == "cloudflare" ? 1 : 0
 }
 
+# The deploying principal, read here and passed into module.key_vault. It must not be
+# read inside that module: module.key_vault carries a module-level depends_on, and a
+# data source inside such a module is deferred to apply time whenever any depends_on
+# target has a pending change - including a change to a sibling for_each instance,
+# because the match is by configuration address. A deferred read makes the Terraform
+# access policy's object_id and tenant_id unknown, which forces that policy to be
+# replaced; the create-then-destroy replacement fails because the vault already holds
+# a policy for that object ID, and a retry re-plans the same replacement. Give this
+# block no depends_on, or the deferral comes back. (A depends_on on the caller's own
+# call to this module defers it as well - see the README.)
+data "azurerm_client_config" "current" {}
+
 locals {
   # Short environment suffix for naming
   env_suffix = var.environment == "nonprod" ? "np" : "prod"
@@ -347,6 +359,11 @@ module "key_vault" {
   location            = var.location
   resource_group_name = azurerm_resource_group.main.name
   tenant_id           = var.tenant_id
+
+  # The deploying principal, read at the top of this file, outside this module's
+  # depends_on, so the Terraform access policy's IDs stay known at plan time.
+  deployer_object_id = data.azurerm_client_config.current.object_id
+  deployer_tenant_id = data.azurerm_client_config.current.tenant_id
 
   # Use a placeholder principal ID - will be updated after app_service creates
   app_service_principal_id = "00000000-0000-0000-0000-000000000000"
