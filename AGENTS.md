@@ -72,3 +72,16 @@ fresh clone needs it. The hooks in `.githooks/` also run the lefthook scanners, 
 | `commit-msg` hook | `.githooks/commit-msg` | Branded message; author or committer that is not exactly the configured identity, or not allow-listed — at commit time | `--no-verify`; lines starting with `#`, which it treats as comments even when `git commit -m` keeps them |
 | `pre-push` hook | `.githooks/pre-push` | Every outgoing commit's message, allow-listed addresses and names; ref names; annotated tag messages. Also scans `#` lines | `--no-verify`; a clone that never ran `install.sh` |
 | CI | `.github/workflows/commit-hygiene.yml` | The same scan on every branch and tag push and every PR, plus the PR title and body. The PR check runs `main`'s copy of the workflow and guard, so a PR cannot weaken it | Nothing done locally — the only layer `--no-verify` cannot skip. A direct push to `main` can rewrite its own check unless the `required-PR` ruleset is active |
+
+## Terraform conventions
+
+These apply to any agent changing Terraform here. The project guidance file has the detail.
+
+- **Azure Verified Modules first.** For any new Azure resource, use an Azure Verified Module when the
+  [index](https://azure.github.io/Azure-Verified-Modules/indexes/terraform/tf-resource-modules/) lists it as
+  *Available*, pinned to an exact version. Otherwise use the azurerm resource, with variables shaped to the AVM
+  interfaces (`lock`, `diagnostic_settings`, `role_assignments`, `managed_identities`, `tags`).
+- Migrate existing bespoke modules only when a planned change touches them.
+- Every module declares `required_providers` with an upper bound.
+- Environment-aware defaults leave the `optional()` default off and select the value in the `*_config` local.
+- Regenerate terraform-docs READMEs (0.20.0) after changing any variable, output or resource.
