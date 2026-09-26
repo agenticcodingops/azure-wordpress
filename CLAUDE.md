@@ -409,7 +409,7 @@ Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure`
 
 **Any new Azure resource uses an [Azure Verified Module](https://azure.github.io/Azure-Verified-Modules/) when one is *Available*.** Check the [resource index](https://azure.github.io/Azure-Verified-Modules/indexes/terraform/tf-resource-modules/) and the [pattern index](https://azure.github.io/Azure-Verified-Modules/indexes/terraform/tf-pattern-modules/) before writing the resource. Operator rule, 2026-09-26.
 
-- **If the module is Available,** call it with an exact version, and pass the AVM interfaces through rather than re-implementing them. As measured 2026-09-26, these are Available, all at 0.x:
+- **If the module is Available,** call it with an exact version, and pass the AVM interfaces through rather than re-implementing them. As measured 2026-09-26, these are Available, all at 0.x except `avm-res-web-serverfarm` (2.x):
   - `avm-res-web-site`, `avm-res-web-serverfarm`
   - `avm-res-dbformysql-flexibleserver`
   - `avm-res-keyvault-vault`
@@ -417,6 +417,9 @@ Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure`
   - `avm-res-operationalinsights-workspace`, `avm-res-insights-component`
   - `avm-res-cdn-profile`
   - `avm-res-network-virtualnetwork`, `avm-res-network-privatednszone`
+- **Read the module's own constraints before calling it.** Registry data for the latest version of each, measured the same day:
+  - All ten need the `modtm` provider, and all but MySQL need Terraform ≥ 1.9 (Storage ≥ 1.10, Key Vault ≥ 1.11). CI validates with OpenTofu 1.6.0, which rejects those nine at `tofu init`, so adopting one also means raising `tofu_version` in `validate.yml`.
+  - Five cap azurerm below this tree's `~> 5.6`: MySQL and CDN profile (`~> 4.0`), Key Vault (`< 5.1`), Log Analytics and Application Insights (`< 5.0.0`). Terraform intersects the constraints, so they cannot init here; write the azurerm resource until they support 5.6. The other five depend on azapi, not azurerm.
 - **If it is only Proposed, or absent** (as of that date: action group, metric alert, activity-log alert, scheduled-query rule, consumption budget, availability test), write the azurerm resource directly. Shape the variables to the AVM interface conventions so a later switch is cheap:
   - `lock = { kind, name }`
   - `diagnostic_settings` as a map
@@ -425,8 +428,7 @@ Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure`
   - `tags`
 - **Existing modules here are bespoke.** Migrate one to AVM only when a planned change already touches it, and never as a drive-by:
   - Moving state into an AVM module needs `import` plus `removed` blocks, because `moved` cannot cross module packages.
-  - AVM web-site needs Terraform ≥ 1.9 and the `modtm` provider.
-  - The AVM Key Vault module defaults to RBAC, which requires the deployer to hold role-assignment rights; this repo uses access policies today.
+  - The AVM Key Vault module defaults to RBAC (`legacy_access_policies_enabled = false`); this repo uses access policies today. On a new vault the deployer needs `Microsoft.Authorization/roleAssignments/write` only for the assignments the module creates through its `role_assignments` inputs (all empty by default), but it still needs a data-plane role, such as Key Vault Secrets Officer, for any keys or secrets the module manages. Moving one of this repo's vaults to RBAC invalidates its access policies, so the App Service identities that read secrets would need role assignments in their place, unless `legacy_access_policies_enabled = true` keeps the policies.
 - In a PR that adds a resource, name the AVM module you considered and why you did or did not use it.
 
 ## Static Analysis Constraints
