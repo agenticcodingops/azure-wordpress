@@ -403,6 +403,32 @@ Keep the subjects intact either way — release-please parses them.
 
 Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure` declare theirs inline in `main.tf`. Adding a module without constraints reintroduces the breakage silently — it only surfaces when a new provider major ships.
 
+**Four constraints still break that rule at v4.0.1:** `azapi >= 1.12.0`, `random >= 3.5.0` and `time >= 0.9.0` in `wordpress-site/main.tf`, and `null >= 3.2.0` in `database/versions.tf`. The examples also declare `cloudflare >= 4.0.0`. They are bounded in the R2 batch of the platform-hardening programme; do not copy them.
+
+## Azure Verified Modules First
+
+**Any new Azure resource uses an [Azure Verified Module](https://azure.github.io/Azure-Verified-Modules/) when one is *Available*.** Check the [resource index](https://azure.github.io/Azure-Verified-Modules/indexes/terraform/tf-resource-modules/) and the [pattern index](https://azure.github.io/Azure-Verified-Modules/indexes/terraform/tf-pattern-modules/) before writing the resource. Operator rule, 2026-09-26.
+
+- **If the module is Available,** call it with an exact version, and pass the AVM interfaces through rather than re-implementing them. As measured 2026-09-26, these are Available, all at 0.x:
+  - `avm-res-web-site`, `avm-res-web-serverfarm`
+  - `avm-res-dbformysql-flexibleserver`
+  - `avm-res-keyvault-vault`
+  - `avm-res-storage-storageaccount`
+  - `avm-res-operationalinsights-workspace`, `avm-res-insights-component`
+  - `avm-res-cdn-profile`
+  - `avm-res-network-virtualnetwork`, `avm-res-network-privatednszone`
+- **If it is only Proposed, or absent** (as of that date: action group, metric alert, activity-log alert, scheduled-query rule, consumption budget, availability test), write the azurerm resource directly. Shape the variables to the AVM interface conventions so a later switch is cheap:
+  - `lock = { kind, name }`
+  - `diagnostic_settings` as a map
+  - `role_assignments` as a map
+  - `managed_identities = { system_assigned, user_assigned_resource_ids }`
+  - `tags`
+- **Existing modules here are bespoke.** Migrate one to AVM only when a planned change already touches it, and never as a drive-by:
+  - Moving state into an AVM module needs `import` plus `removed` blocks, because `moved` cannot cross module packages.
+  - AVM web-site needs Terraform ≥ 1.9 and the `modtm` provider.
+  - The AVM Key Vault module defaults to RBAC, which requires the deployer to hold role-assignment rights; this repo uses access policies today.
+- In a PR that adds a resource, name the AVM module you considered and why you did or did not use it.
+
 ## Static Analysis Constraints
 
 **Checkov and Trivy resolve a plain variable's `default`, but cannot see through an `optional()` attribute inside an object-typed variable.** A secure default written as `storage = { network_rules_default_action = optional(string, "Deny") }` is reported as a misconfiguration (CKV_AZURE_35); the same default on a top-level variable passes. Verified: literal → pass, plain variable → pass, object attribute → fail.
