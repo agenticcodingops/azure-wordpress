@@ -474,6 +474,28 @@ When `cdn_provider = "cloudflare"`, Cloudflare's live IPv4 egress ranges are add
 
 Vault names are capped at 24 chars — `kv-{site≤14}-{env}{suffix}` — so a long site name plus a 3-char suffix overflows.
 
+**Deferred reads through a module-level `depends_on` (fixed for Key Vault in v4.0.2):**
+- **The rule.** A data source whose value feeds an identity or ForceNew argument must not be read inside a module called
+  with `depends_on`. Terraform defers that read to apply time whenever *any* instance has a pending change in a
+  `depends_on` target — siblings in a `for_each` included, because it matches by configuration address. The dependent
+  argument then goes unknown and forces replacement.
+- **What went wrong through v4.0.1.** The Terraform policy's `object_id` came from `modules/key-vault`'s own
+  `azurerm_client_config` read. A sibling site's removal, a tag or storage change, or a new Cloudflare IP range deferred
+  that read, which planned a create-then-destroy replacement of `azurerm_key_vault_access_policy.terraform`. azurerm's
+  create-time import check then refused it with "already exists" on every retry, as a consumer deploy showed.
+- **The fix in v4.0.2.** `wordpress-site` reads the principal itself, in a scope with no `depends_on`, and passes it in as
+  `deployer_object_id`/`deployer_tenant_id`.
+  - `key-vault` keeps its own read, **without `count`**, only as the standalone fallback.
+  - A `count` on a nullable input fails with "Invalid count argument" for any consumer that puts `depends_on` on the call.
+  - Inside the composition that inner read may still print "will be read during apply". That line is harmless. What
+    matters is that no `azurerm_key_vault_access_policy` is updated or replaced, and that
+    `module.wordpress_sites[*].data.azurerm_client_config.current` is never deferred.
+- **Still open.**
+  - A consumer `depends_on` on the `wordpress-site` call defers the new read too, and brings the replacement back. Don't add one.
+  - `module "cloudflare"` has the same pattern (`depends_on = [module.app_service]`). Its rulesets' `zone_id` forces
+    replacement, so fix it before enabling rulesets. The next minor release addresses it.
+  - An optional deployer-ID pass-through input is also planned for that release.
+
 ## Composition vs Standalone Modules
 
 `modules/wordpress-site` does **not** instantiate `modules/monitoring`. It creates the Log Analytics Workspace and Application Insights inline so the App Insights connection string is available for Key Vault before App Service exists. Consequences:
