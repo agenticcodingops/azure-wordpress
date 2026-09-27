@@ -421,9 +421,9 @@ variable "enable_resource_lock" {
   default     = false
 }
 
-# App Service Plan density validation
+# App Service Plan density validation - DEPRECATED: nothing reads this input.
 variable "plan_density_limit" {
-  description = "Maximum sites per App Service Plan (recommended 8-10 for P1v3)"
+  description = "DEPRECATED, and has no effect: nothing in this module reads it, so it enforces no limit on sites per App Service Plan. It is kept, with its validation, only so existing configurations that set it still plan, and will be removed in the next major release. Remove it from your configuration."
   type        = number
   default     = 10
 
