@@ -83,7 +83,7 @@ variable "wordpress_version" {
 # giving them an optional() default here would mean null never reaches that coalesce
 # and the environment-aware branch could never run.
 variable "database" {
-  description = "Database configuration. sku_name, backup_retention_days and geo_redundant_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo_redundant_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading."
+  description = "Database configuration. sku_name, backup_retention_days and geo_redundant_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo_redundant_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql_version defaults to 8.0.21; changing it on an existing server is an irreversible major-version upgrade (plan it per agenticcodingops/trackroutinely#104, WP-43)."
   type = object({
     sku_name                  = optional(string)
     storage_size_gb           = optional(number, 100)
@@ -92,6 +92,8 @@ variable "database" {
     geo_redundant_backup      = optional(bool)
     high_availability_mode    = optional(string, "Disabled")
     storage_auto_grow_enabled = optional(bool, true)
+    # Constant default, not environment-aware. See mysql_version in modules/database.
+    mysql_version = optional(string, "8.0.21")
   })
   default = {}
 }

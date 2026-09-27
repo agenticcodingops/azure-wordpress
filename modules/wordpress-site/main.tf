@@ -101,6 +101,7 @@ locals {
     backup_retention_days  = coalesce(var.database.backup_retention_days, var.environment == "production" ? 30 : 7)
     geo_redundant_backup   = coalesce(var.database.geo_redundant_backup, var.environment == "production")
     high_availability_mode = coalesce(var.database.high_availability_mode, "Disabled")
+    mysql_version          = var.database.mysql_version # optional() supplies 8.0.21; "" reaches the database module's validation
   }
 
   # Key Vault lifecycle defaults with environment-aware settings.
@@ -298,6 +299,7 @@ module "database" {
   geo_redundant_backup      = local.db_config.geo_redundant_backup
   high_availability_mode    = local.db_config.high_availability_mode
   storage_auto_grow_enabled = coalesce(var.database.storage_auto_grow_enabled, true)
+  mysql_version             = local.db_config.mysql_version
 
   # Allow burstable SKUs for cost optimization (user choice)
   enforce_production_sku = false
