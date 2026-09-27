@@ -592,8 +592,11 @@ resource "azurerm_key_vault_access_policy" "shared_staging" {
 |------|---------|
 | terraform | >= 1.6.0 |
 | azurerm | ~> 5.6 |
-| azapi | >= 1.12.0 |
-| cloudflare | >= 4.0.0 |
+| azapi | >= 1.13.0, < 3.0 |
+| cloudflare | ~> 5.0 |
+| random | >= 3.5.0, < 4.0 |
+| time | >= 0.9.0, < 1.0 |
+| null | >= 3.2.0, < 4.0 |
 
 ## Versioning
 

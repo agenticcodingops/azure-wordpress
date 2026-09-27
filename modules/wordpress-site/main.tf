@@ -21,13 +21,16 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 5.6"
     }
+    # 1.13.0 is the first release whose azapi_update_resource accepts an HCL
+    # object as body (used for the Front Door restriction below). Bounded below
+    # the next major; consumers on 2.x stay inside the range.
     azapi = {
       source  = "azure/azapi"
-      version = ">= 1.12.0"
+      version = ">= 1.13.0, < 3.0"
     }
     random = {
       source  = "hashicorp/random"
-      version = ">= 3.5.0"
+      version = ">= 3.5.0, < 4.0"
     }
     # Constrained to 5.x: data.cloudflare_ip_ranges exposes ipv4_cidrs/ipv6_cidrs
     # in 5.x but ipv4_cidr_blocks/ipv6_cidr_blocks in 4.x, and this module uses
@@ -38,7 +41,7 @@ terraform {
     }
     time = {
       source  = "hashicorp/time"
-      version = ">= 0.9.0"
+      version = ">= 0.9.0, < 1.0"
     }
   }
 }
