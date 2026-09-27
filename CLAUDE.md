@@ -13,8 +13,8 @@ Reusable Terraform/OpenTofu modules for deploying WordPress on Azure. The consum
 ## Commands
 
 ```bash
-# Format (CI uses OpenTofu 1.6.0, terraform fmt produces identical output)
-tofu fmt -recursive -check -diff
+# Format. CI runs Terraform 1.9.8 (`TERRAFORM_VERSION` in validate.yml); use the same binary
+terraform fmt -recursive -check -diff
 terraform fmt -recursive
 
 # Validate a module (must init first, no backend needed)
@@ -74,7 +74,8 @@ Never use a `>-` folded scalar — a multi-line skip list is not reassembled the
 
 > **Corrected 2026-08-02.** This file previously claimed the action's entrypoint uses an
 > unquoted `$INPUT_SKIP_CHECK` and word-splits. That is **not true of the pinned image**:
-> `checkov 3.3.9`'s `github_action_resources/entrypoint.sh` builds `declare -a CKV_ARGS` via
+> `checkov 3.3.9`'s `github_action_resources/entrypoint.sh` (byte-identical in 3.3.19, the image
+> CI pins today) builds `declare -a CKV_ARGS` via
 > an `add_csv` helper with every expansion quoted, splitting on comma only, and it even trims
 > one leading/trailing space per token. Keep the no-spaces convention (it is harmless and
 > portable), but do not reach for word splitting to explain a skip-list bug — it is not the
@@ -106,7 +107,7 @@ Update the `?ref=` references in README.md and examples/ to the version being re
 
 ## CI Pipeline (.github/workflows/validate.yml)
 
-Four jobs: Format Check (tofu fmt), Validate (11 modules), Checkov, Documentation (terraform-docs). All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
+Four jobs: Format Check (`terraform fmt`), Validate (11 modules), Checkov, Documentation (terraform-docs). Format Check and Validate run **Terraform 1.9.8**, the version the consumer's CI runs, installed by `hashicorp/setup-terraform` pinned to a commit SHA with `terraform_wrapper: false`. The version lives once, in the workflow-level `TERRAFORM_VERSION`. Until 2026-09 they ran OpenTofu 1.6.0; `fmt -recursive -check` was clean on both CLIs at the switch. All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
 
 **`claude-review` was failing on every PR — an expired `CLAUDE_CODE_OAUTH_TOKEN`, not the workflow.
 Resolved 2026-08-02 by rotating the secret; it has been green since.** If you are reading a red
@@ -396,7 +397,7 @@ Keep the subjects intact either way — release-please parses them.
 
 ## Provider Version Pinning
 
-**Every module must declare `required_providers` with an upper bound.** Lock files are gitignored and CI runs `tofu init -backend=false` fresh, so an unconstrained module resolves the newest major and breaks:
+**Every module must declare `required_providers` with an upper bound.** Lock files are gitignored and CI runs `terraform init -backend=false` fresh, so an unconstrained module resolves the newest major and breaks:
 
 - `azurerm` is pinned `~> 5.6` in every module, and the bound is identical on purpose. The composition module calls the sub-modules, so Terraform intersects the constraints; one module on a different major cannot init. v4.0.0 moved the tree off 4.x. The 4.x code used arguments that 5.x renamed or removed (`enable_rbac_authorization`, subnet `service_endpoints`, `private_dns_zone_name`, Front Door `minimum_tls_version` and `behavior_on_match`, diagnostic `metric` blocks). Those names are history. A later major breaks the same way if a single module moves alone.
 - `cloudflare` is pinned `~> 5.0`. `data.cloudflare_ip_ranges` renamed its attributes across majors: 4.x exposes `ipv4_cidr_blocks`/`ipv6_cidr_blocks`, 5.x exposes `ipv4_cidrs`/`ipv6_cidrs`. This repo uses the 5.x names.
@@ -418,7 +419,7 @@ Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure`
   - `avm-res-cdn-profile`
   - `avm-res-network-virtualnetwork`, `avm-res-network-privatednszone`
 - **Read the module's own constraints before calling it.** Registry data for the latest version of each, measured the same day:
-  - All ten need the `modtm` provider, and all but MySQL need Terraform ≥ 1.9 (Storage ≥ 1.10, Key Vault ≥ 1.11). CI validates with OpenTofu 1.6.0, which rejects those nine at `tofu init`, so adopting one also means raising `tofu_version` in `validate.yml`.
+  - All ten need the `modtm` provider, and all but MySQL need Terraform ≥ 1.9 (Storage ≥ 1.10, Key Vault ≥ 1.11). CI validates with Terraform 1.9.8. That meets the ≥ 1.9 floor, but not Storage's ≥ 1.10 or Key Vault's ≥ 1.11, so adopting either of those two still means raising `TERRAFORM_VERSION` in `validate.yml` first.
   - Five cap azurerm below this tree's `~> 5.6`: MySQL and CDN profile (`~> 4.0`), Key Vault (`< 5.1`), Log Analytics and Application Insights (`< 5.0.0`). Terraform intersects the constraints, so they cannot init here; write the azurerm resource until they support 5.6. The other five depend on azapi, not azurerm.
 - **If it is only Proposed, or absent** (as of that date: action group, metric alert, activity-log alert, scheduled-query rule, consumption budget, availability test), write the azurerm resource directly. Shape the variables to the AVM interface conventions so a later switch is cheap:
   - `lock = { kind, name }`
@@ -536,17 +537,27 @@ Limits worth stating in any report: these are greenfield **create** plans, so th
 Pin to the exact versions CI uses, or results diverge:
 
 ```bash
+# Terraform 1.9.8 — TERRAFORM_VERSION in validate.yml. Check the binary first: a newer
+# terraform earlier on PATH gives different results. Verify a download against
+# https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_SHA256SUMS.
+terraform version            # must print v1.9.8
+
+# Format — the same command CI runs, from the repo root
+terraform fmt -recursive -check -diff
+
 # Clean-room validate — mirrors CI, which has no lock file
 rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl
 for m in modules/*/; do (cd "$m" && terraform init -backend=false >/dev/null && terraform validate); done
+rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl   # leave none behind (see terraform-docs)
 
-# Checkov — CI runs 3.3.9, from `runs.image` in bridgecrewio/checkov-action@v12's
-# action.yml. v12 is a MOVING tag: re-read action.yml rather than trusting this number.
-#   gh api repos/bridgecrewio/checkov-action/contents/action.yml?ref=<v12-sha> \
+# Checkov — CI runs 3.3.19, from `runs.image` in the action.yml of the
+# bridgecrewio/checkov-action tag validate.yml pins (v12.3125.0 today). Tags can move and the
+# dependency-update bot bumps this one: re-read action.yml rather than trusting this number.
+#   gh api 'repos/bridgecrewio/checkov-action/contents/action.yml?ref=<tag-from-validate.yml>' \
 #     --jq '.content' | base64 -d | grep image:
 # Install SUFFIXED so plain `checkov` stays off PATH — see the hook warning below.
-pipx install --suffix=@339 checkov==3.3.9
-checkov@339 -d . --framework terraform -o json --skip-check <list-from-validate.yml>
+pipx install --suffix=@3319 checkov==3.3.19
+checkov@3319 -d . --framework terraform -o json --skip-check <list-from-validate.yml>
 # Drop --quiet when comparing before/after: it hides PASSED and UNKNOWN, which is
 # exactly the signal you need (see Static Analysis Constraints).
 
