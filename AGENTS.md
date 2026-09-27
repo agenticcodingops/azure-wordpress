@@ -81,9 +81,9 @@ These apply to any agent changing Terraform here. The project guidance file has 
   [index](https://azure.github.io/Azure-Verified-Modules/indexes/terraform/tf-resource-modules/) lists it as
   *Available*, pinned to an exact version. Otherwise use the azurerm resource, with variables shaped to the AVM
   interfaces (`lock`, `diagnostic_settings`, `role_assignments`, `managed_identities`, `tags`). Check its version
-  constraints first: as of 2026-09-26, nine of the ten Available modules this repo would use need a newer
-  Terraform than CI's OpenTofu 1.6.0, and five cap azurerm below this tree's `~> 5.6`, so those five cannot
-  init here at all.
+  constraints first: as of 2026-09-26, two of the ten Available modules this repo would use (Storage and
+  Key Vault) need a newer Terraform than CI's 1.9.8, and five cap azurerm below this tree's `~> 5.6`, so those
+  five cannot init here at all.
 - Migrate existing bespoke modules only when a planned change touches them.
 - Every module declares `required_providers` with an upper bound.
 - Environment-aware defaults leave the `optional()` default off and select the value in the `*_config` local.

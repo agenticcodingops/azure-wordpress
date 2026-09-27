@@ -10,6 +10,10 @@ permissions:
   contents: read
   pull-requests: write
 
+env:
+  # One Terraform version for the Format and Validate jobs. Bump it here only.
+  TERRAFORM_VERSION: "1.9.8"
+
 jobs:
   format:
     name: Format Check
@@ -18,13 +22,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@v2
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
-          tofu_version: "1.6.0"
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Version
+        run: |
+          terraform version
+          terraform version | grep -Fqx "Terraform v${TERRAFORM_VERSION}"
 
       - name: Format Check
-        run: tofu fmt -recursive -check -diff
+        run: terraform fmt -recursive -check -diff
 
   validate:
     name: Validate
@@ -47,18 +57,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@v2
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
-          tofu_version: "1.6.0"
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Version
+        run: |
+          terraform version
+          terraform version | grep -Fqx "Terraform v${TERRAFORM_VERSION}"
 
       - name: Initialize
         working-directory: ${{ matrix.module }}
-        run: tofu init -backend=false
+        run: terraform init -backend=false
 
       - name: Validate
         working-directory: ${{ matrix.module }}
-        run: tofu validate
+        run: terraform validate
 
   # NOTE: the standalone `tfsec` job was removed — tfsec is EOL (Aqua folded its checks
   # into Trivy) and aquasecurity's org IP-allow-list now 403s the action's binary download
