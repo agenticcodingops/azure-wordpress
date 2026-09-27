@@ -13,6 +13,20 @@ This module creates a complete WordPress site deployment including:
 - App Service with managed identity
 - Optional monitoring and CDN
 
+## Upgrading to v4.1.0
+
+Additive. A consumer that sets no new input plans **no changes** against v4.0.2 state, apart from any
+exception listed below.
+
+- **The Cloudflare zone lookup is no longer deferred.** This module's `module "cloudflare"` dropped its
+  `depends_on = [module.app_service]`. Through v4.0.2 any pending app-service change, in this site or
+  (under `for_each`) a sibling, deferred `data.cloudflare_zones` to apply time. Every `cloudflare_ruleset`
+  and zone setting then planned an unknown `zone_id`, and a ruleset's `zone_id` forces replacement. DNS
+  records and page rules were shielded by `ignore_changes = [zone_id]`; rulesets and zone settings were not.
+  Ordering is unchanged: the DNS records still wait for the web app through their input references, and the
+  TXT record, the DNS-propagation wait and the hostname binding still run in that order. A `depends_on` on
+  your own call to this module would defer the lookup again, so don't add one.
+
 ## Upgrading to v4.0.2
 
 A bug fix. Against v4.0.1 state it plans **no changes**: the only difference is a new read of the

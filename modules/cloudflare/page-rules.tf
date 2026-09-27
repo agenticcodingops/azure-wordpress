@@ -30,11 +30,12 @@ resource "cloudflare_page_rule" "wp_admin" {
     ssl                 = "strict"
   }
 
-  # zone_id comes from data.cloudflare_zones, which is deferred to apply time
-  # whenever this module's depends_on targets have pending changes. An unknown
-  # zone_id forces replacement, and create-before-destroy then exceeds the free
-  # plan's 3-page-rule limit (Cloudflare error 1008). Same pattern as the DNS
-  # records in main.tf.
+  # zone_id comes from data.cloudflare_zones. The site module no longer defers
+  # that read (v4.1.0 dropped its depends_on on the app service), but a caller's
+  # own depends_on on the site module still can. An unknown zone_id forces
+  # replacement, and create-before-destroy then exceeds the free plan's
+  # 3-page-rule limit (Cloudflare error 1008), so keep this guard. Same pattern
+  # as the DNS records in main.tf.
   lifecycle {
     ignore_changes = [zone_id]
   }

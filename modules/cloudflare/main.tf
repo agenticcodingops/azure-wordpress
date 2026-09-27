@@ -57,9 +57,9 @@ resource "cloudflare_dns_record" "site" {
   comment = "WordPress site: ${each.key} (${each.value.environment})"
 
   lifecycle {
-    # Prevent replacement when zone_id shows as (known after apply) during plan
-    # The zone_id never changes for a domain, but data source timing can cause
-    # Terraform to think it needs replacement
+    # Prevent replacement when zone_id shows as (known after apply) during plan.
+    # The zone_id never changes for a domain, but the zone lookup can still be
+    # deferred to apply time by a caller's depends_on on the site module
     ignore_changes = [zone_id]
   }
 }

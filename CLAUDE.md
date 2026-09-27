@@ -493,8 +493,11 @@ Vault names are capped at 24 chars — `kv-{site≤14}-{env}{suffix}` — so a l
     `module.wordpress_sites[*].data.azurerm_client_config.current` is never deferred.
 - **Still open.**
   - A consumer `depends_on` on the `wordpress-site` call defers the new read too, and brings the replacement back. Don't add one.
-  - `module "cloudflare"` has the same pattern (`depends_on = [module.app_service]`). Its rulesets' `zone_id` forces
-    replacement, so fix it before enabling rulesets. The next minor release addresses it.
+  - ~~`module "cloudflare"` has the same pattern (`depends_on = [module.app_service]`). Its rulesets' `zone_id` forces
+    replacement, so fix it before enabling rulesets. The next minor release addresses it.~~ **Fixed in v4.1.0:** the
+    `depends_on` is gone. The DNS records still wait for the web app through `origin_hostname` and the verification
+    token, and the TXT record, `time_sleep` and hostname-binding chain is unchanged. A caller's `depends_on` on the
+    site module still defers the zone lookup, which is one more reason not to add one.
   - An optional deployer-ID pass-through input is also planned for that release.
 
 ## Composition vs Standalone Modules

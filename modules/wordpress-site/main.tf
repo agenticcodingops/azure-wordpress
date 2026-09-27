@@ -850,7 +850,12 @@ module "cloudflare" {
   enable_zone_setting_overrides  = local.cf_config.enable_zone_setting_overrides
   enable_wordpress_optimizations = local.cf_config.enable_wordpress_optimizations
 
-  depends_on = [module.app_service]
+  # No module-level depends_on, on purpose. The DNS records already wait for the
+  # web app through origin_hostname and the verification token above. A
+  # depends_on on module.app_service deferred data.cloudflare_zones inside this
+  # module to apply time whenever any app-service instance had a pending change
+  # (for_each siblings included), which made every ruleset's and zone setting's
+  # zone_id unknown - and zone_id forces replacement on cloudflare_ruleset.
 }
 
 # ============================================================================
