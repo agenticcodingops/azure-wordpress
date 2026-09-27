@@ -67,7 +67,7 @@ resource "azurerm_mysql_flexible_server" "main" {
 
   # Security settings
   # ssl_enforcement_enabled is deprecated - use require_secure_transport parameter
-  version = "8.0.21"
+  version = var.mysql_version
 
   tags = merge(var.tags, {
     Site = var.site_name

@@ -95,7 +95,7 @@ variable "enable_wordpress_optimizations" {
 }
 
 variable "enable_waf" {
-  description = "Enable Cloudflare WAF with WordPress exclusions"
+  description = "Enable the WordPress WAF rulesets: managed-rule exceptions, rate limiting and custom security rules. Needs Cloudflare Pro or higher: the rate-limit ruleset has 2 rules with 600 s and 3600 s mitigation timeouts, and the Free plan allows 1 rate-limit rule with a 10 s timeout"
   type        = bool
   default     = true
 }
@@ -107,7 +107,7 @@ variable "enable_page_rules" {
 }
 
 variable "enable_cache_rules" {
-  description = "Enable cache rulesets for WordPress (requires paid Cloudflare plan)"
+  description = "Enable the WordPress cache ruleset (Cache Rules). Available on every plan, including Free, which allows 10 cache rules; the ruleset uses 5"
   type        = bool
   default     = false
 }

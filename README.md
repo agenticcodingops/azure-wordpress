@@ -592,8 +592,11 @@ resource "azurerm_key_vault_access_policy" "shared_staging" {
 |------|---------|
 | terraform | >= 1.6.0 |
 | azurerm | ~> 5.6 |
-| azapi | >= 1.12.0 |
-| cloudflare | >= 4.0.0 |
+| azapi | >= 1.13.0, < 3.0 |
+| cloudflare | ~> 5.0 |
+| random | >= 3.5.0, < 4.0 |
+| time | >= 0.9.0, < 1.0 |
+| null | >= 3.2.0, < 4.0 |
 
 ## Versioning
 
@@ -633,6 +636,12 @@ The provider no longer registers resource providers unless asked: `resource_prov
 | **PATCH** (v1.0.0 → v1.0.1) | Bug fixes only. No input/output changes. Safe to upgrade. |
 | **MINOR** (v1.0.0 → v1.1.0) | New features with backward compatibility. Existing configs work unchanged. |
 | **MAJOR** (v1.0.0 → v2.0.0) | Breaking changes. Review CHANGELOG and update your configuration. |
+
+**One exception, in v4.1.0:** the container image default changes from `"8.4"` to the floating `"8.3"`, so a
+configuration that never set the image tag plans an in-place `docker_image_name` update on the app (and, on S*/P*
+plans, the staging slot). `"8.4"` does not exist on the registry as a floating tag (measured 2026-09-27; the 8.4 series is
+published only as dated tags), so the old default cannot survive a restart. Set `wordpress_version` (or `docker_image_tag` on the app-service module) explicitly to keep your
+current value. See the site module's "Upgrading to v4.1.0".
 
 ## Contributing
 

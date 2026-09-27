@@ -13,6 +13,50 @@ This module creates a complete WordPress site deployment including:
 - App Service with managed identity
 - Optional monitoring and CDN
 
+## Upgrading to v4.1.0
+
+Additive. A consumer that sets no new input plans **no changes** against v4.0.2 state, apart from any
+exception listed below.
+
+- **The Cloudflare zone lookup is no longer deferred.** This module's `module "cloudflare"` dropped its
+  `depends_on = [module.app_service]`. Through v4.0.2 any pending app-service change, in this site or
+  (under `for_each`) a sibling, deferred `data.cloudflare_zones` to apply time. Every `cloudflare_ruleset`
+  and zone setting then planned an unknown `zone_id`, and a ruleset's `zone_id` forces replacement. DNS
+  records and page rules were shielded by `ignore_changes = [zone_id]`; rulesets and zone settings were not.
+  Ordering is unchanged: the DNS records still wait for the web app through their input references, and the
+  TXT record, the DNS-propagation wait and the hostname binding still run in that order. A `depends_on` on
+  your own call to this module would defer the lookup again, so don't add one.
+- **The one exception: the container image default is now the floating `"8.3"`** (it was `"8.4"`). If you never
+  set `wordpress_version`, the plan updates `docker_image_name` in place on the app, and on S*/P* plans on the
+  staging slot: `appsvc/wordpress-debian-php:8.4` becomes `:8.3`. Floating `"8.4"` does not exist on the registry
+  (measured 2026-09-27: `manifests/8.4` returns 404, `manifests/8.3` returns 200; the 8.4 series is published only as
+  dated tags), so the old default cannot survive a restart or a move to a new instance. To keep your current value, set `wordpress_version` explicitly.
+  A dated tag such as `8.3_20260922.3.tuxprod` pins the image exactly, but disables automatic platform image updates.
+  As with any image change, a green apply does not prove the container restarted: check `x-powered-by` and restart
+  the app if the old PHP is still serving.
+- **New, optional: `deployer_object_id` and `deployer_tenant_id`.** Unset (the default), nothing changes: the
+  module keeps reading the deploying principal itself. Set both only when the principal that runs `apply` is not
+  the one this module would read at plan time (for example, a separate plan identity), or when you need your own
+  `depends_on` on this module. Pass lowercase values that are known at plan time, from a root-level
+  `azurerm_client_config` with no `depends_on`. `object_id` and `tenant_id` on `azurerm_key_vault_access_policy`
+  force replacement, so a value that differs from the principal that created the existing Terraform policy
+  replaces it, and revokes the old principal's access: treat that as a planned identity cutover, and grant the new
+  principal access first. The now-unused read inside the module may still print "will be read during apply".
+- **New, optional: `database.mysql_version`** (and `mysql_version` on the database module). The default stays
+  `8.0.21`, so leaving it unset changes nothing. Setting `"8.4"` on an existing server is an irreversible
+  major-version upgrade. Plan and rehearse it first, and dry-run to see whether your azurerm version changes the
+  server in place or replaces it. The upgrade itself is planned in `agenticcodingops/trackroutinely#104` (WP-43);
+  this input only makes it possible. MySQL 8.0 leaves standard support on 2027-01-31.
+- **New, optional: `app_service_storage_plugin_app_settings_enabled`** (and `storage_plugin_app_settings_enabled`
+  on the app-service module). The default `true` keeps the three `MICROSOFT_AZURE_*` app settings exactly as before.
+  The container image never reads them: only the Microsoft Azure Storage for WordPress plugin does, as
+  `wp-config.php` constants. So unless you run that plugin they are inert, and `false` removes them from the app
+  and its staging slot, taking the storage account key out of the app's environment. Setting `false` updates the app
+  settings in place. The `storage-key` Key Vault secret is unchanged.
+- **Deprecated: `plan_density_limit`.** Nothing reads it, so it never limited the number of sites per plan. It
+  stays, with its validation, so configurations that set it still plan. It will be removed in the next major
+  release, so remove it from your configuration.
+
 ## Upgrading to v4.0.2
 
 A bug fix. Against v4.0.1 state it plans **no changes**: the only difference is a new read of the
@@ -236,21 +280,21 @@ environment-aware. All are online, non-destructive changes.
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.6.0 |
-| <a name="requirement_azapi"></a> [azapi](#requirement\_azapi) | >= 1.12.0 |
+| <a name="requirement_azapi"></a> [azapi](#requirement\_azapi) | >= 1.13.0, < 3.0 |
 | <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | ~> 5.6 |
 | <a name="requirement_cloudflare"></a> [cloudflare](#requirement\_cloudflare) | ~> 5.0 |
-| <a name="requirement_random"></a> [random](#requirement\_random) | >= 3.5.0 |
-| <a name="requirement_time"></a> [time](#requirement\_time) | >= 0.9.0 |
+| <a name="requirement_random"></a> [random](#requirement\_random) | >= 3.5.0, < 4.0 |
+| <a name="requirement_time"></a> [time](#requirement\_time) | >= 0.9.0, < 1.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_azapi"></a> [azapi](#provider\_azapi) | >= 1.12.0 |
+| <a name="provider_azapi"></a> [azapi](#provider\_azapi) | >= 1.13.0, < 3.0 |
 | <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | ~> 5.6 |
 | <a name="provider_cloudflare"></a> [cloudflare](#provider\_cloudflare) | ~> 5.0 |
-| <a name="provider_random"></a> [random](#provider\_random) | >= 3.5.0 |
-| <a name="provider_time"></a> [time](#provider\_time) | >= 0.9.0 |
+| <a name="provider_random"></a> [random](#provider\_random) | >= 3.5.0, < 4.0 |
+| <a name="provider_time"></a> [time](#provider\_time) | >= 0.9.0, < 1.0 |
 
 ## Modules
 
@@ -298,11 +342,14 @@ environment-aware. All are online, non-destructive changes.
 | <a name="input_app_service_ftp_publish_basic_authentication_enabled"></a> [app\_service\_ftp\_publish\_basic\_authentication\_enabled](#input\_app\_service\_ftp\_publish\_basic\_authentication\_enabled) | Enable basic authentication for FTP publishing on the site and its staging slot. Defaults to true, matching the azurerm provider default. FTP is already closed at the transport layer (ftps\_state is Disabled). | `bool` | `true` | no |
 | <a name="input_app_service_scm_ip_restriction_default_action"></a> [app\_service\_scm\_ip\_restriction\_default\_action](#input\_app\_service\_scm\_ip\_restriction\_default\_action) | Default action for SCM/Kudu traffic matching no app\_service\_scm\_ip\_restrictions entry. Defaults to 'Allow', matching the azurerm provider default. Set to 'Deny' to close Kudu to everything not allow-listed. | `string` | `"Allow"` | no |
 | <a name="input_app_service_scm_ip_restrictions"></a> [app\_service\_scm\_ip\_restrictions](#input\_app\_service\_scm\_ip\_restrictions) | Allow-list for the App Service SCM/Kudu endpoint, applied to both the site and its staging slot. Exactly one of ip\_address, service\_tag or virtual\_network\_subnet\_id must be set per entry. Empty (the default) preserves current provider behaviour. | <pre>list(object({<br/>    ip_address                = optional(string)<br/>    service_tag               = optional(string)<br/>    virtual_network_subnet_id = optional(string)<br/>    name                      = optional(string)<br/>    priority                  = optional(number)<br/>    action                    = optional(string, "Allow")<br/>    description               = optional(string)<br/>  }))</pre> | `[]` | no |
+| <a name="input_app_service_storage_plugin_app_settings_enabled"></a> [app\_service\_storage\_plugin\_app\_settings\_enabled](#input\_app\_service\_storage\_plugin\_app\_settings\_enabled) | Set the MICROSOFT\_AZURE\_* storage-plugin app settings on the site and its staging slot. Defaults to true, which keeps the behaviour of every earlier release. The container image does not read them (only the Microsoft Azure Storage for WordPress plugin does, as wp-config.php constants), so without that plugin they are inert, and false removes them - including the storage account key from the app's environment. The storage-key Key Vault secret is unaffected. | `bool` | `true` | no |
 | <a name="input_app_service_webdeploy_publish_basic_authentication_enabled"></a> [app\_service\_webdeploy\_publish\_basic\_authentication\_enabled](#input\_app\_service\_webdeploy\_publish\_basic\_authentication\_enabled) | Enable basic authentication for WebDeploy/SCM publishing on the site and its staging slot. Defaults to true, matching the azurerm provider default. Disabling this stops FTP/S deployment from working, but does not change the FTP policy itself - ARM models the two as independent resources, so set app\_service\_ftp\_publish\_basic\_authentication\_enabled = false too. | `bool` | `true` | no |
 | <a name="input_cdn_provider"></a> [cdn\_provider](#input\_cdn\_provider) | CDN provider: 'cloudflare' (uses Cloudflare CDN/WAF), 'azure\_front\_door' (uses Azure Front Door), 'direct' (no CDN) | `string` | `"direct"` | no |
-| <a name="input_cloudflare"></a> [cloudflare](#input\_cloudflare) | Cloudflare configuration | <pre>object({<br/>    enabled                        = optional(bool, false)<br/>    account_id                     = optional(string, "")<br/>    domain                         = optional(string, "")<br/>    subdomain                      = optional(string, "")<br/>    proxied                        = optional(bool, true)<br/>    enable_waf                     = optional(bool, false) # Default false for Free plan compatibility<br/>    enable_page_rules              = optional(bool, true)  # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)<br/>    enable_cache_rules             = optional(bool, false) # Requires paid plan<br/>    enable_zone_setting_overrides  = optional(bool, false) # Some settings can't be modified on Free plan<br/>    enable_wordpress_optimizations = optional(bool, true)<br/>  })</pre> | `{}` | no |
+| <a name="input_cloudflare"></a> [cloudflare](#input\_cloudflare) | Cloudflare configuration | <pre>object({<br/>    enabled                        = optional(bool, false)<br/>    account_id                     = optional(string, "")<br/>    domain                         = optional(string, "")<br/>    subdomain                      = optional(string, "")<br/>    proxied                        = optional(bool, true)<br/>    enable_waf                     = optional(bool, false) # Needs Pro or higher: rate limiting exceeds Free's 1 rule and 10 s timeout<br/>    enable_page_rules              = optional(bool, true)  # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)<br/>    enable_cache_rules             = optional(bool, false) # Works on Free: 5 of the 10 cache rules it allows<br/>    enable_zone_setting_overrides  = optional(bool, false) # Some settings can't be modified on Free plan<br/>    enable_wordpress_optimizations = optional(bool, true)<br/>  })</pre> | `{}` | no |
 | <a name="input_custom_domain"></a> [custom\_domain](#input\_custom\_domain) | Custom domain for the WordPress site | `string` | n/a | yes |
-| <a name="input_database"></a> [database](#input\_database) | Database configuration. sku\_name, backup\_retention\_days and geo\_redundant\_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo\_redundant\_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. | <pre>object({<br/>    sku_name                  = optional(string)<br/>    storage_size_gb           = optional(number, 100)<br/>    storage_iops              = optional(number, 700)<br/>    backup_retention_days     = optional(number)<br/>    geo_redundant_backup      = optional(bool)<br/>    high_availability_mode    = optional(string, "Disabled")<br/>    storage_auto_grow_enabled = optional(bool, true)<br/>  })</pre> | `{}` | no |
+| <a name="input_database"></a> [database](#input\_database) | Database configuration. sku\_name, backup\_retention\_days and geo\_redundant\_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo\_redundant\_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql\_version defaults to 8.0.21; changing it on an existing server is an irreversible major-version upgrade (plan it per agenticcodingops/trackroutinely#104, WP-43). | <pre>object({<br/>    sku_name                  = optional(string)<br/>    storage_size_gb           = optional(number, 100)<br/>    storage_iops              = optional(number, 700)<br/>    backup_retention_days     = optional(number)<br/>    geo_redundant_backup      = optional(bool)<br/>    high_availability_mode    = optional(string, "Disabled")<br/>    storage_auto_grow_enabled = optional(bool, true)<br/>    # Constant default, not environment-aware. See mysql_version in modules/database.<br/>    mysql_version = optional(string, "8.0.21")<br/>  })</pre> | `{}` | no |
+| <a name="input_deployer_object_id"></a> [deployer\_object\_id](#input\_deployer\_object\_id) | Object ID of the principal that runs terraform apply; it gets the Terraform secret-management access policy on the site's Key Vault. Null (the default) keeps the module's own azurerm\_client\_config read. Set it, together with deployer\_tenant\_id, only when plan and apply run as different identities or when the caller needs its own depends\_on on this module; pass a lowercase value known at plan time. The policy's object\_id forces replacement, so a value that differs from the principal that created the existing policy replaces it: do that only as a planned identity cutover. | `string` | `null` | no |
+| <a name="input_deployer_tenant_id"></a> [deployer\_tenant\_id](#input\_deployer\_tenant\_id) | Tenant ID of the principal that runs terraform apply, used on its Key Vault access policy. Null (the default) keeps the module's own azurerm\_client\_config read. Set it together with deployer\_object\_id, as a lowercase value. | `string` | `null` | no |
 | <a name="input_enable_resource_lock"></a> [enable\_resource\_lock](#input\_enable\_resource\_lock) | Enable CanNotDelete lock on the resource group (requires User Access Administrator role) | `bool` | `false` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
 | <a name="input_extra_secret_app_settings"></a> [extra\_secret\_app\_settings](#input\_extra\_secret\_app\_settings) | Map of App Service app setting name => secret name in the site's Key Vault. Each entry is rendered as @Microsoft.KeyVault(SecretUri=...) and applied to both the production app and the staging slot. Takes precedence over app\_service.extra\_app\_settings on key collision. | `map(string)` | `{}` | no |
@@ -317,7 +364,7 @@ environment-aware. All are online, non-destructive changes.
 | <a name="input_location"></a> [location](#input\_location) | Azure region for all resources | `string` | n/a | yes |
 | <a name="input_monitoring"></a> [monitoring](#input\_monitoring) | Monitoring configuration | <pre>object({<br/>    log_analytics_workspace_id = optional(string, null)<br/>    retention_days             = optional(number)<br/>    alerts = optional(object({<br/>      http_5xx_threshold   = optional(number, 10)<br/>      high_cpu_threshold   = optional(number, 80)<br/>      db_failure_threshold = optional(number, 5)<br/>      alert_window_minutes = optional(number, 5)<br/>    }), {})<br/>  })</pre> | `{}` | no |
 | <a name="input_networking"></a> [networking](#input\_networking) | Networking configuration | <pre>object({<br/>    vnet_address_space           = optional(string, "10.0.0.0/16")<br/>    app_subnet_cidr              = optional(string, "10.0.0.0/24")<br/>    db_subnet_cidr               = optional(string, "10.0.1.0/24")<br/>    private_endpoint_subnet_cidr = optional(string, "10.0.2.0/24")<br/>  })</pre> | `{}` | no |
-| <a name="input_plan_density_limit"></a> [plan\_density\_limit](#input\_plan\_density\_limit) | Maximum sites per App Service Plan (recommended 8-10 for P1v3) | `number` | `10` | no |
+| <a name="input_plan_density_limit"></a> [plan\_density\_limit](#input\_plan\_density\_limit) | DEPRECATED, and has no effect: nothing in this module reads it, so it enforces no limit on sites per App Service Plan. It is kept, with its validation, only so existing configurations that set it still plan, and will be removed in the next major release. Remove it from your configuration. | `number` | `10` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |
 | <a name="input_shared_plan_sku"></a> [shared\_plan\_sku](#input\_shared\_plan\_sku) | SKU of the shared App Service Plan. Required when app\_service.use\_shared\_plan = true to determine feature availability. | `string` | `null` | no |
 | <a name="input_shared_resource_group_name"></a> [shared\_resource\_group\_name](#input\_shared\_resource\_group\_name) | Name of the shared resource group where the shared App Service Plan is located. Required when app\_service.use\_shared\_plan = true. | `string` | `null` | no |
@@ -329,7 +376,7 @@ environment-aware. All are online, non-destructive changes.
 | <a name="input_storage_network_rules_virtual_network_subnet_ids"></a> [storage\_network\_rules\_virtual\_network\_subnet\_ids](#input\_storage\_network\_rules\_virtual\_network\_subnet\_ids) | Extra subnet IDs permitted to reach the storage data plane. The site's App Service subnet is always included. | `list(string)` | `[]` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources | `map(string)` | `{}` | no |
 | <a name="input_tenant_id"></a> [tenant\_id](#input\_tenant\_id) | Azure AD tenant ID | `string` | n/a | yes |
-| <a name="input_wordpress_version"></a> [wordpress\_version](#input\_wordpress\_version) | WordPress Docker image tag (PHP version) | `string` | `"8.4"` | no |
+| <a name="input_wordpress_version"></a> [wordpress\_version](#input\_wordpress\_version) | Passed to app-service as docker\_image\_tag (the name is historical). Tag of Microsoft's WordPress container image (appsvc/wordpress-debian-php): the PHP version, not a WordPress version. Floating tags exist for 8.2 and 8.3 only; the 8.4 series is published as dated tags (for example 8.4\_20260922.3.tuxprod), so "8.4" alone does not exist on the registry. A dated tag (8.x\_YYYYMMDD.N.tuxprod) disables automatic platform image updates, which makes image patching the consumer's job. | `string` | `"8.3"` | no |
 
 ## Outputs
 

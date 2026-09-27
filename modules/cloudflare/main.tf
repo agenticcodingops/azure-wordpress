@@ -5,7 +5,8 @@
 # Zone is automatically created when domain is purchased from Cloudflare Registrar
 #
 # NOTE: This module is compatible with Cloudflare provider v5.x
-# NOTE: Zone settings require enable_zone_setting_overrides = true (may need paid plan)
+# NOTE: Zone settings are managed only when enable_zone_setting_overrides = true;
+# some of them cannot be changed on the Free plan
 
 # ============================================================================
 # DATA SOURCES
@@ -57,9 +58,9 @@ resource "cloudflare_dns_record" "site" {
   comment = "WordPress site: ${each.key} (${each.value.environment})"
 
   lifecycle {
-    # Prevent replacement when zone_id shows as (known after apply) during plan
-    # The zone_id never changes for a domain, but data source timing can cause
-    # Terraform to think it needs replacement
+    # Prevent replacement when zone_id shows as (known after apply) during plan.
+    # The zone_id never changes for a domain, but the zone lookup can still be
+    # deferred to apply time by a caller's depends_on on the site module
     ignore_changes = [zone_id]
   }
 }

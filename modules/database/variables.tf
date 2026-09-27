@@ -122,6 +122,19 @@ variable "high_availability_mode" {
   }
 }
 
+# Named mysql_version because "version" is reserved for module input variables.
+variable "mysql_version" {
+  description = "MySQL Flexible Server version. The default, 8.0.21, is the version every existing server was created with, so leaving it unset changes nothing. Changing it on an existing server is a major-version upgrade that cannot be undone: plan and rehearse it first (agenticcodingops/trackroutinely#104, WP-43, is where that upgrade is planned). Whether azurerm performs the change in place or forces replacement depends on the provider version, so read the provider documentation for your version and dry-run first. This input only enables the change."
+  type        = string
+  default     = "8.0.21"
+  nullable    = false
+
+  validation {
+    condition     = contains(["8.0.21", "8.4"], var.mysql_version)
+    error_message = "mysql_version must be \"8.0.21\" or \"8.4\". 5.7 is excluded: moving to it would be a downgrade."
+  }
+}
+
 variable "admin_username" {
   description = "MySQL admin username"
   type        = string

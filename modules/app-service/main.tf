@@ -23,9 +23,6 @@ locals {
   # in depth - it keeps the guard correct if that regex is ever widened.
   sku_supports_slots = can(regex("^(S|P)[0-9]", var.sku_name))
 
-  # WordPress container image from MCR
-  docker_image = "mcr.microsoft.com/appsvc/wordpress-debian-php:${var.docker_image_tag}"
-
   # CDN provider detection (support both new cdn_provider and legacy front_door_enabled)
   # Priority: cdn_provider > front_door_enabled
   effective_cdn_provider = var.cdn_provider != "none" ? var.cdn_provider : (var.front_door_enabled ? "azure_front_door" : "direct")
@@ -66,7 +63,7 @@ locals {
   # App settings for WordPress
   # IMPORTANT: Microsoft's WordPress container uses DATABASE_* not WORDPRESS_DB_*
   # See: https://github.com/Azure/wordpress-linux-appservice/blob/main/WordPress/using_an_existing_mysql_database.md
-  app_settings = {
+  app_settings_base = {
     # Database configuration (Microsoft WordPress container format)
     "DATABASE_HOST"     = var.database_host
     "DATABASE_NAME"     = var.database_name
@@ -76,11 +73,6 @@ locals {
     # WordPress URLs - STICKY to deployment slot
     "WP_HOME"    = "https://${var.custom_domain}"
     "WP_SITEURL" = "https://${var.custom_domain}"
-
-    # Azure Storage for media uploads (NO mount - plugin-based)
-    "MICROSOFT_AZURE_ACCOUNT_NAME" = var.storage_account_name
-    "MICROSOFT_AZURE_CONTAINER"    = var.storage_container_name
-    "MICROSOFT_AZURE_ACCOUNT_KEY"  = "@Microsoft.KeyVault(SecretUri=${var.storage_access_key_secret_uri})"
 
     # Application Insights (if configured)
     "APPLICATIONINSIGHTS_CONNECTION_STRING" = var.app_insights_connection_string_secret_uri != "" ? "@Microsoft.KeyVault(SecretUri=${var.app_insights_connection_string_secret_uri})" : ""
@@ -119,6 +111,21 @@ locals {
     # Debugging (nonprod only)
     "WP_DEBUG" = var.environment == "nonprod" ? "true" : "false"
   }
+
+  # Settings named for the Microsoft Azure Storage for WordPress plugin, which reads them
+  # as wp-config.php constants. The image does not read them, so without that plugin
+  # installed they are inert - and the storage account key still sits in the app's
+  # environment. storage_plugin_app_settings_enabled = false drops them. A filtered for
+  # expression rather than a conditional, whose two map shapes would not unify.
+  storage_plugin_app_settings = {
+    for name, value in {
+      "MICROSOFT_AZURE_ACCOUNT_NAME" = var.storage_account_name
+      "MICROSOFT_AZURE_CONTAINER"    = var.storage_container_name
+      "MICROSOFT_AZURE_ACCOUNT_KEY"  = "@Microsoft.KeyVault(SecretUri=${var.storage_access_key_secret_uri})"
+    } : name => value if var.storage_plugin_app_settings_enabled
+  }
+
+  app_settings = merge(local.app_settings_base, local.storage_plugin_app_settings)
 
   # Sticky settings - these stay with the slot, not swapped
   sticky_settings = distinct(concat([

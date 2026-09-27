@@ -95,9 +95,9 @@ variable "worker_count" {
 
 # WordPress container configuration
 variable "docker_image_tag" {
-  description = "Tag for the WordPress Docker image"
+  description = "Tag of Microsoft's WordPress container image (appsvc/wordpress-debian-php): the PHP version, not a WordPress version. Floating tags exist for 8.2 and 8.3 only; the 8.4 series is published as dated tags (for example 8.4_20260922.3.tuxprod), so \"8.4\" alone does not exist on the registry. A dated tag (8.x_YYYYMMDD.N.tuxprod) disables automatic platform image updates, which makes image patching the consumer's job."
   type        = string
-  default     = "8.4"
+  default     = "8.3"
 }
 
 # Database connection
@@ -244,6 +244,13 @@ variable "webdeploy_publish_basic_authentication_enabled" {
   description = "Enable basic authentication for WebDeploy/SCM publishing. Defaults to true, matching the azurerm provider default. Disabling this stops FTP/S deployment from working, but does not change the FTP policy itself - ARM models the two as independent resources, so set ftp_publish_basic_authentication_enabled = false too."
   type        = bool
   default     = true
+}
+
+variable "storage_plugin_app_settings_enabled" {
+  description = "Set the MICROSOFT_AZURE_ACCOUNT_NAME, MICROSOFT_AZURE_CONTAINER and MICROSOFT_AZURE_ACCOUNT_KEY app settings on the app and its staging slot. Defaults to true, which keeps the behaviour of every earlier release. Those names are read only by the Microsoft Azure Storage for WordPress plugin, as wp-config.php constants; the container image does not read them. Without that plugin they are inert, and false removes them - including the storage account key from the app's environment. The storage-key Key Vault secret is unaffected."
+  type        = bool
+  default     = true
+  nullable    = false
 }
 
 variable "extra_app_settings" {

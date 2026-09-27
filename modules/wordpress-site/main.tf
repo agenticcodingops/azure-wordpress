@@ -21,13 +21,16 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 5.6"
     }
+    # 1.13.0 is the first release whose azapi_update_resource accepts an HCL
+    # object as body (used for the Front Door restriction below). Bounded below
+    # the next major; consumers on 2.x stay inside the range.
     azapi = {
       source  = "azure/azapi"
-      version = ">= 1.12.0"
+      version = ">= 1.13.0, < 3.0"
     }
     random = {
       source  = "hashicorp/random"
-      version = ">= 3.5.0"
+      version = ">= 3.5.0, < 4.0"
     }
     # Constrained to 5.x: data.cloudflare_ip_ranges exposes ipv4_cidrs/ipv6_cidrs
     # in 5.x but ipv4_cidr_blocks/ipv6_cidr_blocks in 4.x, and this module uses
@@ -38,7 +41,7 @@ terraform {
     }
     time = {
       source  = "hashicorp/time"
-      version = ">= 0.9.0"
+      version = ">= 0.9.0, < 1.0"
     }
   }
 }
@@ -61,6 +64,15 @@ data "cloudflare_ip_ranges" "current" {
 # block no depends_on, or the deferral comes back. (A depends_on on the caller's own
 # call to this module defers it as well - see the README.)
 data "azurerm_client_config" "current" {}
+
+locals {
+  # The optional deployer_* inputs win when set (both or neither: see the
+  # precondition on azurerm_resource_group.main); otherwise the read above. A
+  # conditional expression, never a count on the nullable input, so an unknown
+  # input cannot fail the plan with "Invalid count argument".
+  deployer_object_id = var.deployer_object_id != null ? var.deployer_object_id : data.azurerm_client_config.current.object_id
+  deployer_tenant_id = var.deployer_tenant_id != null ? var.deployer_tenant_id : data.azurerm_client_config.current.tenant_id
+}
 
 locals {
   # Short environment suffix for naming
@@ -89,6 +101,7 @@ locals {
     backup_retention_days  = coalesce(var.database.backup_retention_days, var.environment == "production" ? 30 : 7)
     geo_redundant_backup   = coalesce(var.database.geo_redundant_backup, var.environment == "production")
     high_availability_mode = coalesce(var.database.high_availability_mode, "Disabled")
+    mysql_version          = var.database.mysql_version # optional() supplies 8.0.21; "" reaches the database module's validation
   }
 
   # Key Vault lifecycle defaults with environment-aware settings.
@@ -134,16 +147,17 @@ locals {
 
   # Cloudflare configuration
   # Note: Use try() for string fields to handle empty strings gracefully when cdn_provider != "cloudflare"
-  # Defaults are set for Cloudflare Free plan compatibility (WAF, page rules, rulesets require paid plans)
+  # Defaults are Free-plan safe. enable_waf needs Pro or higher (its rate-limit
+  # ruleset exceeds Free's 1 rule with a 10 s timeout); cache rules work on Free.
   cf_config = {
     enabled                        = var.cdn_provider == "cloudflare" && coalesce(var.cloudflare.enabled, false)
     account_id                     = try(var.cloudflare.account_id, "") != "" ? var.cloudflare.account_id : ""
     domain                         = try(var.cloudflare.domain, "") != "" ? var.cloudflare.domain : ""
     subdomain                      = try(var.cloudflare.subdomain, "") != "" ? var.cloudflare.subdomain : ""
     proxied                        = coalesce(var.cloudflare.proxied, true)
-    enable_waf                     = coalesce(var.cloudflare.enable_waf, false)                    # Free plan: WAF not available
+    enable_waf                     = coalesce(var.cloudflare.enable_waf, false)                    # Needs Pro or higher (rate-limit rules)
     enable_page_rules              = coalesce(var.cloudflare.enable_page_rules, true)              # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)
-    enable_cache_rules             = coalesce(var.cloudflare.enable_cache_rules, false)            # Requires paid plan
+    enable_cache_rules             = coalesce(var.cloudflare.enable_cache_rules, false)            # Works on Free: 5 of its 10 cache rules
     enable_zone_setting_overrides  = coalesce(var.cloudflare.enable_zone_setting_overrides, false) # Some settings not editable on Free
     enable_wordpress_optimizations = coalesce(var.cloudflare.enable_wordpress_optimizations, true)
   }
@@ -172,6 +186,15 @@ resource "azurerm_resource_group" "main" {
   name     = "rg-${var.project_name}-${var.site_name}-${local.env_suffix}"
   location = var.location
   tags     = local.common_tags
+
+  lifecycle {
+    # Both deployer IDs or neither. A precondition rather than a cross-variable
+    # validation, which needs Terraform 1.9 while this module supports >= 1.6.
+    precondition {
+      condition     = (var.deployer_object_id == null) == (var.deployer_tenant_id == null)
+      error_message = "Set deployer_object_id and deployer_tenant_id together, or leave both null."
+    }
+  }
 }
 
 # Generate database password
@@ -276,6 +299,7 @@ module "database" {
   geo_redundant_backup      = local.db_config.geo_redundant_backup
   high_availability_mode    = local.db_config.high_availability_mode
   storage_auto_grow_enabled = coalesce(var.database.storage_auto_grow_enabled, true)
+  mysql_version             = local.db_config.mysql_version
 
   # Allow burstable SKUs for cost optimization (user choice)
   enforce_production_sku = false
@@ -360,10 +384,10 @@ module "key_vault" {
   resource_group_name = azurerm_resource_group.main.name
   tenant_id           = var.tenant_id
 
-  # The deploying principal, read at the top of this file, outside this module's
-  # depends_on, so the Terraform access policy's IDs stay known at plan time.
-  deployer_object_id = data.azurerm_client_config.current.object_id
-  deployer_tenant_id = data.azurerm_client_config.current.tenant_id
+  # The deploying principal, read at the top of this file (or passed in), outside
+  # this module's depends_on, so the Terraform access policy's IDs stay known at plan time.
+  deployer_object_id = local.deployer_object_id
+  deployer_tenant_id = local.deployer_tenant_id
 
   # Use a placeholder principal ID - will be updated after app_service creates
   app_service_principal_id = "00000000-0000-0000-0000-000000000000"
@@ -480,6 +504,7 @@ module "app_service" {
   scm_ip_restriction_default_action              = var.app_service_scm_ip_restriction_default_action
   ftp_publish_basic_authentication_enabled       = var.app_service_ftp_publish_basic_authentication_enabled
   webdeploy_publish_basic_authentication_enabled = var.app_service_webdeploy_publish_basic_authentication_enabled
+  storage_plugin_app_settings_enabled            = var.app_service_storage_plugin_app_settings_enabled
 
   tags = local.common_tags
 
@@ -850,7 +875,12 @@ module "cloudflare" {
   enable_zone_setting_overrides  = local.cf_config.enable_zone_setting_overrides
   enable_wordpress_optimizations = local.cf_config.enable_wordpress_optimizations
 
-  depends_on = [module.app_service]
+  # No module-level depends_on, on purpose. The DNS records already wait for the
+  # web app through origin_hostname and the verification token above. A
+  # depends_on on module.app_service deferred data.cloudflare_zones inside this
+  # module to apply time whenever any app-service instance had a pending change
+  # (for_each siblings included), which made every ruleset's and zone setting's
+  # zone_id unknown - and zone_id forces replacement on cloudflare_ruleset.
 }
 
 # ============================================================================

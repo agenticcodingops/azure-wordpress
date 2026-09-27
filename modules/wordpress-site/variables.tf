@@ -41,6 +41,30 @@ variable "tenant_id" {
   type        = string
 }
 
+# The deploying principal. Flat top-level variables, not object attributes, so a
+# plan-time value never depends on how an object is assembled.
+variable "deployer_object_id" {
+  description = "Object ID of the principal that runs terraform apply; it gets the Terraform secret-management access policy on the site's Key Vault. Null (the default) keeps the module's own azurerm_client_config read. Set it, together with deployer_tenant_id, only when plan and apply run as different identities or when the caller needs its own depends_on on this module; pass a lowercase value known at plan time. The policy's object_id forces replacement, so a value that differs from the principal that created the existing policy replaces it: do that only as a planned identity cutover."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.deployer_object_id == null || can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.deployer_object_id))
+    error_message = "deployer_object_id must be a lowercase GUID (an uppercase value differs from the ID Azure returns and would force the policy to be replaced)."
+  }
+}
+
+variable "deployer_tenant_id" {
+  description = "Tenant ID of the principal that runs terraform apply, used on its Key Vault access policy. Null (the default) keeps the module's own azurerm_client_config read. Set it together with deployer_object_id, as a lowercase value."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.deployer_tenant_id == null || can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.deployer_tenant_id))
+    error_message = "deployer_tenant_id must be a lowercase GUID."
+  }
+}
+
 # Site configuration
 variable "custom_domain" {
   description = "Custom domain for the WordPress site"
@@ -48,9 +72,9 @@ variable "custom_domain" {
 }
 
 variable "wordpress_version" {
-  description = "WordPress Docker image tag (PHP version)"
+  description = "Passed to app-service as docker_image_tag (the name is historical). Tag of Microsoft's WordPress container image (appsvc/wordpress-debian-php): the PHP version, not a WordPress version. Floating tags exist for 8.2 and 8.3 only; the 8.4 series is published as dated tags (for example 8.4_20260922.3.tuxprod), so \"8.4\" alone does not exist on the registry. A dated tag (8.x_YYYYMMDD.N.tuxprod) disables automatic platform image updates, which makes image patching the consumer's job."
   type        = string
-  default     = "8.4"
+  default     = "8.3"
 }
 
 # Database configuration
@@ -59,7 +83,7 @@ variable "wordpress_version" {
 # giving them an optional() default here would mean null never reaches that coalesce
 # and the environment-aware branch could never run.
 variable "database" {
-  description = "Database configuration. sku_name, backup_retention_days and geo_redundant_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo_redundant_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading."
+  description = "Database configuration. sku_name, backup_retention_days and geo_redundant_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo_redundant_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql_version defaults to 8.0.21; changing it on an existing server is an irreversible major-version upgrade (plan it per agenticcodingops/trackroutinely#104, WP-43)."
   type = object({
     sku_name                  = optional(string)
     storage_size_gb           = optional(number, 100)
@@ -68,6 +92,8 @@ variable "database" {
     geo_redundant_backup      = optional(bool)
     high_availability_mode    = optional(string, "Disabled")
     storage_auto_grow_enabled = optional(bool, true)
+    # Constant default, not environment-aware. See mysql_version in modules/database.
+    mysql_version = optional(string, "8.0.21")
   })
   default = {}
 }
@@ -236,6 +262,13 @@ variable "app_service_webdeploy_publish_basic_authentication_enabled" {
   default     = true
 }
 
+variable "app_service_storage_plugin_app_settings_enabled" {
+  description = "Set the MICROSOFT_AZURE_* storage-plugin app settings on the site and its staging slot. Defaults to true, which keeps the behaviour of every earlier release. The container image does not read them (only the Microsoft Azure Storage for WordPress plugin does, as wp-config.php constants), so without that plugin they are inert, and false removes them - including the storage account key from the app's environment. The storage-key Key Vault secret is unaffected."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
 # App Service configuration
 variable "app_service" {
   description = "App Service configuration"
@@ -305,9 +338,9 @@ variable "cloudflare" {
     domain                         = optional(string, "")
     subdomain                      = optional(string, "")
     proxied                        = optional(bool, true)
-    enable_waf                     = optional(bool, false) # Default false for Free plan compatibility
+    enable_waf                     = optional(bool, false) # Needs Pro or higher: rate limiting exceeds Free's 1 rule and 10 s timeout
     enable_page_rules              = optional(bool, true)  # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)
-    enable_cache_rules             = optional(bool, false) # Requires paid plan
+    enable_cache_rules             = optional(bool, false) # Works on Free: 5 of the 10 cache rules it allows
     enable_zone_setting_overrides  = optional(bool, false) # Some settings can't be modified on Free plan
     enable_wordpress_optimizations = optional(bool, true)
   })
@@ -388,9 +421,9 @@ variable "enable_resource_lock" {
   default     = false
 }
 
-# App Service Plan density validation
+# App Service Plan density validation - DEPRECATED: nothing reads this input.
 variable "plan_density_limit" {
-  description = "Maximum sites per App Service Plan (recommended 8-10 for P1v3)"
+  description = "DEPRECATED, and has no effect: nothing in this module reads it, so it enforces no limit on sites per App Service Plan. It is kept, with its validation, only so existing configurations that set it still plan, and will be removed in the next major release. Remove it from your configuration."
   type        = number
   default     = 10
 

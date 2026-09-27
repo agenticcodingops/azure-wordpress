@@ -404,7 +404,7 @@ Keep the subjects intact either way — release-please parses them.
 
 Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure` declare theirs inline in `main.tf`. Adding a module without constraints reintroduces the breakage silently — it only surfaces when a new provider major ships.
 
-**Four constraints still break that rule at v4.0.1:** `azapi >= 1.12.0`, `random >= 3.5.0` and `time >= 0.9.0` in `wordpress-site/main.tf`, and `null >= 3.2.0` in `database/versions.tf`. The examples also declare `cloudflare >= 4.0.0`. They are bounded in the R2 batch of the platform-hardening programme; do not copy them.
+~~**Four constraints still break that rule at v4.0.1:** `azapi >= 1.12.0`, `random >= 3.5.0` and `time >= 0.9.0` in `wordpress-site/main.tf`, and `null >= 3.2.0` in `database/versions.tf`. The examples also declare `cloudflare >= 4.0.0`. They are bounded in the R2 batch of the platform-hardening programme; do not copy them.~~ **Resolved in v4.1.0:** every provider constraint in `modules/` and `examples/` now has an upper bound — azapi `>= 1.13.0, < 3.0` (1.13.0 is the first release whose `body` accepts an HCL object, which the Front Door restriction uses; `>= 1.12.0` was too low), random `>= 3.5.0, < 4.0`, time `>= 0.9.0, < 1.0`, null `>= 3.2.0, < 4.0`, and the examples' cloudflare `~> 5.0`.
 
 ## Azure Verified Modules First
 
@@ -493,8 +493,11 @@ Vault names are capped at 24 chars — `kv-{site≤14}-{env}{suffix}` — so a l
     `module.wordpress_sites[*].data.azurerm_client_config.current` is never deferred.
 - **Still open.**
   - A consumer `depends_on` on the `wordpress-site` call defers the new read too, and brings the replacement back. Don't add one.
-  - `module "cloudflare"` has the same pattern (`depends_on = [module.app_service]`). Its rulesets' `zone_id` forces
-    replacement, so fix it before enabling rulesets. The next minor release addresses it.
+  - ~~`module "cloudflare"` has the same pattern (`depends_on = [module.app_service]`). Its rulesets' `zone_id` forces
+    replacement, so fix it before enabling rulesets. The next minor release addresses it.~~ **Fixed in v4.1.0:** the
+    `depends_on` is gone. The DNS records still wait for the web app through `origin_hostname` and the verification
+    token, and the TXT record, `time_sleep` and hostname-binding chain is unchanged. A caller's `depends_on` on the
+    site module still defers the zone lookup, which is one more reason not to add one.
   - An optional deployer-ID pass-through input is also planned for that release.
 
 ## Composition vs Standalone Modules
