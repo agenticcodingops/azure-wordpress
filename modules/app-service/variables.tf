@@ -246,6 +246,13 @@ variable "webdeploy_publish_basic_authentication_enabled" {
   default     = true
 }
 
+variable "storage_plugin_app_settings_enabled" {
+  description = "Set the MICROSOFT_AZURE_ACCOUNT_NAME, MICROSOFT_AZURE_CONTAINER and MICROSOFT_AZURE_ACCOUNT_KEY app settings on the app and its staging slot. Defaults to true, which keeps the behaviour of every earlier release. Those names are read only by the Microsoft Azure Storage for WordPress plugin, as wp-config.php constants; the container image does not read them. Without that plugin they are inert, and false removes them - including the storage account key from the app's environment. The storage-key Key Vault secret is unaffected."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
 variable "extra_app_settings" {
   description = "Additional app settings to merge with the default WordPress settings (e.g., WP_ENVIRONMENT_TYPE, custom plugin config)"
   type        = map(string)

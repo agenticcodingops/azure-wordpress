@@ -504,6 +504,7 @@ module "app_service" {
   scm_ip_restriction_default_action              = var.app_service_scm_ip_restriction_default_action
   ftp_publish_basic_authentication_enabled       = var.app_service_ftp_publish_basic_authentication_enabled
   webdeploy_publish_basic_authentication_enabled = var.app_service_webdeploy_publish_basic_authentication_enabled
+  storage_plugin_app_settings_enabled            = var.app_service_storage_plugin_app_settings_enabled
 
   tags = local.common_tags
 
