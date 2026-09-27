@@ -23,9 +23,6 @@ locals {
   # in depth - it keeps the guard correct if that regex is ever widened.
   sku_supports_slots = can(regex("^(S|P)[0-9]", var.sku_name))
 
-  # WordPress container image from MCR
-  docker_image = "mcr.microsoft.com/appsvc/wordpress-debian-php:${var.docker_image_tag}"
-
   # CDN provider detection (support both new cdn_provider and legacy front_door_enabled)
   # Priority: cdn_provider > front_door_enabled
   effective_cdn_provider = var.cdn_provider != "none" ? var.cdn_provider : (var.front_door_enabled ? "azure_front_door" : "direct")

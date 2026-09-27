@@ -95,9 +95,9 @@ variable "worker_count" {
 
 # WordPress container configuration
 variable "docker_image_tag" {
-  description = "Tag for the WordPress Docker image"
+  description = "Tag of Microsoft's WordPress container image (appsvc/wordpress-debian-php): the PHP version, not a WordPress version. Floating tags exist for 8.2 and 8.3 only; the 8.4 series is published as dated tags (for example 8.4_20260922.3.tuxprod), so \"8.4\" alone does not exist on the registry. A dated tag (8.x_YYYYMMDD.N.tuxprod) disables automatic platform image updates, which makes image patching the consumer's job."
   type        = string
-  default     = "8.4"
+  default     = "8.3"
 }
 
 # Database connection

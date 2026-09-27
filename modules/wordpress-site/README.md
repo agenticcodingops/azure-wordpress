@@ -26,6 +26,14 @@ exception listed below.
   Ordering is unchanged: the DNS records still wait for the web app through their input references, and the
   TXT record, the DNS-propagation wait and the hostname binding still run in that order. A `depends_on` on
   your own call to this module would defer the lookup again, so don't add one.
+- **The one exception: the container image default is now the floating `"8.3"`** (it was `"8.4"`). If you never
+  set `wordpress_version`, the plan updates `docker_image_name` in place on the app, and on S*/P* plans on the
+  staging slot: `appsvc/wordpress-debian-php:8.4` becomes `:8.3`. Floating `"8.4"` does not exist on the registry
+  (measured 2026-09-27: `manifests/8.4` returns 404, `manifests/8.3` returns 200; the 8.4 series is published only as
+  dated tags), so the old default cannot survive a restart or a move to a new instance. To keep your current value, set `wordpress_version` explicitly.
+  A dated tag such as `8.3_20260922.3.tuxprod` pins the image exactly, but disables automatic platform image updates.
+  As with any image change, a green apply does not prove the container restarted: check `x-powered-by` and restart
+  the app if the old PHP is still serving.
 
 ## Upgrading to v4.0.2
 
@@ -343,7 +351,7 @@ environment-aware. All are online, non-destructive changes.
 | <a name="input_storage_network_rules_virtual_network_subnet_ids"></a> [storage\_network\_rules\_virtual\_network\_subnet\_ids](#input\_storage\_network\_rules\_virtual\_network\_subnet\_ids) | Extra subnet IDs permitted to reach the storage data plane. The site's App Service subnet is always included. | `list(string)` | `[]` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources | `map(string)` | `{}` | no |
 | <a name="input_tenant_id"></a> [tenant\_id](#input\_tenant\_id) | Azure AD tenant ID | `string` | n/a | yes |
-| <a name="input_wordpress_version"></a> [wordpress\_version](#input\_wordpress\_version) | WordPress Docker image tag (PHP version) | `string` | `"8.4"` | no |
+| <a name="input_wordpress_version"></a> [wordpress\_version](#input\_wordpress\_version) | Passed to app-service as docker\_image\_tag (the name is historical). Tag of Microsoft's WordPress container image (appsvc/wordpress-debian-php): the PHP version, not a WordPress version. Floating tags exist for 8.2 and 8.3 only; the 8.4 series is published as dated tags (for example 8.4\_20260922.3.tuxprod), so "8.4" alone does not exist on the registry. A dated tag (8.x\_YYYYMMDD.N.tuxprod) disables automatic platform image updates, which makes image patching the consumer's job. | `string` | `"8.3"` | no |
 
 ## Outputs
 

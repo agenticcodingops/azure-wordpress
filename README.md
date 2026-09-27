@@ -634,6 +634,12 @@ The provider no longer registers resource providers unless asked: `resource_prov
 | **MINOR** (v1.0.0 → v1.1.0) | New features with backward compatibility. Existing configs work unchanged. |
 | **MAJOR** (v1.0.0 → v2.0.0) | Breaking changes. Review CHANGELOG and update your configuration. |
 
+**One exception, in v4.1.0:** the container image default changes from `"8.4"` to the floating `"8.3"`, so a
+configuration that never set the image tag plans an in-place `docker_image_name` update on the app (and, on S*/P*
+plans, the staging slot). `"8.4"` does not exist on the registry as a floating tag (measured 2026-09-27; the 8.4 series is
+published only as dated tags), so the old default cannot survive a restart. Set `wordpress_version` (or `docker_image_tag` on the app-service module) explicitly to keep your
+current value. See the site module's "Upgrading to v4.1.0".
+
 ## Contributing
 
 Contributions are welcome! Please read our [contributing guidelines](CONTRIBUTING.md) before submitting PRs.
