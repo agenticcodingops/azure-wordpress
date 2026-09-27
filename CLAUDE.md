@@ -107,7 +107,7 @@ Update the `?ref=` references in README.md and examples/ to the version being re
 
 ## CI Pipeline (.github/workflows/validate.yml)
 
-Four jobs: Format Check (`terraform fmt`), Validate (11 modules), Checkov, Documentation (terraform-docs). Format Check and Validate run **Terraform 1.9.8**, the version the consumer's CI runs, installed by `hashicorp/setup-terraform` pinned to a commit SHA with `terraform_wrapper: false`. The version lives once, in the workflow-level `TERRAFORM_VERSION`. Until 2026-09 they ran OpenTofu 1.6.0; `fmt -recursive -check` was clean on both CLIs at the switch. All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
+Four jobs: Format Check (`terraform fmt`), Validate (11 modules), Checkov, Documentation (terraform-docs). Format Check and Validate run **Terraform 1.9.8**, the version the consumer's CI runs, installed by `hashicorp/setup-terraform` pinned to a commit SHA with `terraform_wrapper: false`. The version lives once, in the workflow-level `TERRAFORM_VERSION`, and each job's `Terraform Version` step fails if the installed CLI does not print exactly that version. Until 2026-09 they ran OpenTofu 1.6.0; `fmt -recursive -check` was clean on both CLIs at the switch. All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
 
 **`claude-review` was failing on every PR — an expired `CLAUDE_CODE_OAUTH_TOKEN`, not the workflow.
 Resolved 2026-08-02 by rotating the secret; it has been green since.** If you are reading a red
@@ -557,7 +557,9 @@ rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl   # leave none behind 
 #     --jq '.content' | base64 -d | grep image:
 # Install SUFFIXED so plain `checkov` stays off PATH — see the hook warning below.
 pipx install --suffix=@3319 checkov==3.3.19
-checkov@3319 -d . --framework terraform -o json --skip-check <list-from-validate.yml>
+# The skip list is read from validate.yml, so it cannot drift from what CI skips.
+checkov@3319 -d . --framework terraform -o json \
+  --skip-check "$(sed -n 's/^ *skip_check: *\([^[:space:]]*\).*/\1/p' .github/workflows/validate.yml)"
 # Drop --quiet when comparing before/after: it hides PASSED and UNKNOWN, which is
 # exactly the signal you need (see Static Analysis Constraints).
 

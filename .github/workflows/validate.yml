@@ -28,6 +28,11 @@ jobs:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
 
+      - name: Terraform Version
+        run: |
+          terraform version
+          terraform version | grep -Fqx "Terraform v${TERRAFORM_VERSION}"
+
       - name: Format Check
         run: terraform fmt -recursive -check -diff
 
@@ -57,6 +62,11 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
+
+      - name: Terraform Version
+        run: |
+          terraform version
+          terraform version | grep -Fqx "Terraform v${TERRAFORM_VERSION}"
 
       - name: Initialize
         working-directory: ${{ matrix.module }}
