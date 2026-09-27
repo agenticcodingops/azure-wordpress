@@ -305,9 +305,9 @@ variable "cloudflare" {
     domain                         = optional(string, "")
     subdomain                      = optional(string, "")
     proxied                        = optional(bool, true)
-    enable_waf                     = optional(bool, false) # Default false for Free plan compatibility
+    enable_waf                     = optional(bool, false) # Needs Pro or higher: rate limiting exceeds Free's 1 rule and 10 s timeout
     enable_page_rules              = optional(bool, true)  # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)
-    enable_cache_rules             = optional(bool, false) # Requires paid plan
+    enable_cache_rules             = optional(bool, false) # Works on Free: 5 of the 10 cache rules it allows
     enable_zone_setting_overrides  = optional(bool, false) # Some settings can't be modified on Free plan
     enable_wordpress_optimizations = optional(bool, true)
   })

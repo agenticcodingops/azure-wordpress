@@ -91,7 +91,8 @@ resource "cloudflare_page_rule" "wp_content" {
 # ============================================================================
 
 # Cache rules for WordPress optimization
-# NOTE: Rulesets require a paid Cloudflare plan - skip on Free plan
+# NOTE: Cache Rules are available on every plan, including Free (10 rules per
+# zone; this ruleset uses 5). Opt-in through enable_cache_rules.
 resource "cloudflare_ruleset" "wordpress_cache" {
   count = var.enable_cache_rules ? 1 : 0
 

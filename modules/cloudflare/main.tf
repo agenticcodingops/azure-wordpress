@@ -5,7 +5,8 @@
 # Zone is automatically created when domain is purchased from Cloudflare Registrar
 #
 # NOTE: This module is compatible with Cloudflare provider v5.x
-# NOTE: Zone settings require enable_zone_setting_overrides = true (may need paid plan)
+# NOTE: Zone settings are managed only when enable_zone_setting_overrides = true;
+# some of them cannot be changed on the Free plan
 
 # ============================================================================
 # DATA SOURCES
