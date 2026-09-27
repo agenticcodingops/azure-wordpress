@@ -41,6 +41,30 @@ variable "tenant_id" {
   type        = string
 }
 
+# The deploying principal. Flat top-level variables, not object attributes, so a
+# plan-time value never depends on how an object is assembled.
+variable "deployer_object_id" {
+  description = "Object ID of the principal that runs terraform apply; it gets the Terraform secret-management access policy on the site's Key Vault. Null (the default) keeps the module's own azurerm_client_config read. Set it, together with deployer_tenant_id, only when plan and apply run as different identities or when the caller needs its own depends_on on this module; pass a lowercase value known at plan time. The policy's object_id forces replacement, so a value that differs from the principal that created the existing policy replaces it: do that only as a planned identity cutover."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.deployer_object_id == null || can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.deployer_object_id))
+    error_message = "deployer_object_id must be a lowercase GUID (an uppercase value differs from the ID Azure returns and would force the policy to be replaced)."
+  }
+}
+
+variable "deployer_tenant_id" {
+  description = "Tenant ID of the principal that runs terraform apply, used on its Key Vault access policy. Null (the default) keeps the module's own azurerm_client_config read. Set it together with deployer_object_id, as a lowercase value."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.deployer_tenant_id == null || can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.deployer_tenant_id))
+    error_message = "deployer_tenant_id must be a lowercase GUID."
+  }
+}
+
 # Site configuration
 variable "custom_domain" {
   description = "Custom domain for the WordPress site"

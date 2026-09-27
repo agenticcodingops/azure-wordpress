@@ -66,6 +66,15 @@ data "cloudflare_ip_ranges" "current" {
 data "azurerm_client_config" "current" {}
 
 locals {
+  # The optional deployer_* inputs win when set (both or neither: see the
+  # precondition on azurerm_resource_group.main); otherwise the read above. A
+  # conditional expression, never a count on the nullable input, so an unknown
+  # input cannot fail the plan with "Invalid count argument".
+  deployer_object_id = var.deployer_object_id != null ? var.deployer_object_id : data.azurerm_client_config.current.object_id
+  deployer_tenant_id = var.deployer_tenant_id != null ? var.deployer_tenant_id : data.azurerm_client_config.current.tenant_id
+}
+
+locals {
   # Short environment suffix for naming
   env_suffix = var.environment == "nonprod" ? "np" : "prod"
 
@@ -176,6 +185,15 @@ resource "azurerm_resource_group" "main" {
   name     = "rg-${var.project_name}-${var.site_name}-${local.env_suffix}"
   location = var.location
   tags     = local.common_tags
+
+  lifecycle {
+    # Both deployer IDs or neither. A precondition rather than a cross-variable
+    # validation, which needs Terraform 1.9 while this module supports >= 1.6.
+    precondition {
+      condition     = (var.deployer_object_id == null) == (var.deployer_tenant_id == null)
+      error_message = "Set deployer_object_id and deployer_tenant_id together, or leave both null."
+    }
+  }
 }
 
 # Generate database password
@@ -364,10 +382,10 @@ module "key_vault" {
   resource_group_name = azurerm_resource_group.main.name
   tenant_id           = var.tenant_id
 
-  # The deploying principal, read at the top of this file, outside this module's
-  # depends_on, so the Terraform access policy's IDs stay known at plan time.
-  deployer_object_id = data.azurerm_client_config.current.object_id
-  deployer_tenant_id = data.azurerm_client_config.current.tenant_id
+  # The deploying principal, read at the top of this file (or passed in), outside
+  # this module's depends_on, so the Terraform access policy's IDs stay known at plan time.
+  deployer_object_id = local.deployer_object_id
+  deployer_tenant_id = local.deployer_tenant_id
 
   # Use a placeholder principal ID - will be updated after app_service creates
   app_service_principal_id = "00000000-0000-0000-0000-000000000000"
