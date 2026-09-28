@@ -348,19 +348,123 @@ variable "cloudflare" {
 }
 
 # Monitoring configuration
+#
+# The alert families under monitoring.alerts (mysql, http_5xx_rate, health_check,
+# resource_health) were added in v4.1.0 and are all off by default. They are nested
+# here, not flat, because none is a security control and none is environment-aware:
+# constant optional() defaults are fine. An environment-aware default would need no
+# optional() default and a selection in a *_config local instead (see database).
 variable "monitoring" {
-  description = "Monitoring configuration"
+  description = "Monitoring configuration. alerts.mysql, alerts.http_5xx_rate, alerts.health_check and alerts.resource_health are opt-in alert families (enabled = false by default); enabling any of them needs alert_recipients or extra_action_group_ids. db_failure_threshold is the aborted-connections threshold of the MySQL family. log_analytics_workspace_location is the region of an external log_analytics_workspace_id: set it when that workspace is in another region and http_5xx_rate is enabled, because a log search alert rule must be in its workspace's region. See the README's Alerting section."
   type = object({
-    log_analytics_workspace_id = optional(string, null)
-    retention_days             = optional(number)
+    log_analytics_workspace_id       = optional(string, null)
+    log_analytics_workspace_location = optional(string) # the external workspace's region; see http_5xx_rate
+    retention_days                   = optional(number)
     alerts = optional(object({
       http_5xx_threshold   = optional(number, 10)
       high_cpu_threshold   = optional(number, 80)
       db_failure_threshold = optional(number, 5)
       alert_window_minutes = optional(number, 5)
+      mysql = optional(object({
+        enabled                         = optional(bool, false)
+        severity                        = optional(number, 2)
+        cpu_percent_threshold           = optional(number, 80)
+        memory_percent_threshold        = optional(number, 90)
+        storage_percent_threshold       = optional(number, 85)
+        active_connections_threshold    = optional(number)     # null => no active_connections alert (max_connections varies by SKU)
+        cpu_credits_remaining_threshold = optional(number, 30) # Burstable (B_) SKUs only
+      }), {})
+      http_5xx_rate = optional(object({
+        enabled              = optional(bool, false)
+        severity             = optional(number, 2)
+        threshold_percent    = optional(number, 5)
+        minimum_requests     = optional(number, 20)
+        window_duration      = optional(string, "PT15M")
+        evaluation_frequency = optional(string, "PT5M") # PT1M is not offered
+      }), {})
+      health_check = optional(object({
+        enabled     = optional(bool, false)
+        severity    = optional(number, 1)
+        threshold   = optional(number, 100)
+        window_size = optional(string, "PT15M")
+      }), {})
+      resource_health = optional(object({
+        enabled  = optional(bool, false)
+        current  = optional(list(string), ["Degraded", "Unavailable"])
+        previous = optional(list(string), ["Available", "Unknown"])
+        reasons  = optional(list(string), ["PlatformInitiated", "Unknown"])
+      }), {})
     }), {})
   })
   default = {}
+
+  validation {
+    condition     = var.monitoring.log_analytics_workspace_location == null || var.monitoring.log_analytics_workspace_id != null
+    error_message = "monitoring.log_analytics_workspace_location applies only to an external workspace: set log_analytics_workspace_id too, or leave it null."
+  }
+
+  # Unused before 4.1.0; it now drives the aborted-connections alert, where a
+  # negative threshold would always fire.
+  validation {
+    condition     = var.monitoring.alerts.db_failure_threshold >= 0
+    error_message = "monitoring.alerts.db_failure_threshold must not be negative: it is the aborted-connections count of the MySQL alert family."
+  }
+
+  validation {
+    condition = alltrue([
+      for s in [var.monitoring.alerts.mysql.severity, var.monitoring.alerts.http_5xx_rate.severity, var.monitoring.alerts.health_check.severity] :
+      contains([0, 1, 2, 3, 4], s)
+    ])
+    error_message = "monitoring.alerts: mysql.severity, http_5xx_rate.severity and health_check.severity must be 0-4 (0 is critical)."
+  }
+
+  validation {
+    condition = alltrue([
+      for t in [var.monitoring.alerts.mysql.cpu_percent_threshold, var.monitoring.alerts.mysql.memory_percent_threshold, var.monitoring.alerts.mysql.storage_percent_threshold] :
+      t >= 0 && t <= 100
+    ]) && var.monitoring.alerts.mysql.cpu_credits_remaining_threshold >= 0
+    error_message = "monitoring.alerts.mysql: the percent thresholds must be 0-100, and cpu_credits_remaining_threshold must not be negative."
+  }
+
+  validation {
+    condition     = var.monitoring.alerts.mysql.active_connections_threshold == null ? true : var.monitoring.alerts.mysql.active_connections_threshold >= 1
+    error_message = "monitoring.alerts.mysql.active_connections_threshold must be at least 1, or null for no active-connections alert."
+  }
+
+  validation {
+    condition     = var.monitoring.alerts.http_5xx_rate.threshold_percent >= 0 && var.monitoring.alerts.http_5xx_rate.threshold_percent < 100 && var.monitoring.alerts.http_5xx_rate.minimum_requests >= 1
+    error_message = "monitoring.alerts.http_5xx_rate: threshold_percent must be at least 0 and below 100, and minimum_requests at least 1."
+  }
+
+  # The provider's own enums, minus PT1M evaluation: the rule always skips query
+  # validation, which conflicts with a one-minute frequency. The window must hold at
+  # least one evaluation interval, since the query counts the whole window once.
+  validation {
+    condition = (
+      contains(["PT5M", "PT10M", "PT15M", "PT30M", "PT45M", "PT1H", "PT2H", "PT3H", "PT4H", "PT5H", "PT6H", "P1D"], var.monitoring.alerts.http_5xx_rate.evaluation_frequency) &&
+      contains(["PT5M", "PT10M", "PT15M", "PT30M", "PT45M", "PT1H", "PT2H", "PT3H", "PT4H", "PT5H", "PT6H", "P1D", "P2D"], var.monitoring.alerts.http_5xx_rate.window_duration) &&
+      lookup({ PT5M = 5, PT10M = 10, PT15M = 15, PT30M = 30, PT45M = 45, PT1H = 60, PT2H = 120, PT3H = 180, PT4H = 240, PT5H = 300, PT6H = 360, P1D = 1440, P2D = 2880 }, var.monitoring.alerts.http_5xx_rate.window_duration, 0) >=
+      lookup({ PT5M = 5, PT10M = 10, PT15M = 15, PT30M = 30, PT45M = 45, PT1H = 60, PT2H = 120, PT3H = 180, PT4H = 240, PT5H = 300, PT6H = 360, P1D = 1440 }, var.monitoring.alerts.http_5xx_rate.evaluation_frequency, 100000)
+    )
+    error_message = "monitoring.alerts.http_5xx_rate: evaluation_frequency must be one of PT5M, PT10M, PT15M, PT30M, PT45M, PT1H-PT6H or P1D; window_duration one of PT5M, PT10M, PT15M, PT30M, PT45M, PT1H-PT6H, P1D or P2D, and at least as long as evaluation_frequency."
+  }
+
+  # HealthCheckStatus has no grain below five minutes; the alert evaluates every PT5M.
+  validation {
+    condition     = contains(["PT5M", "PT15M", "PT30M", "PT1H"], var.monitoring.alerts.health_check.window_size) && var.monitoring.alerts.health_check.threshold >= 0 && var.monitoring.alerts.health_check.threshold <= 100
+    error_message = "monitoring.alerts.health_check: window_size must be PT5M, PT15M, PT30M or PT1H, and threshold 0-100."
+  }
+
+  validation {
+    condition = (
+      length(var.monitoring.alerts.resource_health.current) > 0 &&
+      length(var.monitoring.alerts.resource_health.previous) > 0 &&
+      length(var.monitoring.alerts.resource_health.reasons) > 0 &&
+      alltrue([for v in concat(var.monitoring.alerts.resource_health.current, var.monitoring.alerts.resource_health.previous) : contains(["Available", "Degraded", "Unavailable", "Unknown"], v)]) &&
+      alltrue([for v in var.monitoring.alerts.resource_health.reasons : contains(["PlatformInitiated", "UserInitiated", "Unknown"], v)])
+    )
+    error_message = "monitoring.alerts.resource_health: current and previous must be non-empty lists of Available, Degraded, Unavailable or Unknown; reasons a non-empty list of PlatformInitiated, UserInitiated or Unknown."
+  }
 }
 
 variable "alert_recipients" {

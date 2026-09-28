@@ -64,6 +64,12 @@ exception listed below.
   site group's. With no `alert_recipients`, setting it also creates the three baseline alerts, routed to those
   groups only. `action_group_id` is null when `alert_recipients` is empty. Microsoft retires classic URL ping
   tests on 2026-09-30; this module never created any.
+- **New, optional: four alert families under `monitoring.alerts`**: `mysql`, `http_5xx_rate`, `health_check` and
+  `resource_health`, each `enabled = false` by default (see [Alerting](#alerting)). Unset, nothing changes.
+  Enabling one needs `alert_recipients` or `extra_action_group_ids`, or the plan fails. `db_failure_threshold`,
+  declared but never read before, is now the MySQL `aborted_connections` threshold, and only when
+  `mysql.enabled` is true. Azure also creates a "Failure Anomalies" rule next to every Application Insights
+  component, outside Terraform; see [Failure Anomalies](#failure-anomalies-platform-created).
 
 ## Upgrading to v4.0.2
 
@@ -349,6 +355,108 @@ alerts, routed to the extra groups only.
 executions, roughly USD 21.60 a month per test. At 900 s it is a third of that. Test results are also
 ingested into the workspace.
 
+## Alerting
+
+Three baseline metric alerts (HTTP 5xx count, plan CPU, response time) exist whenever an alert route does:
+`alert_recipients` (which creates the site action group) or `extra_action_group_ids`. Four more families,
+added in v4.1.0, are opt-in under `monitoring.alerts`, each `enabled = false` by default. Enabling any of
+them without a route fails the plan. Every alert notifies the site action group and every
+`extra_action_group_ids` entry.
+
+```hcl
+module "wordpress" {
+  # ... existing configuration ...
+
+  alert_recipients = ["ops@example.com"]
+
+  monitoring = {
+    alerts = {
+      db_failure_threshold = 5 # aborted MySQL connections per alert_window_minutes
+      mysql                = { enabled = true, active_connections_threshold = 150 }
+      http_5xx_rate        = { enabled = true }
+      health_check         = { enabled = true }
+      resource_health      = { enabled = true }
+    }
+  }
+}
+```
+
+### `mysql`: MySQL flexible server metrics
+
+| Alert | Metric and aggregation | Fires when | Window / evaluated every |
+|---|---|---|---|
+| `cpu_percent` | `cpu_percent`, Average | above `cpu_percent_threshold` (80) | PT15M / PT5M |
+| `memory_percent` | `memory_percent`, Average | above `memory_percent_threshold` (90) | PT15M / PT5M |
+| `storage_percent` | `storage_percent`, Maximum | above `storage_percent_threshold` (85) | PT15M / PT5M |
+| `aborted_connections` | `aborted_connections`, Total | above `db_failure_threshold` (5) | `alert_window_minutes` / PT1M |
+| `active_connections` | `active_connections`, Maximum | above `active_connections_threshold` | PT15M / PT5M |
+| `cpu_credits_remaining` | `cpu_credits_remaining`, Average | below `cpu_credits_remaining_threshold` (30) | PT30M / PT15M |
+
+- `db_failure_threshold` was declared in earlier releases but never read. It is now the `aborted_connections`
+  threshold, and only when `mysql.enabled` is true.
+- `aborted_connections` uses `alert_window_minutes` as its window, like the baseline alerts. Those use it
+  as given, and exist whenever this family does, so keep it at 1, 5, 15 or 30 (the default is 5).
+- `active_connections` exists only when you set `active_connections_threshold`, because `max_connections`
+  varies by SKU. Pick a value below your SKU's limit.
+- `cpu_credits_remaining` exists only on Burstable (`B_`) SKUs. The credit metrics have 15-minute and longer
+  grains, hence the longer window.
+- The alert set depends on the resolved database SKU, so `database.sku_name` must be known at plan time.
+  A literal, or the environment default, always is.
+
+### `http_5xx_rate`: share of requests that fail
+
+A log alert on `AppServiceHTTPLogs` in the site workspace. It fires when 5xx responses exceed
+`threshold_percent` (5) of the production app's requests in `window_duration` (PT15M), evaluated every
+`evaluation_frequency` (PT5M), and stays quiet when fewer than `minimum_requests` (20) arrived. Unlike the
+baseline count alert, it neither pages on a busy site with a few errors nor misses a quiet site that fails
+every request. Staging-slot traffic is excluded.
+
+- **On a brand-new site, enable it on a second apply.** The table appears only when the first logs arrive, up
+  to about 90 minutes after the app's diagnostic setting is created, and the rule can fail to create before
+  then even with query validation skipped. Existing sites already stream the table.
+- The rule runs with the permissions of the principal that last edited it. With an external
+  `monitoring.log_analytics_workspace_id`, that principal needs read access to the workspace.
+- The rule must be in its workspace's region, and is created in `location`. With an external workspace in
+  another region, set `monitoring.log_analytics_workspace_location` to that workspace's region.
+- `evaluation_frequency` PT1M is not offered: the rule skips query validation, which conflicts with it.
+- Log alert rules are billed per rule and evaluation frequency; see Azure Monitor pricing.
+
+### `health_check`: App Service health check
+
+A metric alert on `HealthCheckStatus`, Average below `threshold` (100, meaning any unhealthy instance) over
+`window_size` (PT15M, evaluated every PT5M). The app always has a health check path. App Service pings it
+every minute but reports a failure only once an instance is judged unhealthy (10 consecutive failed pings by
+default), so detection takes at least 10 minutes plus the window, and a stopped app may report nothing. Use
+availability tests as the primary "site down" signal.
+
+### `resource_health`: Azure Resource Health
+
+An activity-log alert (location `global`) scoped to the web app, the MySQL server, the Key Vault, the storage
+account, and the App Service plan when this site owns it (a shared plan is left to its owner). By default it
+fires when a resource moves **into** `Degraded` or `Unavailable` from `Available` or `Unknown`, for a
+`PlatformInitiated` or `Unknown` cause. It does not fire on user-initiated events (restarts, deployments,
+scaling) or on recovery.
+
+- An escalation from `Degraded` to `Unavailable` does not page again: the incident is already open. Add
+  `"Degraded"` to `previous` to page on it too, at the cost of repeat pages on updates while degraded.
+- Microsoft's list of Resource Health resource types does not include MySQL flexible server, although
+  Microsoft announced support in 2023. Confirm an event arrives before relying on it for the database.
+
+### Failure Anomalies (platform-created)
+
+Azure creates a `Failure Anomalies - <component>` smart-detection alert rule, and an action group named
+"Application Insights Smart Detection", next to the site's Application Insights component. Neither is in
+Terraform state, and this module does not manage them.
+
+- That action group emails every holder of the Monitoring Contributor and Monitoring Reader roles on the
+  subscription.
+- The rule analyses server-side request telemetry. PHP on App Service has no automatic Application Insights
+  instrumentation, so unless WordPress runs an SDK the rule has nothing to analyse.
+- To silence or reroute it, disable it in the portal, or adopt it with an `import` block in your root module
+  (an import cannot live inside this module).
+- Being unmanaged, these resources can also stop Terraform from deleting the site resource group when the
+  provider's `prevent_deletion_if_contains_resources` feature is on. That is not new.
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
@@ -397,13 +505,17 @@ ingested into the workspace.
 | [azurerm_log_analytics_workspace.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/log_analytics_workspace) | resource |
 | [azurerm_management_lock.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/management_lock) | resource |
 | [azurerm_monitor_action_group.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_action_group) | resource |
+| [azurerm_monitor_activity_log_alert.resource_health](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_activity_log_alert) | resource |
 | [azurerm_monitor_diagnostic_setting.app_service](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
 | [azurerm_monitor_diagnostic_setting.front_door](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
 | [azurerm_monitor_diagnostic_setting.mysql](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
 | [azurerm_monitor_metric_alert.availability](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
+| [azurerm_monitor_metric_alert.health_check](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
 | [azurerm_monitor_metric_alert.high_cpu](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
 | [azurerm_monitor_metric_alert.http_5xx](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
+| [azurerm_monitor_metric_alert.mysql](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
 | [azurerm_monitor_metric_alert.response_time](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
+| [azurerm_monitor_scheduled_query_rules_alert_v2.http_5xx_rate](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_scheduled_query_rules_alert_v2) | resource |
 | [azurerm_resource_group.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/resource_group) | resource |
 | [random_password.db](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/password) | resource |
 | [time_sleep.dns_propagation](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
@@ -441,7 +553,7 @@ ingested into the workspace.
 | <a name="input_key_vault_purge_protection_enabled"></a> [key\_vault\_purge\_protection\_enabled](#input\_key\_vault\_purge\_protection\_enabled) | Enable Key Vault purge protection. Defaults by environment when unset: true in production, false in nonprod. WARNING: Azure permits enabling this but never disabling it, so changing it on an existing vault forces a destroy and recreate. | `bool` | `null` | no |
 | <a name="input_key_vault_soft_delete_retention_days"></a> [key\_vault\_soft\_delete\_retention\_days](#input\_key\_vault\_soft\_delete\_retention\_days) | Days a soft-deleted vault is retained (7-90). Defaults by environment when unset: 90 in production, 7 in nonprod. Azure fixes this at creation, so changing it on an existing vault forces a destroy and recreate. | `number` | `null` | no |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for all resources | `string` | n/a | yes |
-| <a name="input_monitoring"></a> [monitoring](#input\_monitoring) | Monitoring configuration | <pre>object({<br/>    log_analytics_workspace_id = optional(string, null)<br/>    retention_days             = optional(number)<br/>    alerts = optional(object({<br/>      http_5xx_threshold   = optional(number, 10)<br/>      high_cpu_threshold   = optional(number, 80)<br/>      db_failure_threshold = optional(number, 5)<br/>      alert_window_minutes = optional(number, 5)<br/>    }), {})<br/>  })</pre> | `{}` | no |
+| <a name="input_monitoring"></a> [monitoring](#input\_monitoring) | Monitoring configuration. alerts.mysql, alerts.http\_5xx\_rate, alerts.health\_check and alerts.resource\_health are opt-in alert families (enabled = false by default); enabling any of them needs alert\_recipients or extra\_action\_group\_ids. db\_failure\_threshold is the aborted-connections threshold of the MySQL family. log\_analytics\_workspace\_location is the region of an external log\_analytics\_workspace\_id: set it when that workspace is in another region and http\_5xx\_rate is enabled, because a log search alert rule must be in its workspace's region. See the README's Alerting section. | <pre>object({<br/>    log_analytics_workspace_id       = optional(string, null)<br/>    log_analytics_workspace_location = optional(string) # the external workspace's region; see http_5xx_rate<br/>    retention_days                   = optional(number)<br/>    alerts = optional(object({<br/>      http_5xx_threshold   = optional(number, 10)<br/>      high_cpu_threshold   = optional(number, 80)<br/>      db_failure_threshold = optional(number, 5)<br/>      alert_window_minutes = optional(number, 5)<br/>      mysql = optional(object({<br/>        enabled                         = optional(bool, false)<br/>        severity                        = optional(number, 2)<br/>        cpu_percent_threshold           = optional(number, 80)<br/>        memory_percent_threshold        = optional(number, 90)<br/>        storage_percent_threshold       = optional(number, 85)<br/>        active_connections_threshold    = optional(number)     # null => no active_connections alert (max_connections varies by SKU)<br/>        cpu_credits_remaining_threshold = optional(number, 30) # Burstable (B_) SKUs only<br/>      }), {})<br/>      http_5xx_rate = optional(object({<br/>        enabled              = optional(bool, false)<br/>        severity             = optional(number, 2)<br/>        threshold_percent    = optional(number, 5)<br/>        minimum_requests     = optional(number, 20)<br/>        window_duration      = optional(string, "PT15M")<br/>        evaluation_frequency = optional(string, "PT5M") # PT1M is not offered<br/>      }), {})<br/>      health_check = optional(object({<br/>        enabled     = optional(bool, false)<br/>        severity    = optional(number, 1)<br/>        threshold   = optional(number, 100)<br/>        window_size = optional(string, "PT15M")<br/>      }), {})<br/>      resource_health = optional(object({<br/>        enabled  = optional(bool, false)<br/>        current  = optional(list(string), ["Degraded", "Unavailable"])<br/>        previous = optional(list(string), ["Available", "Unknown"])<br/>        reasons  = optional(list(string), ["PlatformInitiated", "Unknown"])<br/>      }), {})<br/>    }), {})<br/>  })</pre> | `{}` | no |
 | <a name="input_networking"></a> [networking](#input\_networking) | Networking configuration | <pre>object({<br/>    vnet_address_space           = optional(string, "10.0.0.0/16")<br/>    app_subnet_cidr              = optional(string, "10.0.0.0/24")<br/>    db_subnet_cidr               = optional(string, "10.0.1.0/24")<br/>    private_endpoint_subnet_cidr = optional(string, "10.0.2.0/24")<br/>  })</pre> | `{}` | no |
 | <a name="input_plan_density_limit"></a> [plan\_density\_limit](#input\_plan\_density\_limit) | DEPRECATED, and has no effect: nothing in this module reads it, so it enforces no limit on sites per App Service Plan. It is kept, with its validation, only so existing configurations that set it still plan, and will be removed in the next major release. Remove it from your configuration. | `number` | `10` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |

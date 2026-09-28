@@ -507,8 +507,10 @@ Vault names are capped at 24 chars — `kv-{site≤14}-{env}{suffix}` — so a l
 - The standalone `monitoring` module enforces a production floor of `max(var.retention_days, 90)`; the composition applies its own environment-aware default with **no floor**.
 - Changes to `modules/monitoring` do not affect consumers of `wordpress-site`.
 - The composition's alerts are its own as well: three baseline metric alerts in `main.tf` and, from v4.1.0, the
-  opt-in availability tests and their alerts in `monitoring.tf`. Every one of them routes through
-  `local.alert_action_group_ids` (the site action group plus `extra_action_group_ids`).
+  opt-in availability tests and the `monitoring.alerts` families (MySQL, 5xx rate, health check, Resource Health)
+  in `monitoring.tf`. Every one of them routes through `local.alert_action_group_ids` (the site action group plus
+  `extra_action_group_ids`). `monitoring.alerts.db_failure_threshold`, dead code before v4.1.0, now feeds the
+  MySQL `aborted_connections` alert.
 
 `modules/database` similarly has a `null_resource` guard rejecting Burstable SKUs in production, but the composition hardcodes `enforce_production_sku = false`, so that guard is unreachable through `wordpress-site`.
 

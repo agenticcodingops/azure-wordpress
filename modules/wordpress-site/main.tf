@@ -200,7 +200,7 @@ resource "azurerm_resource_group" "main" {
     # created.
     precondition {
       condition     = local.new_alerts_enabled ? local.has_alert_route : true
-      error_message = "availability_tests is set, but nothing would receive its alerts. Set alert_recipients or extra_action_group_ids."
+      error_message = "An opt-in alert is enabled (availability_tests, or monitoring.alerts.mysql, http_5xx_rate, health_check or resource_health), but nothing would receive it. Set alert_recipients or extra_action_group_ids."
     }
   }
 }
@@ -634,7 +634,8 @@ resource "azurerm_monitor_diagnostic_setting" "mysql" {
 # extra_action_group_ids). The opt-in alerts added in v4.1.0 are in monitoring.tf.
 # ============================================================================
 
-# Alert rules configuration
+# Alert rules configuration. db_failure_threshold feeds the opt-in MySQL
+# aborted_connections alert in monitoring.tf.
 locals {
   alert_config = {
     http_5xx_threshold   = coalesce(try(var.monitoring.alerts.http_5xx_threshold, null), 10)
