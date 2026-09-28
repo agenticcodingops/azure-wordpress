@@ -83,7 +83,7 @@ variable "wordpress_version" {
 # giving them an optional() default here would mean null never reaches that coalesce
 # and the environment-aware branch could never run.
 variable "database" {
-  description = "Database configuration. sku_name, backup_retention_days and geo_redundant_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo_redundant_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql_version defaults to 8.0.21; changing it on an existing server is an irreversible major-version upgrade (plan it per agenticcodingops/trackroutinely#104, WP-43)."
+  description = "Database configuration. sku_name, backup_retention_days and geo_redundant_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo_redundant_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql_version defaults to 8.0.21; changing it on an existing server is an irreversible major-version upgrade (plan it per agenticcodingops/trackroutinely#104, WP-43). slow_query_log_enabled (default false) sets the slow_query_log and long_query_time server parameters (long_query_time defaults to 2 seconds), so the MySqlSlowLogs category of the MySQL diagnostic setting carries rows."
   type = object({
     sku_name                  = optional(string)
     storage_size_gb           = optional(number, 100)
@@ -94,6 +94,9 @@ variable "database" {
     storage_auto_grow_enabled = optional(bool, true)
     # Constant default, not environment-aware. See mysql_version in modules/database.
     mysql_version = optional(string, "8.0.21")
+    # Opt-in slow query log; constant defaults. Audit logging is not offered.
+    slow_query_log_enabled = optional(bool, false)
+    long_query_time        = optional(number, 2)
   })
   default = {}
 }

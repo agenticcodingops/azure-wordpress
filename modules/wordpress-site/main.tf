@@ -308,6 +308,8 @@ module "database" {
   high_availability_mode    = local.db_config.high_availability_mode
   storage_auto_grow_enabled = coalesce(var.database.storage_auto_grow_enabled, true)
   mysql_version             = local.db_config.mysql_version
+  slow_query_log_enabled    = var.database.slow_query_log_enabled
+  long_query_time           = var.database.long_query_time
 
   # Allow burstable SKUs for cost optimization (user choice)
   enforce_production_sku = false

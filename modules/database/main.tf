@@ -95,6 +95,27 @@ resource "azurerm_mysql_flexible_server_configuration" "require_secure_transport
   value               = "OFF"
 }
 
+# MySQL Server Parameters: slow query log (opt-in).
+# Both parameters are dynamic, so no restart. Deleting a configuration resource resets
+# the parameter to its server default, so turning the opt-in off is a clean undo.
+resource "azurerm_mysql_flexible_server_configuration" "slow_query_log" {
+  count = var.slow_query_log_enabled ? 1 : 0
+
+  name                = "slow_query_log"
+  resource_group_name = var.resource_group_name
+  server_name         = azurerm_mysql_flexible_server.main.name
+  value               = "ON"
+}
+
+resource "azurerm_mysql_flexible_server_configuration" "long_query_time" {
+  count = var.slow_query_log_enabled ? 1 : 0
+
+  name                = "long_query_time"
+  resource_group_name = var.resource_group_name
+  server_name         = azurerm_mysql_flexible_server.main.name
+  value               = tostring(var.long_query_time)
+}
+
 # WordPress Database
 resource "azurerm_mysql_flexible_database" "wordpress" {
   name                = "wordpress"

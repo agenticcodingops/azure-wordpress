@@ -70,6 +70,13 @@ exception listed below.
   declared but never read before, is now the MySQL `aborted_connections` threshold, and only when
   `mysql.enabled` is true. Azure also creates a "Failure Anomalies" rule next to every Application Insights
   component, outside Terraform; see [Failure Anomalies](#failure-anomalies-platform-created).
+- **New, optional: `database.slow_query_log_enabled` and `database.long_query_time`** (and `slow_query_log_enabled`
+  and `long_query_time` on the database module). Off by default, so nothing changes. When on, the module sets
+  the `slow_query_log` and `long_query_time` server parameters (2 seconds unless you set it), and the
+  `MySqlSlowLogs` category the MySQL diagnostic setting has always enabled finally carries rows, in
+  `AzureDiagnostics`. Ingestion is billed. Both parameters are dynamic, so the server does not restart. Audit
+  logging is not offered, and `MySqlAuditLogs` stays enabled but empty. See
+  [MySQL slow query log](#mysql-slow-query-log).
 
 ## Upgrading to v4.0.2
 
@@ -457,6 +464,30 @@ Terraform state, and this module does not manage them.
 - Being unmanaged, these resources can also stop Terraform from deleting the site resource group when the
   provider's `prevent_deletion_if_contains_resources` feature is on. That is not new.
 
+## MySQL slow query log
+
+The MySQL diagnostic setting has always enabled the `MySqlSlowLogs` and `MySqlAuditLogs` categories, but
+both stayed empty: no server parameter turned the logs on. `database.slow_query_log_enabled = true` sets
+`slow_query_log = ON` and `long_query_time` (`database.long_query_time`, default 2 seconds; the server's own
+default is 10).
+
+```hcl
+module "wordpress" {
+  # ... existing configuration ...
+
+  database = {
+    slow_query_log_enabled = true
+    long_query_time        = 2 # seconds; fractions allowed
+  }
+}
+```
+
+- The rows land in the site workspace, in `AzureDiagnostics` with `Category == "MySqlSlowLogs"`. Ingestion
+  is billed, and a low `long_query_time` on a busy site logs a lot.
+- Both parameters are dynamic: no restart. A new `long_query_time` applies to new connections only.
+- Setting it back to `false` resets both parameters to their server defaults.
+- Audit logging is not offered, so `MySqlAuditLogs` stays enabled and empty.
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
@@ -537,7 +568,7 @@ Terraform state, and this module does not manage them.
 | <a name="input_cdn_provider"></a> [cdn\_provider](#input\_cdn\_provider) | CDN provider: 'cloudflare' (uses Cloudflare CDN/WAF), 'azure\_front\_door' (uses Azure Front Door), 'direct' (no CDN) | `string` | `"direct"` | no |
 | <a name="input_cloudflare"></a> [cloudflare](#input\_cloudflare) | Cloudflare configuration | <pre>object({<br/>    enabled                        = optional(bool, false)<br/>    account_id                     = optional(string, "")<br/>    domain                         = optional(string, "")<br/>    subdomain                      = optional(string, "")<br/>    proxied                        = optional(bool, true)<br/>    enable_waf                     = optional(bool, false) # Needs Pro or higher: rate limiting exceeds Free's 1 rule and 10 s timeout<br/>    enable_page_rules              = optional(bool, true)  # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)<br/>    enable_cache_rules             = optional(bool, false) # Works on Free: 5 of the 10 cache rules it allows<br/>    enable_zone_setting_overrides  = optional(bool, false) # Some settings can't be modified on Free plan<br/>    enable_wordpress_optimizations = optional(bool, true)<br/>  })</pre> | `{}` | no |
 | <a name="input_custom_domain"></a> [custom\_domain](#input\_custom\_domain) | Custom domain for the WordPress site | `string` | n/a | yes |
-| <a name="input_database"></a> [database](#input\_database) | Database configuration. sku\_name, backup\_retention\_days and geo\_redundant\_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo\_redundant\_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql\_version defaults to 8.0.21; changing it on an existing server is an irreversible major-version upgrade (plan it per agenticcodingops/trackroutinely#104, WP-43). | <pre>object({<br/>    sku_name                  = optional(string)<br/>    storage_size_gb           = optional(number, 100)<br/>    storage_iops              = optional(number, 700)<br/>    backup_retention_days     = optional(number)<br/>    geo_redundant_backup      = optional(bool)<br/>    high_availability_mode    = optional(string, "Disabled")<br/>    storage_auto_grow_enabled = optional(bool, true)<br/>    # Constant default, not environment-aware. See mysql_version in modules/database.<br/>    mysql_version = optional(string, "8.0.21")<br/>  })</pre> | `{}` | no |
+| <a name="input_database"></a> [database](#input\_database) | Database configuration. sku\_name, backup\_retention\_days and geo\_redundant\_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo\_redundant\_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql\_version defaults to 8.0.21; changing it on an existing server is an irreversible major-version upgrade (plan it per agenticcodingops/trackroutinely#104, WP-43). slow\_query\_log\_enabled (default false) sets the slow\_query\_log and long\_query\_time server parameters (long\_query\_time defaults to 2 seconds), so the MySqlSlowLogs category of the MySQL diagnostic setting carries rows. | <pre>object({<br/>    sku_name                  = optional(string)<br/>    storage_size_gb           = optional(number, 100)<br/>    storage_iops              = optional(number, 700)<br/>    backup_retention_days     = optional(number)<br/>    geo_redundant_backup      = optional(bool)<br/>    high_availability_mode    = optional(string, "Disabled")<br/>    storage_auto_grow_enabled = optional(bool, true)<br/>    # Constant default, not environment-aware. See mysql_version in modules/database.<br/>    mysql_version = optional(string, "8.0.21")<br/>    # Opt-in slow query log; constant defaults. Audit logging is not offered.<br/>    slow_query_log_enabled = optional(bool, false)<br/>    long_query_time        = optional(number, 2)<br/>  })</pre> | `{}` | no |
 | <a name="input_deployer_object_id"></a> [deployer\_object\_id](#input\_deployer\_object\_id) | Object ID of the principal that runs terraform apply; it gets the Terraform secret-management access policy on the site's Key Vault. Null (the default) keeps the module's own azurerm\_client\_config read. Set it, together with deployer\_tenant\_id, only when plan and apply run as different identities or when the caller needs its own depends\_on on this module; pass a lowercase value known at plan time. The policy's object\_id forces replacement, so a value that differs from the principal that created the existing policy replaces it: do that only as a planned identity cutover. | `string` | `null` | no |
 | <a name="input_deployer_tenant_id"></a> [deployer\_tenant\_id](#input\_deployer\_tenant\_id) | Tenant ID of the principal that runs terraform apply, used on its Key Vault access policy. Null (the default) keeps the module's own azurerm\_client\_config read. Set it together with deployer\_object\_id, as a lowercase value. | `string` | `null` | no |
 | <a name="input_enable_resource_lock"></a> [enable\_resource\_lock](#input\_enable\_resource\_lock) | Enable CanNotDelete lock on the resource group (requires User Access Administrator role) | `bool` | `false` | no |
