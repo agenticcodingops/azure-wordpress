@@ -444,7 +444,10 @@ A log alert on `AppServiceHTTPLogs` in the site workspace. It fires when 5xx res
 `threshold_percent` (5) of the production app's requests in `window_duration` (PT15M), evaluated every
 `evaluation_frequency` (PT5M), and stays quiet when fewer than `minimum_requests` (20) arrived. Unlike the
 baseline count alert, it neither pages on a busy site with a few errors nor misses a quiet site that fails
-every request. Staging-slot traffic is excluded.
+every request. Staging-slot traffic is excluded, and so is traffic to the app's own Kudu (SCM) host, its default
+hostname with `scm` after the first label, matched exactly. That includes
+the SSH tunnel that deployments and ops tooling open, whose `/AppServiceTunnel/` calls return 502 in normal use.
+Through v4.1.0 those counted, so a deploy on a quiet site could page with no visitor affected.
 
 - **On a brand-new site, enable it on a second apply.** The table appears only when the first logs arrive, up
   to about 90 minutes after the app's diagnostic setting is created, and the rule can fail to create before

@@ -279,6 +279,14 @@ resource "azurerm_monitor_metric_alert" "mysql" {
 # requests, which does not fire on a quiet site or page on a busy one.
 # ============================================================================
 
+locals {
+  # The app's Kudu (SCM) host: its default hostname with "scm" after the first label.
+  # app.azurewebsites.net becomes app.scm.azurewebsites.net, and a regional
+  # app-abc123.uksouth-01.azurewebsites.net becomes app-abc123.scm.uksouth-01.azurewebsites.net.
+  app_hostname_labels = split(".", module.app_service.default_hostname)
+  app_scm_hostname    = join(".", concat([local.app_hostname_labels[0], "scm"], slice(local.app_hostname_labels, 1, length(local.app_hostname_labels))))
+}
+
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "http_5xx_rate" {
   count = local.mon_config.alerts.http_5xx_rate.enabled ? 1 : 0
 
@@ -300,10 +308,16 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "http_5xx_rate" {
 
   criteria {
     # Filtered on the production app's resource ID, so staging-slot traffic is excluded.
+    # Only site traffic counts. Requests to this app's Kudu (SCM) host are dropped from
+    # both sides of the rate, including the SSH tunnel that deployments and ops tooling
+    # open: its /AppServiceTunnel/ calls return 502 in normal use, and would otherwise
+    # read as site errors and fill the minimum_requests floor. The host is matched
+    # exactly, so a public hostname that happens to contain an "scm" label still counts.
     # No bin(): one row per evaluation, hence 1 of 1 failing periods.
     query                   = <<-KQL
       AppServiceHTTPLogs
       | where _ResourceId =~ "${module.app_service.id}"
+      | where CsHost !~ "${local.app_scm_hostname}" and CsUriStem !startswith "/AppServiceTunnel/"
       | summarize total = count(), errors = countif(ScStatus >= 500)
       | where total >= ${local.mon_config.alerts.http_5xx_rate.minimum_requests}
       | extend error_rate = 100.0 * errors / total
