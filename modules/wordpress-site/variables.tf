@@ -369,6 +369,135 @@ variable "alert_recipients" {
   default     = []
 }
 
+# Extra alert routing, added in v4.1.0. A list, not a set, so its length stays known
+# at plan time even when an entry is not.
+variable "extra_action_group_ids" {
+  description = "Additional action group resource IDs that every alert in this module notifies, alongside the site action group (which exists only when alert_recipients is non-empty). Use it to attach a platform-level group. Empty (the default) changes nothing. With no alert_recipients, setting it still creates the three baseline alerts (HTTP 5xx, CPU, response time), routed to these groups only."
+  type        = list(string)
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for id in var.extra_action_group_ids : can(regex("(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Insights/actionGroups/[^/]+$", id))])
+    error_message = "Each extra_action_group_ids entry must be an action group resource ID (/subscriptions/.../resourceGroups/.../providers/Microsoft.Insights/actionGroups/...)."
+  }
+
+  validation {
+    condition     = length(distinct(var.extra_action_group_ids)) == length(var.extra_action_group_ids)
+    error_message = "extra_action_group_ids must not contain duplicates."
+  }
+}
+
+# Standard availability tests, added in v4.1.0. Off when empty.
+# Every null guard below is a conditional, not ||: Terraform before 1.12 evaluates
+# both sides of || and &&, so `x == null || f(x)` still errors on a null x.
+variable "availability_tests" {
+  description = "Standard availability tests against the site's Application Insights component, one per map entry; each gets one metric alert that fires when failed_location_count or more locations fail. Empty (the default) creates nothing. url defaults to https://<custom_domain><path>, so tests probe the public site through the CDN. Requires alert_recipients or extra_action_group_ids. Each test is billed per execution; see the README before adding locations or raising the frequency."
+  type = map(object({
+    url                              = optional(string)      # null => "https://<custom_domain><path>"
+    path                             = optional(string, "/") # used only when url is null
+    http_verb                        = optional(string, "GET")
+    headers                          = optional(map(string), {}) # Host and User-Agent are reserved by the service
+    expected_status_code             = optional(number, 200)
+    content_match                    = optional(string) # the test passes only if this text is found
+    content_match_ignore_case        = optional(bool, false)
+    ssl_check_enabled                = optional(bool)        # null => true when the URL is https
+    ssl_cert_remaining_lifetime      = optional(number)      # days, 1-365; needs an https URL and the SSL check
+    frequency                        = optional(number, 300) # seconds: 300, 600 or 900
+    timeout                          = optional(number, 30)  # seconds: 30, 60, 90 or 120
+    geo_locations                    = optional(list(string), ["emea-ru-msa-edge", "emea-se-sto-edge", "emea-nl-ams-azr", "emea-gb-db3-azr", "emea-fr-pra-edge"])
+    failed_location_count            = optional(number) # null => max(1, locations - 2)
+    follow_redirects_enabled         = optional(bool, true)
+    parse_dependent_requests_enabled = optional(bool, false) # true also fetches media, which a deny-by-default blob endpoint refuses
+    retry_enabled                    = optional(bool, true)
+    enabled                          = optional(bool, true)
+    alert_severity                   = optional(number, 1)
+    description                      = optional(string)
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition     = alltrue([for key in keys(var.availability_tests) : can(regex("^[a-z0-9][a-z0-9-]{0,19}$", key))])
+    error_message = "availability_tests keys are used in resource names: 1-20 characters of lowercase letters, digits and hyphens, starting with a letter or digit."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : t.url == null ? true : can(regex("^(?i)https?://[^/]+", t.url))])
+    error_message = "availability_tests.url must be an absolute http:// or https:// URL."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : startswith(t.path, "/")])
+    error_message = "availability_tests.path must start with /."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : contains(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], t.http_verb)])
+    error_message = "availability_tests.http_verb must be one of GET, POST, PUT, PATCH, DELETE, HEAD or OPTIONS."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : alltrue([for h in keys(t.headers) : !contains(["host", "user-agent"], lower(h))])])
+    error_message = "availability_tests.headers cannot set Host or User-Agent: the service reserves both."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : t.expected_status_code >= 100 && t.expected_status_code <= 599 && floor(t.expected_status_code) == t.expected_status_code])
+    error_message = "availability_tests.expected_status_code must be an HTTP status code between 100 and 599."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : t.content_match == null ? true : length(t.content_match) > 0])
+    error_message = "availability_tests.content_match must be non-empty when set."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : contains([300, 600, 900], t.frequency)])
+    error_message = "availability_tests.frequency must be 300, 600 or 900 seconds."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : contains([30, 60, 90, 120], t.timeout)])
+    error_message = "availability_tests.timeout must be 30, 60, 90 or 120 seconds."
+  }
+
+  validation {
+    condition = alltrue([for t in values(var.availability_tests) : length(t.geo_locations) >= 1 && length(t.geo_locations) <= 16 && length(distinct(t.geo_locations)) == length(t.geo_locations) && alltrue([for l in t.geo_locations : contains([
+      "us-va-ash-azr", "us-il-ch1-azr", "us-tx-sn1-azr", "us-ca-sjc-azr", "us-fl-mia-edge",
+      "emea-ru-msa-edge", "emea-se-sto-edge", "emea-nl-ams-azr", "emea-gb-db3-azr", "emea-fr-pra-edge", "emea-ch-zrh-edge",
+      "apac-hk-hkn-azr", "apac-sg-sin-azr", "apac-jp-kaw-edge", "emea-au-syd-edge", "latam-br-gru-edge",
+    ], l)])])
+    error_message = "availability_tests.geo_locations must hold 1-16 distinct location IDs from Microsoft's public list (for example emea-nl-ams-azr or us-va-ash-azr); see the README."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : t.failed_location_count == null ? true : (t.failed_location_count >= 1 && t.failed_location_count <= length(t.geo_locations))])
+    error_message = "availability_tests.failed_location_count must be between 1 and the number of geo_locations."
+  }
+
+  # Mirrors the provider's https check, and stops a lifetime from being silently dropped
+  # (the provider sends it only with the SSL check on), which would diff on every plan.
+  validation {
+    condition = alltrue([for t in values(var.availability_tests) : t.ssl_cert_remaining_lifetime == null ? true : (
+      t.ssl_cert_remaining_lifetime >= 1 && t.ssl_cert_remaining_lifetime <= 365 &&
+      (t.ssl_check_enabled == null ? true : t.ssl_check_enabled) &&
+      (t.url == null ? true : startswith(lower(t.url), "https://"))
+    )])
+    error_message = "availability_tests.ssl_cert_remaining_lifetime must be 1-365 days, and needs an https URL with ssl_check_enabled left null or true."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : t.ssl_check_enabled == true ? (t.url == null ? true : startswith(lower(t.url), "https://")) : true])
+    error_message = "availability_tests.ssl_check_enabled = true needs an https URL."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : contains([0, 1, 2, 3, 4], t.alert_severity)])
+    error_message = "availability_tests.alert_severity must be 0-4 (0 is critical)."
+  }
+}
+
 # Networking configuration
 variable "networking" {
   description = "Networking configuration"

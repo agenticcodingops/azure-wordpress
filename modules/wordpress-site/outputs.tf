@@ -131,6 +131,16 @@ output "log_analytics_workspace_id" {
   value       = local.workspace_id
 }
 
+output "action_group_id" {
+  description = "ID of the site action group, for routing your own alerts to the same recipients. Null when alert_recipients is empty (no group is created)."
+  value       = one(azurerm_monitor_action_group.main[*].id)
+}
+
+output "availability_test_ids" {
+  description = "Map of availability_tests key to standard web test ID. Empty when no tests are configured."
+  value       = { for key, test in azurerm_application_insights_standard_web_test.main : key => test.id }
+}
+
 # Front Door outputs (conditional)
 # NOTE: Uses local.fd_config.enabled which defaults to true via coalesce
 output "front_door_endpoint_hostname" {

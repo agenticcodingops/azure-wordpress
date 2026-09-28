@@ -56,6 +56,14 @@ exception listed below.
 - **Deprecated: `plan_density_limit`.** Nothing reads it, so it never limited the number of sites per plan. It
   stays, with its validation, so configurations that set it still plan. It will be removed in the next major
   release, so remove it from your configuration.
+- **New, optional: `availability_tests` and `extra_action_group_ids`; new outputs `action_group_id` and
+  `availability_test_ids`.** Unset, nothing changes. `availability_tests` creates a standard web test and an
+  N-of-M-locations metric alert per entry (see [Availability tests](#availability-tests)); it needs
+  `alert_recipients` or `extra_action_group_ids`, or the plan fails. `extra_action_group_ids` adds action groups
+  to every alert this module creates, the three baseline alerts included, as extra `action` blocks beside the
+  site group's. With no `alert_recipients`, setting it also creates the three baseline alerts, routed to those
+  groups only. `action_group_id` is null when `alert_recipients` is empty. Microsoft retires classic URL ping
+  tests on 2026-09-30; this module never created any.
 
 ## Upgrading to v4.0.2
 
@@ -274,6 +282,73 @@ database = {
 and `app_service.health_check_path` (`/` → `/wp-includes/images/blank.gif`) also become
 environment-aware. All are online, non-destructive changes.
 
+## Availability tests
+
+`availability_tests` creates Application Insights **standard** availability tests, one per map entry, each
+with one metric alert that fires when `failed_location_count` or more locations fail in the same window.
+Empty (the default) creates nothing. Classic URL ping tests are never created: Microsoft retires them on
+2026-09-30, and a standard test has no alert rule of its own, so the module always creates one.
+
+```hcl
+module "wordpress" {
+  # ... existing configuration ...
+
+  alert_recipients = ["ops@example.com"]
+
+  availability_tests = {
+    home = {}                                   # https://<custom_domain>/, 5 locations, every 300 s
+    login = {
+      path                        = "/wp-login.php"
+      frequency                   = 900
+      content_match               = "wp-submit"  # the test passes only if this text is found
+      ssl_cert_remaining_lifetime = 14           # fail 14 days before the certificate expires
+    }
+  }
+}
+```
+
+**An alert needs a route.** Set `alert_recipients` (the site action group), `extra_action_group_ids`, or
+both; otherwise the plan fails. `extra_action_group_ids` reaches every alert this module creates,
+including the three baseline alerts. With no `alert_recipients`, setting it also creates those three
+alerts, routed to the extra groups only.
+
+**Defaults, and why:**
+
+- `url` defaults to `https://<custom_domain><path>`: the public site, through your CDN.
+- Five locations (`emea-ru-msa-edge`, `emea-se-sto-edge`, `emea-nl-ams-azr`, `emea-gb-db3-azr`,
+  `emea-fr-pra-edge`), Microsoft's recommended minimum. `geo_locations` accepts 1-16 IDs from
+  [Microsoft's public list](https://learn.microsoft.com/azure/azure-monitor/app/availability#location-population-tags);
+  the provider does not check them, so the module does.
+- `failed_location_count` defaults to locations minus 2, at least 1, as Microsoft recommends.
+- The alert evaluates every minute over the smallest window that holds one test interval: `PT5M` for a
+  300 s test, `PT15M` for 600 s and 900 s (Azure has no 10-minute window). A 900 s test therefore gives
+  about one result per location per window.
+- `retry_enabled = true` (Microsoft reports that about 80% of failures pass on retry) and
+  `parse_dependent_requests_enabled = false`: parsing would also fetch media, and a deny-by-default blob
+  endpoint refuses the test agents.
+- `ssl_check_enabled` defaults to true for an https URL. `ssl_cert_remaining_lifetime` stays unset
+  unless you set it (1-365 days), and needs an https URL.
+- `expected_status_code` accepts 100-599. The provider documents `0` as "any status below 400", but that
+  is not verified here, so the module does not accept it yet.
+- `timeout` accepts 30, 60, 90 or 120 seconds, the values the portal offers.
+
+**Reachability.** The agents come from the public internet:
+
+- With `cdn_provider = "cloudflare"` or `"azure_front_door"`, the app's own `*.azurewebsites.net`
+  hostname denies everything but the CDN, so a test pointed at it always fails. Keep the default URL.
+- Cloudflare with `proxied = false` sends the agents straight to that origin, which denies them.
+- CDN WAF or bot rules can challenge the agents. Check a new test in nonprod before relying on it.
+- **`cdn_provider = "direct"` with your own domain:** the module binds the hostname but no certificate
+  (`ssl_state` and `thumbprint` are ignored), so an https test with the SSL check fails at once and pages,
+  unless you bind a certificate outside Terraform. Until then, point `url` at
+  `https://app-<project>-<site>-<np|prod>.azurewebsites.net/`, which `direct` leaves open.
+- Host and User-Agent headers are reserved by the service and rejected by the module.
+
+**Cost.** Standard tests are billed per execution: USD 0.0005 at the East US list price (September
+2026; check the pricing calculator for your region). Five locations every 300 s is about 43,200
+executions, roughly USD 21.60 a month per test. At 900 s it is a third of that. Test results are also
+ingested into the workspace.
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
@@ -316,6 +391,7 @@ environment-aware. All are online, non-destructive changes.
 | [azapi_update_resource.app_service_front_door_restriction](https://registry.terraform.io/providers/azure/azapi/latest/docs/resources/update_resource) | resource |
 | [azurerm_app_service_custom_hostname_binding.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/app_service_custom_hostname_binding) | resource |
 | [azurerm_application_insights.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/application_insights) | resource |
+| [azurerm_application_insights_standard_web_test.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/application_insights_standard_web_test) | resource |
 | [azurerm_key_vault_access_policy.app_service_update](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/key_vault_access_policy) | resource |
 | [azurerm_key_vault_access_policy.staging_slot](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/key_vault_access_policy) | resource |
 | [azurerm_log_analytics_workspace.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/log_analytics_workspace) | resource |
@@ -324,6 +400,7 @@ environment-aware. All are online, non-destructive changes.
 | [azurerm_monitor_diagnostic_setting.app_service](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
 | [azurerm_monitor_diagnostic_setting.front_door](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
 | [azurerm_monitor_diagnostic_setting.mysql](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
+| [azurerm_monitor_metric_alert.availability](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
 | [azurerm_monitor_metric_alert.high_cpu](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
 | [azurerm_monitor_metric_alert.http_5xx](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
 | [azurerm_monitor_metric_alert.response_time](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
@@ -344,6 +421,7 @@ environment-aware. All are online, non-destructive changes.
 | <a name="input_app_service_scm_ip_restrictions"></a> [app\_service\_scm\_ip\_restrictions](#input\_app\_service\_scm\_ip\_restrictions) | Allow-list for the App Service SCM/Kudu endpoint, applied to both the site and its staging slot. Exactly one of ip\_address, service\_tag or virtual\_network\_subnet\_id must be set per entry. Empty (the default) preserves current provider behaviour. | <pre>list(object({<br/>    ip_address                = optional(string)<br/>    service_tag               = optional(string)<br/>    virtual_network_subnet_id = optional(string)<br/>    name                      = optional(string)<br/>    priority                  = optional(number)<br/>    action                    = optional(string, "Allow")<br/>    description               = optional(string)<br/>  }))</pre> | `[]` | no |
 | <a name="input_app_service_storage_plugin_app_settings_enabled"></a> [app\_service\_storage\_plugin\_app\_settings\_enabled](#input\_app\_service\_storage\_plugin\_app\_settings\_enabled) | Set the MICROSOFT\_AZURE\_* storage-plugin app settings on the site and its staging slot. Defaults to true, which keeps the behaviour of every earlier release. The container image does not read them (only the Microsoft Azure Storage for WordPress plugin does, as wp-config.php constants), so without that plugin they are inert, and false removes them - including the storage account key from the app's environment. The storage-key Key Vault secret is unaffected. | `bool` | `true` | no |
 | <a name="input_app_service_webdeploy_publish_basic_authentication_enabled"></a> [app\_service\_webdeploy\_publish\_basic\_authentication\_enabled](#input\_app\_service\_webdeploy\_publish\_basic\_authentication\_enabled) | Enable basic authentication for WebDeploy/SCM publishing on the site and its staging slot. Defaults to true, matching the azurerm provider default. Disabling this stops FTP/S deployment from working, but does not change the FTP policy itself - ARM models the two as independent resources, so set app\_service\_ftp\_publish\_basic\_authentication\_enabled = false too. | `bool` | `true` | no |
+| <a name="input_availability_tests"></a> [availability\_tests](#input\_availability\_tests) | Standard availability tests against the site's Application Insights component, one per map entry; each gets one metric alert that fires when failed\_location\_count or more locations fail. Empty (the default) creates nothing. url defaults to https://<custom\_domain><path>, so tests probe the public site through the CDN. Requires alert\_recipients or extra\_action\_group\_ids. Each test is billed per execution; see the README before adding locations or raising the frequency. | <pre>map(object({<br/>    url                              = optional(string)      # null => "https://<custom_domain><path>"<br/>    path                             = optional(string, "/") # used only when url is null<br/>    http_verb                        = optional(string, "GET")<br/>    headers                          = optional(map(string), {}) # Host and User-Agent are reserved by the service<br/>    expected_status_code             = optional(number, 200)<br/>    content_match                    = optional(string) # the test passes only if this text is found<br/>    content_match_ignore_case        = optional(bool, false)<br/>    ssl_check_enabled                = optional(bool)        # null => true when the URL is https<br/>    ssl_cert_remaining_lifetime      = optional(number)      # days, 1-365; needs an https URL and the SSL check<br/>    frequency                        = optional(number, 300) # seconds: 300, 600 or 900<br/>    timeout                          = optional(number, 30)  # seconds: 30, 60, 90 or 120<br/>    geo_locations                    = optional(list(string), ["emea-ru-msa-edge", "emea-se-sto-edge", "emea-nl-ams-azr", "emea-gb-db3-azr", "emea-fr-pra-edge"])<br/>    failed_location_count            = optional(number) # null => max(1, locations - 2)<br/>    follow_redirects_enabled         = optional(bool, true)<br/>    parse_dependent_requests_enabled = optional(bool, false) # true also fetches media, which a deny-by-default blob endpoint refuses<br/>    retry_enabled                    = optional(bool, true)<br/>    enabled                          = optional(bool, true)<br/>    alert_severity                   = optional(number, 1)<br/>    description                      = optional(string)<br/>  }))</pre> | `{}` | no |
 | <a name="input_cdn_provider"></a> [cdn\_provider](#input\_cdn\_provider) | CDN provider: 'cloudflare' (uses Cloudflare CDN/WAF), 'azure\_front\_door' (uses Azure Front Door), 'direct' (no CDN) | `string` | `"direct"` | no |
 | <a name="input_cloudflare"></a> [cloudflare](#input\_cloudflare) | Cloudflare configuration | <pre>object({<br/>    enabled                        = optional(bool, false)<br/>    account_id                     = optional(string, "")<br/>    domain                         = optional(string, "")<br/>    subdomain                      = optional(string, "")<br/>    proxied                        = optional(bool, true)<br/>    enable_waf                     = optional(bool, false) # Needs Pro or higher: rate limiting exceeds Free's 1 rule and 10 s timeout<br/>    enable_page_rules              = optional(bool, true)  # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)<br/>    enable_cache_rules             = optional(bool, false) # Works on Free: 5 of the 10 cache rules it allows<br/>    enable_zone_setting_overrides  = optional(bool, false) # Some settings can't be modified on Free plan<br/>    enable_wordpress_optimizations = optional(bool, true)<br/>  })</pre> | `{}` | no |
 | <a name="input_custom_domain"></a> [custom\_domain](#input\_custom\_domain) | Custom domain for the WordPress site | `string` | n/a | yes |
@@ -352,6 +430,7 @@ environment-aware. All are online, non-destructive changes.
 | <a name="input_deployer_tenant_id"></a> [deployer\_tenant\_id](#input\_deployer\_tenant\_id) | Tenant ID of the principal that runs terraform apply, used on its Key Vault access policy. Null (the default) keeps the module's own azurerm\_client\_config read. Set it together with deployer\_object\_id, as a lowercase value. | `string` | `null` | no |
 | <a name="input_enable_resource_lock"></a> [enable\_resource\_lock](#input\_enable\_resource\_lock) | Enable CanNotDelete lock on the resource group (requires User Access Administrator role) | `bool` | `false` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
+| <a name="input_extra_action_group_ids"></a> [extra\_action\_group\_ids](#input\_extra\_action\_group\_ids) | Additional action group resource IDs that every alert in this module notifies, alongside the site action group (which exists only when alert\_recipients is non-empty). Use it to attach a platform-level group. Empty (the default) changes nothing. With no alert\_recipients, setting it still creates the three baseline alerts (HTTP 5xx, CPU, response time), routed to these groups only. | `list(string)` | `[]` | no |
 | <a name="input_extra_secret_app_settings"></a> [extra\_secret\_app\_settings](#input\_extra\_secret\_app\_settings) | Map of App Service app setting name => secret name in the site's Key Vault. Each entry is rendered as @Microsoft.KeyVault(SecretUri=...) and applied to both the production app and the staging slot. Takes precedence over app\_service.extra\_app\_settings on key collision. | `map(string)` | `{}` | no |
 | <a name="input_extra_secrets"></a> [extra\_secrets](#input\_extra\_secrets) | Additional secrets to store in the site's Key Vault, as secret name => value. Module-owned names (db-password, storage-key, appinsights-connection) take precedence and cannot be overridden. Keys must be known at plan time. | `map(string)` | `{}` | no |
 | <a name="input_front_door"></a> [front\_door](#input\_front\_door) | Front Door configuration | <pre>object({<br/>    enabled               = optional(bool, true)<br/>    sku_name              = optional(string, "Premium_AzureFrontDoor")<br/>    waf_mode              = optional(string)<br/>    cache_uploads_minutes = optional(number, 180)<br/>    cache_static_minutes  = optional(number, 180)<br/>  })</pre> | `{}` | no |
@@ -382,6 +461,7 @@ environment-aware. All are online, non-destructive changes.
 
 | Name | Description |
 |------|-------------|
+| <a name="output_action_group_id"></a> [action\_group\_id](#output\_action\_group\_id) | ID of the site action group, for routing your own alerts to the same recipients. Null when alert\_recipients is empty (no group is created). |
 | <a name="output_app_insights_id"></a> [app\_insights\_id](#output\_app\_insights\_id) | Application Insights ID |
 | <a name="output_app_insights_name"></a> [app\_insights\_name](#output\_app\_insights\_name) | Application Insights name |
 | <a name="output_app_service_default_hostname"></a> [app\_service\_default\_hostname](#output\_app\_service\_default\_hostname) | Web App default hostname |
@@ -389,6 +469,7 @@ environment-aware. All are online, non-destructive changes.
 | <a name="output_app_service_name"></a> [app\_service\_name](#output\_app\_service\_name) | Web App name |
 | <a name="output_app_service_plan_id"></a> [app\_service\_plan\_id](#output\_app\_service\_plan\_id) | App Service Plan ID |
 | <a name="output_app_service_principal_id"></a> [app\_service\_principal\_id](#output\_app\_service\_principal\_id) | Web App managed identity principal ID. Use this to grant the site access to resources the module does not own, without re-reading the app via a data source. |
+| <a name="output_availability_test_ids"></a> [availability\_test\_ids](#output\_availability\_test\_ids) | Map of availability\_tests key to standard web test ID. Empty when no tests are configured. |
 | <a name="output_cdn_provider"></a> [cdn\_provider](#output\_cdn\_provider) | Active CDN provider |
 | <a name="output_cloudflare_dns_hostname"></a> [cloudflare\_dns\_hostname](#output\_cloudflare\_dns\_hostname) | DNS hostname managed by Cloudflare |
 | <a name="output_cloudflare_nameservers"></a> [cloudflare\_nameservers](#output\_cloudflare\_nameservers) | Cloudflare nameservers for this zone |

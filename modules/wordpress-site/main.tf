@@ -194,6 +194,14 @@ resource "azurerm_resource_group" "main" {
       condition     = (var.deployer_object_id == null) == (var.deployer_tenant_id == null)
       error_message = "Set deployer_object_id and deployer_tenant_id together, or leave both null."
     }
+
+    # An opt-in alert needs somewhere to go: the site action group (alert_recipients)
+    # or an extra action group. Checked here so it fails at plan, before anything is
+    # created.
+    precondition {
+      condition     = local.new_alerts_enabled ? local.has_alert_route : true
+      error_message = "availability_tests is set, but nothing would receive its alerts. Set alert_recipients or extra_action_group_ids."
+    }
   }
 }
 
@@ -622,6 +630,8 @@ resource "azurerm_monitor_diagnostic_setting" "mysql" {
 
 # ============================================================================
 # ALERT RULES (AFTER APP SERVICE)
+# The three baseline alerts exist whenever an alert route does (alert_recipients or
+# extra_action_group_ids). The opt-in alerts added in v4.1.0 are in monitoring.tf.
 # ============================================================================
 
 # Alert rules configuration
@@ -655,7 +665,7 @@ resource "azurerm_monitor_action_group" "main" {
 
 # Alert: HTTP 5xx Errors
 resource "azurerm_monitor_metric_alert" "http_5xx" {
-  count = length(var.alert_recipients) > 0 ? 1 : 0
+  count = local.has_alert_route ? 1 : 0
 
   name                = "alert-http5xx-${local.name_prefix}"
   resource_group_name = azurerm_resource_group.main.name
@@ -673,8 +683,13 @@ resource "azurerm_monitor_metric_alert" "http_5xx" {
     threshold        = local.alert_config.http_5xx_threshold
   }
 
-  action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
+  # The site action group plus any extra_action_group_ids. With no extra IDs this is
+  # the single block these alerts have always had.
+  dynamic "action" {
+    for_each = local.alert_action_group_ids
+    content {
+      action_group_id = action.value
+    }
   }
 
   tags = local.common_tags
@@ -686,7 +701,7 @@ resource "azurerm_monitor_metric_alert" "http_5xx" {
 # Scoped to the App Service Plan (Microsoft.Web/serverfarms) because
 # CpuPercentage is a plan-level metric; it does not exist on Web Apps.
 resource "azurerm_monitor_metric_alert" "high_cpu" {
-  count = length(var.alert_recipients) > 0 ? 1 : 0
+  count = local.has_alert_route ? 1 : 0
 
   name                = "alert-highcpu-${local.name_prefix}"
   resource_group_name = azurerm_resource_group.main.name
@@ -704,8 +719,13 @@ resource "azurerm_monitor_metric_alert" "high_cpu" {
     threshold        = local.alert_config.high_cpu_threshold
   }
 
-  action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
+  # The site action group plus any extra_action_group_ids. With no extra IDs this is
+  # the single block these alerts have always had.
+  dynamic "action" {
+    for_each = local.alert_action_group_ids
+    content {
+      action_group_id = action.value
+    }
   }
 
   tags = local.common_tags
@@ -715,7 +735,7 @@ resource "azurerm_monitor_metric_alert" "high_cpu" {
 
 # Alert: Response Time (MTTD < 5 minutes per spec)
 resource "azurerm_monitor_metric_alert" "response_time" {
-  count = length(var.alert_recipients) > 0 ? 1 : 0
+  count = local.has_alert_route ? 1 : 0
 
   name                = "alert-responsetime-${local.name_prefix}"
   resource_group_name = azurerm_resource_group.main.name
@@ -733,8 +753,13 @@ resource "azurerm_monitor_metric_alert" "response_time" {
     threshold        = 3 # 3 seconds per performance goal
   }
 
-  action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
+  # The site action group plus any extra_action_group_ids. With no extra IDs this is
+  # the single block these alerts have always had.
+  dynamic "action" {
+    for_each = local.alert_action_group_ids
+    content {
+      action_group_id = action.value
+    }
   }
 
   tags = local.common_tags
