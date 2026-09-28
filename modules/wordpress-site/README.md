@@ -82,6 +82,13 @@ exception listed below.
   Verified Modules `diagnostic_settings` shape and creates one diagnostic setting per entry, sent to the site
   workspace unless you choose another destination. The staging-slot input applies only on S* and P* SKUs. See
   [Diagnostic settings](#diagnostic-settings) for the defaults and for where the mapping differs from AVM.
+- **New, optional: `lock`** (and `lock` on the shared-infrastructure module), in the Azure Verified Modules lock
+  shape; only `kind = "CanNotDelete"` is accepted. Unset, nothing changes. `enable_resource_lock` still works
+  and plans no change; `lock = { kind = "CanNotDelete" }` is its equivalent, and switching between them plans
+  no change. Do not set both. The permission creating a lock needs is `Microsoft.Authorization/locks/*`
+  (Owner or User Access Administrator; Contributor lacks it). Read [Resource locks](#resource-locks) first: while
+  the lock exists, every removal or replacement in the group fails at apply, including removing a web test,
+  an alert or a diagnostic setting added by this release, or turning an alert family off.
 
 ## Upgrading to v4.0.2
 
@@ -554,6 +561,54 @@ module "wordpress" {
   `metric_categories`): those attributes are dropped too, `logs` and `metrics` end up null, and the target
   defaults apply **without an error**. Rename them to `logs` and `metrics` to take effect.
 
+## Resource locks
+
+`lock` puts a management lock on the site resource group, in the Azure Verified Modules lock shape. The
+shared-infrastructure module has the same input for the shared resource group.
+
+```hcl
+module "wordpress" {
+  # ... existing configuration ...
+
+  lock = { kind = "CanNotDelete" } # name defaults to site-protection-lock
+}
+```
+
+- **Only `CanNotDelete` is accepted.** AVM also allows `ReadOnly`, but a ReadOnly lock blocks the POST list
+  operations every refresh makes (storage account keys, app settings, publishing credentials). The module
+  could then no longer plan, and the lock could only be removed with `-refresh=false` or outside Terraform.
+- **`enable_resource_lock` still works.** `enable_resource_lock = true` and `lock = { kind = "CanNotDelete" }`
+  render the same lock (`site-protection-lock`, same notes) at the same address, so switching from one to
+  the other plans no change. Setting both fails the plan.
+- **Permissions.** Creating or deleting a lock needs `Microsoft.Authorization/locks/*`: Owner or User Access
+  Administrator have it, Contributor does not.
+- **Shape.** `kind` and `name` follow the AVM lock interface. `notes` follows the current AVM spec, which
+  added it; older AVM modules take only `kind` and `name`. Every lock argument forces replacement, so a new
+  `name` or `notes` briefly drops the lock and recreates it.
+
+**What a CanNotDelete lock blocks.** Azure refuses every DELETE under the locked group, including on
+extension resources such as diagnostic settings and alert rules. While the lock exists, each of these fails
+at apply:
+
+- destroying the site, or removing it from a `for_each`;
+- removing the staging slot (moving from S*/P* to B*), a web test, an alert, or a diagnostic-setting map
+  entry, and turning an alert family back to `enabled = false`;
+- any change that forces replacement, which deletes first or last: the Key Vault (purge protection,
+  retention, `key_vault_name_suffix`, region), the MySQL server (`geo_redundant_backup`), a diagnostic
+  setting's name or target, a web test's location or component, the 5xx-rate rule's location or scope, and
+  the Resource Health alert's location;
+- deleting role assignments in the group.
+
+Turning the slow query log off still works: removing a MySQL server parameter resets it with a PUT, not a
+DELETE. To make any of the changes above, remove the lock first (`lock = null`, or
+`enable_resource_lock = false`), apply, make the change, then put the lock back. On a full destroy Terraform
+deletes the lock before the resources it protects, but Azure's eventual consistency can still fail that
+destroy; run it again.
+
+**Shared resource group.** In shared-plan mode every site's app and staging slot live in the shared group,
+together with the app's diagnostic setting. A lock there makes removing any shared-plan site, and replacing
+the shared plan, fail in the same way.
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
@@ -640,7 +695,7 @@ module "wordpress" {
 | <a name="input_database"></a> [database](#input\_database) | Database configuration. sku\_name, backup\_retention\_days and geo\_redundant\_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo\_redundant\_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql\_version defaults to 8.0.21; changing it on an existing server is an irreversible major-version upgrade (plan it per agenticcodingops/trackroutinely#104, WP-43). slow\_query\_log\_enabled (default false) sets the slow\_query\_log and long\_query\_time server parameters (long\_query\_time defaults to 2 seconds), so the MySqlSlowLogs category of the MySQL diagnostic setting carries rows. | <pre>object({<br/>    sku_name                  = optional(string)<br/>    storage_size_gb           = optional(number, 100)<br/>    storage_iops              = optional(number, 700)<br/>    backup_retention_days     = optional(number)<br/>    geo_redundant_backup      = optional(bool)<br/>    high_availability_mode    = optional(string, "Disabled")<br/>    storage_auto_grow_enabled = optional(bool, true)<br/>    # Constant default, not environment-aware. See mysql_version in modules/database.<br/>    mysql_version = optional(string, "8.0.21")<br/>    # Opt-in slow query log; constant defaults. Audit logging is not offered.<br/>    slow_query_log_enabled = optional(bool, false)<br/>    long_query_time        = optional(number, 2)<br/>  })</pre> | `{}` | no |
 | <a name="input_deployer_object_id"></a> [deployer\_object\_id](#input\_deployer\_object\_id) | Object ID of the principal that runs terraform apply; it gets the Terraform secret-management access policy on the site's Key Vault. Null (the default) keeps the module's own azurerm\_client\_config read. Set it, together with deployer\_tenant\_id, only when plan and apply run as different identities or when the caller needs its own depends\_on on this module; pass a lowercase value known at plan time. The policy's object\_id forces replacement, so a value that differs from the principal that created the existing policy replaces it: do that only as a planned identity cutover. | `string` | `null` | no |
 | <a name="input_deployer_tenant_id"></a> [deployer\_tenant\_id](#input\_deployer\_tenant\_id) | Tenant ID of the principal that runs terraform apply, used on its Key Vault access policy. Null (the default) keeps the module's own azurerm\_client\_config read. Set it together with deployer\_object\_id, as a lowercase value. | `string` | `null` | no |
-| <a name="input_enable_resource_lock"></a> [enable\_resource\_lock](#input\_enable\_resource\_lock) | Enable CanNotDelete lock on the resource group (requires User Access Administrator role) | `bool` | `false` | no |
+| <a name="input_enable_resource_lock"></a> [enable\_resource\_lock](#input\_enable\_resource\_lock) | Put a CanNotDelete lock (site-protection-lock) on the site resource group. Superseded by lock, and kept: true is equivalent to lock = { kind = "CanNotDelete" }, so switching plans no change. Do not set both. Needs Microsoft.Authorization/locks/* (Owner or User Access Administrator; Contributor lacks it). See the README's Resource locks section before enabling. | `bool` | `false` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
 | <a name="input_extra_action_group_ids"></a> [extra\_action\_group\_ids](#input\_extra\_action\_group\_ids) | Additional action group resource IDs that every alert in this module notifies, alongside the site action group (which exists only when alert\_recipients is non-empty). Use it to attach a platform-level group. Empty (the default) changes nothing. With no alert\_recipients, setting it still creates the three baseline alerts (HTTP 5xx, CPU, response time), routed to these groups only. | `list(string)` | `[]` | no |
 | <a name="input_extra_secret_app_settings"></a> [extra\_secret\_app\_settings](#input\_extra\_secret\_app\_settings) | Map of App Service app setting name => secret name in the site's Key Vault. Each entry is rendered as @Microsoft.KeyVault(SecretUri=...) and applied to both the production app and the staging slot. Takes precedence over app\_service.extra\_app\_settings on key collision. | `map(string)` | `{}` | no |
@@ -654,6 +709,7 @@ module "wordpress" {
 | <a name="input_key_vault_purge_protection_enabled"></a> [key\_vault\_purge\_protection\_enabled](#input\_key\_vault\_purge\_protection\_enabled) | Enable Key Vault purge protection. Defaults by environment when unset: true in production, false in nonprod. WARNING: Azure permits enabling this but never disabling it, so changing it on an existing vault forces a destroy and recreate. | `bool` | `null` | no |
 | <a name="input_key_vault_soft_delete_retention_days"></a> [key\_vault\_soft\_delete\_retention\_days](#input\_key\_vault\_soft\_delete\_retention\_days) | Days a soft-deleted vault is retained (7-90). Defaults by environment when unset: 90 in production, 7 in nonprod. Azure fixes this at creation, so changing it on an existing vault forces a destroy and recreate. | `number` | `null` | no |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for all resources | `string` | n/a | yes |
+| <a name="input_lock"></a> [lock](#input\_lock) | Resource lock on the site resource group, in the Azure Verified Modules lock shape. null (the default) means no lock unless enable\_resource\_lock is true; do not set both. Only kind = "CanNotDelete" is accepted. name defaults to site-protection-lock and notes to the enable\_resource\_lock wording, so lock = { kind = "CanNotDelete" } plans no change against enable\_resource\_lock = true. Needs Microsoft.Authorization/locks/* (Owner or User Access Administrator; Contributor lacks it). While it exists, every removal or replacement in the group fails at apply: see the README's Resource locks section. | <pre>object({<br/>    kind  = string<br/>    name  = optional(string, null)<br/>    notes = optional(string, null) # in the current AVM lock spec; older AVM modules take only kind and name<br/>  })</pre> | `null` | no |
 | <a name="input_monitoring"></a> [monitoring](#input\_monitoring) | Monitoring configuration. alerts.mysql, alerts.http\_5xx\_rate, alerts.health\_check and alerts.resource\_health are opt-in alert families (enabled = false by default); enabling any of them needs alert\_recipients or extra\_action\_group\_ids. db\_failure\_threshold is the aborted-connections threshold of the MySQL family. log\_analytics\_workspace\_location is the region of an external log\_analytics\_workspace\_id: set it when that workspace is in another region and http\_5xx\_rate is enabled, because a log search alert rule must be in its workspace's region. See the README's Alerting section. | <pre>object({<br/>    log_analytics_workspace_id       = optional(string, null)<br/>    log_analytics_workspace_location = optional(string) # the external workspace's region; see http_5xx_rate<br/>    retention_days                   = optional(number)<br/>    alerts = optional(object({<br/>      http_5xx_threshold   = optional(number, 10)<br/>      high_cpu_threshold   = optional(number, 80)<br/>      db_failure_threshold = optional(number, 5)<br/>      alert_window_minutes = optional(number, 5)<br/>      mysql = optional(object({<br/>        enabled                         = optional(bool, false)<br/>        severity                        = optional(number, 2)<br/>        cpu_percent_threshold           = optional(number, 80)<br/>        memory_percent_threshold        = optional(number, 90)<br/>        storage_percent_threshold       = optional(number, 85)<br/>        active_connections_threshold    = optional(number)     # null => no active_connections alert (max_connections varies by SKU)<br/>        cpu_credits_remaining_threshold = optional(number, 30) # Burstable (B_) SKUs only<br/>      }), {})<br/>      http_5xx_rate = optional(object({<br/>        enabled              = optional(bool, false)<br/>        severity             = optional(number, 2)<br/>        threshold_percent    = optional(number, 5)<br/>        minimum_requests     = optional(number, 20)<br/>        window_duration      = optional(string, "PT15M")<br/>        evaluation_frequency = optional(string, "PT5M") # PT1M is not offered<br/>      }), {})<br/>      health_check = optional(object({<br/>        enabled     = optional(bool, false)<br/>        severity    = optional(number, 1)<br/>        threshold   = optional(number, 100)<br/>        window_size = optional(string, "PT15M")<br/>      }), {})<br/>      resource_health = optional(object({<br/>        enabled  = optional(bool, false)<br/>        current  = optional(list(string), ["Degraded", "Unavailable"])<br/>        previous = optional(list(string), ["Available", "Unknown"])<br/>        reasons  = optional(list(string), ["PlatformInitiated", "Unknown"])<br/>      }), {})<br/>    }), {})<br/>  })</pre> | `{}` | no |
 | <a name="input_networking"></a> [networking](#input\_networking) | Networking configuration | <pre>object({<br/>    vnet_address_space           = optional(string, "10.0.0.0/16")<br/>    app_subnet_cidr              = optional(string, "10.0.0.0/24")<br/>    db_subnet_cidr               = optional(string, "10.0.1.0/24")<br/>    private_endpoint_subnet_cidr = optional(string, "10.0.2.0/24")<br/>  })</pre> | `{}` | no |
 | <a name="input_plan_density_limit"></a> [plan\_density\_limit](#input\_plan\_density\_limit) | DEPRECATED, and has no effect: nothing in this module reads it, so it enforces no limit on sites per App Service Plan. It is kept, with its validation, only so existing configurations that set it still plan, and will be removed in the next major release. Remove it from your configuration. | `number` | `10` | no |

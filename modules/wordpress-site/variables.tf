@@ -828,12 +828,44 @@ variable "key_vault_name_suffix" {
   default     = "9"
 }
 
-# Resource lock to prevent accidental deletion
-# Requires "User Access Administrator" role on the deploying service principal
+# Resource lock to prevent accidental deletion. Superseded by lock (below) and kept:
+# true renders exactly the lock lock = { kind = "CanNotDelete" } renders. Creating a lock
+# needs Microsoft.Authorization/locks/* (Owner or User Access Administrator have it;
+# Contributor does not).
 variable "enable_resource_lock" {
-  description = "Enable CanNotDelete lock on the resource group (requires User Access Administrator role)"
+  description = "Put a CanNotDelete lock (site-protection-lock) on the site resource group. Superseded by lock, and kept: true is equivalent to lock = { kind = \"CanNotDelete\" }, so switching plans no change. Do not set both. Needs Microsoft.Authorization/locks/* (Owner or User Access Administrator; Contributor lacks it). See the README's Resource locks section before enabling."
   type        = bool
   default     = false
+}
+
+# Resource lock in the Azure Verified Modules lock shape, added in v4.1.0. Flat, not an
+# object attribute: it is a security control (see the static-analysis note above).
+variable "lock" {
+  description = "Resource lock on the site resource group, in the Azure Verified Modules lock shape. null (the default) means no lock unless enable_resource_lock is true; do not set both. Only kind = \"CanNotDelete\" is accepted. name defaults to site-protection-lock and notes to the enable_resource_lock wording, so lock = { kind = \"CanNotDelete\" } plans no change against enable_resource_lock = true. Needs Microsoft.Authorization/locks/* (Owner or User Access Administrator; Contributor lacks it). While it exists, every removal or replacement in the group fails at apply: see the README's Resource locks section."
+  type = object({
+    kind  = string
+    name  = optional(string, null)
+    notes = optional(string, null) # in the current AVM lock spec; older AVM modules take only kind and name
+  })
+  default = null
+
+  # The AVM lock interface also allows ReadOnly. It is not offered: a ReadOnly lock blocks
+  # the POST list operations (storage keys, app settings, publishing credentials) that
+  # every refresh makes, so the module could no longer plan, or remove the lock.
+  validation {
+    condition     = var.lock == null ? true : var.lock.kind == "CanNotDelete"
+    error_message = "lock.kind must be \"CanNotDelete\". ReadOnly is not offered: it blocks the list operations every refresh needs, after which Terraform can no longer plan or remove the lock."
+  }
+
+  validation {
+    condition     = var.lock == null ? true : (var.lock.name == null ? true : can(regex("^[A-Za-z0-9_().-]{0,89}[A-Za-z0-9_()-]$", var.lock.name)))
+    error_message = "lock.name must be 1-90 characters of letters, digits, periods, underscores, hyphens and parentheses, and cannot end in a period."
+  }
+
+  validation {
+    condition     = var.lock == null ? true : (var.lock.notes == null ? true : length(var.lock.notes) <= 512)
+    error_message = "lock.notes must be at most 512 characters."
+  }
 }
 
 # App Service Plan density validation - DEPRECATED: nothing reads this input.

@@ -422,7 +422,9 @@ Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure`
   - All ten need the `modtm` provider, and all but MySQL need Terraform ≥ 1.9 (Storage ≥ 1.10, Key Vault ≥ 1.11). CI validates with Terraform 1.9.8. That meets the ≥ 1.9 floor, but not Storage's ≥ 1.10 or Key Vault's ≥ 1.11, so adopting either of those two still means raising `TERRAFORM_VERSION` in `validate.yml` first.
   - Five cap azurerm below this tree's `~> 5.6`: MySQL and CDN profile (`~> 4.0`), Key Vault (`< 5.1`), Log Analytics and Application Insights (`< 5.0.0`). Terraform intersects the constraints, so they cannot init here; write the azurerm resource until they support 5.6. The other five depend on azapi, not azurerm.
 - **If it is only Proposed, or absent** (as of that date: action group, metric alert, activity-log alert, scheduled-query rule, consumption budget, availability test), write the azurerm resource directly. Shape the variables to the AVM interface conventions so a later switch is cheap:
-  - `lock = { kind, name }`
+  - `lock = { kind, name }` (the current AVM spec adds an optional `notes`; `wordpress-site` and
+    `shared-infrastructure` take it, and accept only `kind = "CanNotDelete"`, because ReadOnly blocks the POST
+    list operations every refresh makes)
   - `diagnostic_settings` as a map
   - `role_assignments` as a map
   - `managed_identities = { system_assigned, user_assigned_resource_ids }`
@@ -472,6 +474,11 @@ When `cdn_provider = "cloudflare"`, Cloudflare's live IPv4 egress ranges are add
 - A purge-protected soft-deleted vault locks its name for the full retention window against **everyone**: `az keyvault purge` returns `MethodNotAllowed` even for subscription Owner. No role or flag shortens it.
 - Recovery restores a vault **in its original region**. Reusing a name while changing `location` silently strands Key Vault in the old region — a data-residency violation. Always bump `key_vault_name_suffix` when changing region.
 - With purge protection *off*, none of this applies: `purge_soft_delete_on_destroy` (default `true`) purges on destroy and frees the name immediately.
+
+**A CanNotDelete lock turns every replacement into a failed apply.** `lock` (or the older
+`enable_resource_lock`) on `wordpress-site`, and `lock` on `shared-infrastructure`, block every DELETE in the
+group, extension resources included. Any ForceNew change above, and any removal (a site, a slot, a v4.1.0
+web test, alert or diagnostic setting), needs the lock removed in an earlier apply.
 
 Vault names are capped at 24 chars — `kv-{site≤14}-{env}{suffix}` — so a long site name plus a 3-char suffix overflows.
 

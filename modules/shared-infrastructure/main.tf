@@ -152,3 +152,16 @@ resource "azurerm_monitor_autoscale_setting" "shared" {
     Service = "SharedInfrastructure"
   })
 }
+
+# Optional lock on the shared resource group (var.lock). Every shared-plan site's app and
+# staging slot live in this group, so while it exists removing any of those sites fails.
+# Creating a lock needs Microsoft.Authorization/locks/* (Owner or User Access
+# Administrator; Contributor lacks it).
+resource "azurerm_management_lock" "shared" {
+  count = var.lock != null ? 1 : 0
+
+  name       = var.lock.name != null ? var.lock.name : "shared-protection-lock"
+  scope      = azurerm_resource_group.shared.id
+  lock_level = var.lock.kind
+  notes      = var.lock.notes != null ? var.lock.notes : "Protects shared WordPress infrastructure from accidental deletion."
+}

@@ -80,3 +80,32 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# Resource lock in the Azure Verified Modules lock shape, added in v4.1.0.
+variable "lock" {
+  description = "Resource lock on the shared resource group, in the Azure Verified Modules lock shape. null (the default) means no lock. Only kind = \"CanNotDelete\" is accepted. name defaults to shared-protection-lock. Sites on the shared plan keep their app and staging slot in this group, so while the lock exists, removing any such site, or replacing the plan, fails at apply. Needs Microsoft.Authorization/locks/* (Owner or User Access Administrator; Contributor lacks it)."
+  type = object({
+    kind  = string
+    name  = optional(string, null)
+    notes = optional(string, null) # in the current AVM lock spec; older AVM modules take only kind and name
+  })
+  default = null
+
+  # The AVM lock interface also allows ReadOnly. It is not offered: a ReadOnly lock blocks
+  # the POST list operations (storage keys, app settings, publishing credentials) that
+  # every refresh makes, so the module could no longer plan, or remove the lock.
+  validation {
+    condition     = var.lock == null ? true : var.lock.kind == "CanNotDelete"
+    error_message = "lock.kind must be \"CanNotDelete\". ReadOnly is not offered: it blocks the list operations every refresh needs, after which Terraform can no longer plan or remove the lock."
+  }
+
+  validation {
+    condition     = var.lock == null ? true : (var.lock.name == null ? true : can(regex("^[A-Za-z0-9_().-]{0,89}[A-Za-z0-9_()-]$", var.lock.name)))
+    error_message = "lock.name must be 1-90 characters of letters, digits, periods, underscores, hyphens and parentheses, and cannot end in a period."
+  }
+
+  validation {
+    condition     = var.lock == null ? true : (var.lock.notes == null ? true : length(var.lock.notes) <= 512)
+    error_message = "lock.notes must be at most 512 characters."
+  }
+}

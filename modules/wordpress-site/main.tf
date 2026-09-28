@@ -973,12 +973,44 @@ resource "azurerm_app_service_custom_hostname_binding" "main" {
 # Resource locks prevent accidental deletion (30-day recovery window via Azure)
 # ============================================================================
 
-# Lock the resource group to prevent accidental deletion
-# Requires "User Access Administrator" role on the deploying service principal
+# Lock the resource group to prevent accidental deletion.
+# Creating a lock needs Microsoft.Authorization/locks/* on the deploying principal
+# (Owner or User Access Administrator; Contributor lacks it).
+#
+# enable_resource_lock = true and lock = { kind = "CanNotDelete" } render the same three
+# strings at the same address, so moving from one to the other plans no change. Every
+# argument forces replacement, so any other name or notes value recreates the lock.
+locals {
+  site_lock_default_name  = "site-protection-lock"
+  site_lock_default_notes = "Protects WordPress site from accidental deletion. 30-day recovery window."
+
+  # enable_resource_lock = true, as it has always rendered.
+  site_lock_legacy = {
+    kind  = "CanNotDelete"
+    name  = local.site_lock_default_name
+    notes = local.site_lock_default_notes
+  }
+
+  # A conditional, never ||: only the chosen branch is evaluated, so var.lock.* is not
+  # read while var.lock is null.
+  site_lock = var.lock != null ? {
+    kind  = var.lock.kind
+    name  = var.lock.name != null ? var.lock.name : local.site_lock_default_name
+    notes = var.lock.notes != null ? var.lock.notes : local.site_lock_default_notes
+  } : (var.enable_resource_lock ? local.site_lock_legacy : null)
+}
+
 resource "azurerm_management_lock" "main" {
-  count      = var.enable_resource_lock ? 1 : 0
-  name       = "site-protection-lock"
+  count      = local.site_lock != null ? 1 : 0
+  name       = local.site_lock.name
   scope      = azurerm_resource_group.main.id
-  lock_level = "CanNotDelete"
-  notes      = "Protects WordPress site from accidental deletion. 30-day recovery window."
+  lock_level = local.site_lock.kind
+  notes      = local.site_lock.notes
+
+  lifecycle {
+    precondition {
+      condition     = !(var.enable_resource_lock && var.lock != null)
+      error_message = "Set lock or enable_resource_lock, not both. enable_resource_lock = true is equivalent to lock = { kind = \"CanNotDelete\" }."
+    }
+  }
 }
