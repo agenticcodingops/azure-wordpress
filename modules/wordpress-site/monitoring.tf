@@ -1,5 +1,6 @@
-# Opt-in monitoring added in v4.1.0: standard availability tests, and the MySQL,
-# 5xx-rate, health-check and Resource Health alert families.
+# Opt-in monitoring added in v4.1.0: standard availability tests; the MySQL, 5xx-rate,
+# health-check and Resource Health alert families; and diagnostic settings for the Key
+# Vault, the blob service and the staging slot.
 #
 # Everything here is off by default. Every count and for_each depends only on input
 # variables, never on a resource ID, so an unknown ID (a shared plan created in the
@@ -7,7 +8,10 @@
 #
 # No Azure Verified Module is used. Microsoft.Insights/webtests has no Terraform AVM
 # module, and the metric-alert, scheduled-query-rule and activity-log-alert modules are
-# only Proposed. The pre-v4.1.0 alerts and the action group live in main.tf.
+# only Proposed. Diagnostic settings have no Terraform resource module, and the
+# interfaces utility module would add telemetry resources to every consumer's plan.
+# The pre-v4.1.0 alerts, the action group and the app and MySQL diagnostic settings
+# live in main.tf.
 
 # ============================================================================
 # ALERT ROUTING
@@ -405,4 +409,245 @@ resource "azurerm_monitor_activity_log_alert" "resource_health" {
   }
 
   tags = local.common_tags
+}
+
+# ============================================================================
+# DIAGNOSTIC SETTINGS: KEY VAULT, BLOB SERVICE, STAGING SLOT (opt-in)
+# The app service and MySQL settings are unconditional and live in main.tf.
+# ============================================================================
+
+locals {
+  # The app-service module's own predicate, on the SKU it receives. Never count on
+  # staging_slot_id != null: that ID is unknown until the slot exists.
+  sku_supports_slots = can(regex("^(S|P)[0-9]", local.app_config.sku_name))
+
+  # Per-target defaults for the three AVM-shaped inputs.
+  diagnostic_setting_targets = {
+    key_vault = {
+      settings = var.key_vault_diagnostic_settings
+      prefix   = "diag-keyvault"
+      logs     = ["AuditEvent"]
+      metrics  = ["AllMetrics"]
+    }
+    storage_blob = {
+      settings = var.storage_blob_diagnostic_settings
+      prefix   = "diag-blob"
+      logs     = ["StorageRead", "StorageWrite", "StorageDelete"]
+      metrics  = ["Transaction"] # not AllMetrics: the API expands it and the plan never settles
+    }
+    staging_slot = {
+      settings = var.staging_slot_diagnostic_settings
+      prefix   = "diag-appservice-staging"
+      logs     = ["AppServiceHTTPLogs", "AppServiceConsoleLogs", "AppServiceAppLogs", "AppServicePlatformLogs"]
+      metrics  = ["AllMetrics"]
+    }
+  }
+
+  # Resolve each map against its target's defaults:
+  # - logs/metrics null => the target defaults; entries with enabled = false are dropped,
+  #   because azurerm's enabled_log and enabled_metric have no enabled attribute.
+  # - no destination at all => the site workspace.
+  diagnostic_settings = {
+    for target, cfg in local.diagnostic_setting_targets : target => {
+      for key, ds in cfg.settings : key => {
+        name                = ds.name != null ? ds.name : "${cfg.prefix}-${var.site_name}-${key}"
+        log_categories      = ds.logs == null ? cfg.logs : [for l in ds.logs : l.category if l.enabled && l.category != null]
+        log_category_groups = ds.logs == null ? [] : [for l in ds.logs : l.category_group if l.enabled && l.category_group != null]
+        metric_categories   = ds.metrics == null ? cfg.metrics : [for m in ds.metrics : m.category if m.enabled]
+
+        log_analytics_destination_type = ds.log_analytics_destination_type
+        log_analytics_workspace_id = ds.workspace_resource_id != null ? ds.workspace_resource_id : (
+          ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null ? local.workspace_id : null
+        )
+        storage_account_id             = ds.storage_account_resource_id
+        eventhub_authorization_rule_id = ds.event_hub_authorization_rule_resource_id
+        eventhub_name                  = ds.event_hub_name
+        partner_solution_id            = ds.marketplace_partner_resource_id
+
+        # Destinations as the caller wrote them, with a sentinel for the site workspace,
+        # so the conflict check below does not wait for a workspace created in this apply.
+        destination_keys = compact([
+          ds.workspace_resource_id != null ? "workspace:${lower(ds.workspace_resource_id)}" : (
+            ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null ? "workspace:site" : ""
+          ),
+          ds.storage_account_resource_id != null ? "storage:${lower(ds.storage_account_resource_id)}" : "",
+          ds.event_hub_authorization_rule_resource_id != null ? "eventhub:${lower(ds.event_hub_authorization_rule_resource_id)}/${ds.event_hub_name == null ? "" : lower(ds.event_hub_name)}" : "",
+          ds.marketplace_partner_resource_id != null ? "partner:${lower(ds.marketplace_partner_resource_id)}" : "",
+        ])
+      }
+    }
+  }
+
+  # What Azure would otherwise reject only at apply, per target: two settings with one
+  # name (one resource ID, so each overwrites the other), or two settings sending a
+  # category to the same destination. A category group counts as overlapping any log
+  # category. The site workspace passed explicitly by ID is not recognised as such.
+  diagnostic_setting_conflicts = {
+    for target, settings in local.diagnostic_settings : target => concat(
+      [
+        for name in distinct([for ds in values(settings) : lower(ds.name)]) : "two entries are named ${name}"
+        if length([for ds in values(settings) : ds if lower(ds.name) == name]) > 1
+      ],
+      flatten([
+        for i, a in keys(settings) : [
+          for j, b in keys(settings) : "${a} and ${b} send the same category to the same destination"
+          if i < j && length(setintersection(settings[a].destination_keys, settings[b].destination_keys)) > 0 && (
+            length(setintersection(settings[a].log_categories, settings[b].log_categories)) > 0 ||
+            length(setintersection(settings[a].metric_categories, settings[b].metric_categories)) > 0 ||
+            (length(settings[a].log_category_groups) > 0 && length(concat(settings[b].log_categories, settings[b].log_category_groups)) > 0) ||
+            (length(settings[b].log_category_groups) > 0 && length(settings[a].log_categories) > 0)
+          )
+        ]
+      ])
+    )
+  }
+}
+
+resource "azurerm_monitor_diagnostic_setting" "key_vault" {
+  for_each = local.diagnostic_settings.key_vault
+
+  name                           = each.value.name
+  target_resource_id             = module.key_vault.id
+  log_analytics_workspace_id     = each.value.log_analytics_workspace_id
+  log_analytics_destination_type = each.value.log_analytics_destination_type
+  storage_account_id             = each.value.storage_account_id
+  eventhub_authorization_rule_id = each.value.eventhub_authorization_rule_id
+  eventhub_name                  = each.value.eventhub_name
+  partner_solution_id            = each.value.partner_solution_id
+
+  dynamic "enabled_log" {
+    for_each = each.value.log_categories
+    content {
+      category = enabled_log.value
+    }
+  }
+
+  dynamic "enabled_log" {
+    for_each = each.value.log_category_groups
+    content {
+      category_group = enabled_log.value
+    }
+  }
+
+  dynamic "enabled_metric" {
+    for_each = each.value.metric_categories
+    content {
+      category = enabled_metric.value
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = length(each.value.log_categories) + length(each.value.log_category_groups) + length(each.value.metric_categories) > 0
+      error_message = "key_vault_diagnostic_settings[\"${each.key}\"] enables no log and no metric. Leave logs or metrics null for the defaults, or enable at least one entry."
+    }
+
+    precondition {
+      condition     = length(local.diagnostic_setting_conflicts.key_vault) == 0
+      error_message = "key_vault_diagnostic_settings: ${join("; ", local.diagnostic_setting_conflicts.key_vault)}. Azure rejects both at apply: give each entry its own name, and send each category to a destination once."
+    }
+  }
+}
+
+resource "azurerm_monitor_diagnostic_setting" "storage_blob" {
+  for_each = local.diagnostic_settings.storage_blob
+
+  name = each.value.name
+  # The blob service, not the account: the storage module exports only the account ID.
+  target_resource_id             = "${module.storage.account_id}/blobServices/default"
+  log_analytics_workspace_id     = each.value.log_analytics_workspace_id
+  log_analytics_destination_type = each.value.log_analytics_destination_type
+  storage_account_id             = each.value.storage_account_id
+  eventhub_authorization_rule_id = each.value.eventhub_authorization_rule_id
+  eventhub_name                  = each.value.eventhub_name
+  partner_solution_id            = each.value.partner_solution_id
+
+  dynamic "enabled_log" {
+    for_each = each.value.log_categories
+    content {
+      category = enabled_log.value
+    }
+  }
+
+  dynamic "enabled_log" {
+    for_each = each.value.log_category_groups
+    content {
+      category_group = enabled_log.value
+    }
+  }
+
+  dynamic "enabled_metric" {
+    for_each = each.value.metric_categories
+    content {
+      category = enabled_metric.value
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = length(each.value.log_categories) + length(each.value.log_category_groups) + length(each.value.metric_categories) > 0
+      error_message = "storage_blob_diagnostic_settings[\"${each.key}\"] enables no log and no metric. Leave logs or metrics null for the defaults, or enable at least one entry."
+    }
+
+    precondition {
+      condition     = length(local.diagnostic_setting_conflicts.storage_blob) == 0
+      error_message = "storage_blob_diagnostic_settings: ${join("; ", local.diagnostic_setting_conflicts.storage_blob)}. Azure rejects both at apply: give each entry its own name, and send each category to a destination once."
+    }
+  }
+}
+
+resource "azurerm_monitor_diagnostic_setting" "staging_slot" {
+  # Filtered on the SKU, which is known at plan time. See the check block below.
+  for_each = { for key, ds in local.diagnostic_settings.staging_slot : key => ds if local.sku_supports_slots }
+
+  name                           = each.value.name
+  target_resource_id             = module.app_service.staging_slot_id
+  log_analytics_workspace_id     = each.value.log_analytics_workspace_id
+  log_analytics_destination_type = each.value.log_analytics_destination_type
+  storage_account_id             = each.value.storage_account_id
+  eventhub_authorization_rule_id = each.value.eventhub_authorization_rule_id
+  eventhub_name                  = each.value.eventhub_name
+  partner_solution_id            = each.value.partner_solution_id
+
+  dynamic "enabled_log" {
+    for_each = each.value.log_categories
+    content {
+      category = enabled_log.value
+    }
+  }
+
+  dynamic "enabled_log" {
+    for_each = each.value.log_category_groups
+    content {
+      category_group = enabled_log.value
+    }
+  }
+
+  dynamic "enabled_metric" {
+    for_each = each.value.metric_categories
+    content {
+      category = enabled_metric.value
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = length(each.value.log_categories) + length(each.value.log_category_groups) + length(each.value.metric_categories) > 0
+      error_message = "staging_slot_diagnostic_settings[\"${each.key}\"] enables no log and no metric. Leave logs or metrics null for the defaults, or enable at least one entry."
+    }
+
+    precondition {
+      condition     = length(local.diagnostic_setting_conflicts.staging_slot) == 0
+      error_message = "staging_slot_diagnostic_settings: ${join("; ", local.diagnostic_setting_conflicts.staging_slot)}. Azure rejects both at apply: give each entry its own name, and send each category to a destination once."
+    }
+  }
+}
+
+# A warning, not an error: a consumer that moves a site from S1 to B1 should not be
+# blocked by a setting that simply has no slot to attach to.
+check "staging_slot_diagnostic_settings_need_a_slot" {
+  assert {
+    condition     = length(var.staging_slot_diagnostic_settings) == 0 || local.sku_supports_slots
+    error_message = "staging_slot_diagnostic_settings is set, but SKU ${local.app_config.sku_name} has no staging slot (only S* and P* do), so no slot diagnostic setting is created."
+  }
 }

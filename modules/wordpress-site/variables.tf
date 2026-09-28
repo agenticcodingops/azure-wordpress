@@ -495,6 +495,185 @@ variable "extra_action_group_ids" {
   }
 }
 
+# Diagnostic settings for the Key Vault, the blob service and the staging slot, added
+# in v4.1.0. All three are off when empty. They are flat top-level variables, not
+# object attributes, because audit logging is security-relevant and static analysers
+# cannot see through optional() object attributes. The type follows the Azure Verified
+# Modules diagnostic_settings interface (v2), reduced to what azurerm 5.x can express:
+# see the README's Diagnostic settings section for the mapping and its deviations.
+variable "key_vault_diagnostic_settings" {
+  description = "Diagnostic settings for the site's Key Vault, AVM diagnostic_settings shape, one setting per map entry. Empty (the default) creates none. logs = null sends AuditEvent; metrics = null sends AllMetrics. With no destination set, it sends to the site workspace."
+  type = map(object({
+    name = optional(string, null) # null => diag-<target>-<site_name>-<map key>
+    logs = optional(set(object({  # null => the target's default categories
+      category       = optional(string, null)
+      category_group = optional(string, null)
+      enabled        = optional(bool, true) # false entries are dropped
+    })))
+    metrics = optional(set(object({ # null => the target's default metrics
+      category = optional(string, "AllMetrics")
+      enabled  = optional(bool, true)
+    })))
+    log_analytics_destination_type           = optional(string, null) # AVM defaults to "Dedicated"; null leaves Azure's default
+    workspace_resource_id                    = optional(string, null) # null, with no other destination => the site workspace
+    storage_account_resource_id              = optional(string, null)
+    event_hub_authorization_rule_resource_id = optional(string, null)
+    event_hub_name                           = optional(string, null)
+    marketplace_partner_resource_id          = optional(string, null)
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = alltrue([for ds in values(var.key_vault_diagnostic_settings) : ds.logs == null ? true : alltrue([
+      for l in ds.logs : (l.category == null) != (l.category_group == null)
+    ])])
+    error_message = "key_vault_diagnostic_settings: each logs entry sets exactly one of category or category_group."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.key_vault_diagnostic_settings) : ds.log_analytics_destination_type == null ? true : contains(["Dedicated", "AzureDiagnostics"], ds.log_analytics_destination_type)])
+    error_message = "key_vault_diagnostic_settings: log_analytics_destination_type must be null, Dedicated or AzureDiagnostics."
+  }
+
+  validation {
+    condition     = length(var.key_vault_diagnostic_settings) <= 5
+    error_message = "key_vault_diagnostic_settings: Azure allows at most 5 diagnostic settings per resource."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.key_vault_diagnostic_settings) : ds.event_hub_name == null ? true : ds.event_hub_authorization_rule_resource_id != null])
+    error_message = "key_vault_diagnostic_settings: event_hub_name needs event_hub_authorization_rule_resource_id; without it the provider drops the name at apply and plans a change on every run."
+  }
+
+  validation {
+    condition     = length([for ds in values(var.key_vault_diagnostic_settings) : ds if ds.workspace_resource_id == null && ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null]) <= 1
+    error_message = "key_vault_diagnostic_settings: at most one entry may fall back to the site workspace; two would send the same categories to the same destination, which Azure rejects at apply."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.key_vault_diagnostic_settings) : ds.log_analytics_destination_type == null ? true : (ds.workspace_resource_id != null || (ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null))])
+    error_message = "key_vault_diagnostic_settings: log_analytics_destination_type needs a Log Analytics destination: set workspace_resource_id, or leave every other destination unset so the site workspace applies."
+  }
+}
+
+variable "storage_blob_diagnostic_settings" {
+  description = "Diagnostic settings for the storage account's blob service, AVM diagnostic_settings shape, one setting per map entry. Empty (the default) creates none. logs = null sends StorageRead, StorageWrite and StorageDelete; metrics = null sends Transaction. AllMetrics is rejected: the API expands it into Capacity and Transaction, which plans a change on every run. With no destination set, it sends to the site workspace."
+  type = map(object({
+    name = optional(string, null) # null => diag-<target>-<site_name>-<map key>
+    logs = optional(set(object({  # null => the target's default categories
+      category       = optional(string, null)
+      category_group = optional(string, null)
+      enabled        = optional(bool, true) # false entries are dropped
+    })))
+    metrics = optional(set(object({ # null => the target's default metrics
+      category = optional(string, "AllMetrics")
+      enabled  = optional(bool, true)
+    })))
+    log_analytics_destination_type           = optional(string, null) # AVM defaults to "Dedicated"; null leaves Azure's default
+    workspace_resource_id                    = optional(string, null) # null, with no other destination => the site workspace
+    storage_account_resource_id              = optional(string, null)
+    event_hub_authorization_rule_resource_id = optional(string, null)
+    event_hub_name                           = optional(string, null)
+    marketplace_partner_resource_id          = optional(string, null)
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = alltrue([for ds in values(var.storage_blob_diagnostic_settings) : ds.logs == null ? true : alltrue([
+      for l in ds.logs : (l.category == null) != (l.category_group == null)
+    ])])
+    error_message = "storage_blob_diagnostic_settings: each logs entry sets exactly one of category or category_group."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.storage_blob_diagnostic_settings) : ds.log_analytics_destination_type == null ? true : contains(["Dedicated", "AzureDiagnostics"], ds.log_analytics_destination_type)])
+    error_message = "storage_blob_diagnostic_settings: log_analytics_destination_type must be null, Dedicated or AzureDiagnostics."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.storage_blob_diagnostic_settings) : ds.metrics == null ? true : !contains([for m in ds.metrics : m.category], "AllMetrics")])
+    error_message = "storage_blob_diagnostic_settings: list blob metric categories explicitly (Transaction, Capacity). AllMetrics is expanded by the API and plans a change on every run."
+  }
+
+  validation {
+    condition     = length(var.storage_blob_diagnostic_settings) <= 5
+    error_message = "storage_blob_diagnostic_settings: Azure allows at most 5 diagnostic settings per resource."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.storage_blob_diagnostic_settings) : ds.event_hub_name == null ? true : ds.event_hub_authorization_rule_resource_id != null])
+    error_message = "storage_blob_diagnostic_settings: event_hub_name needs event_hub_authorization_rule_resource_id; without it the provider drops the name at apply and plans a change on every run."
+  }
+
+  validation {
+    condition     = length([for ds in values(var.storage_blob_diagnostic_settings) : ds if ds.workspace_resource_id == null && ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null]) <= 1
+    error_message = "storage_blob_diagnostic_settings: at most one entry may fall back to the site workspace; two would send the same categories to the same destination, which Azure rejects at apply."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.storage_blob_diagnostic_settings) : ds.log_analytics_destination_type == null ? true : (ds.workspace_resource_id != null || (ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null))])
+    error_message = "storage_blob_diagnostic_settings: log_analytics_destination_type needs a Log Analytics destination: set workspace_resource_id, or leave every other destination unset so the site workspace applies."
+  }
+}
+
+variable "staging_slot_diagnostic_settings" {
+  description = "Diagnostic settings for the staging slot, AVM diagnostic_settings shape, one setting per map entry. Empty (the default) creates none. Only S* and P* SKUs have a slot; on any other SKU this input is ignored, with a warning. logs = null sends the four App Service categories the production app sends; metrics = null sends AllMetrics. With no destination set, it sends to the site workspace."
+  type = map(object({
+    name = optional(string, null) # null => diag-<target>-<site_name>-<map key>
+    logs = optional(set(object({  # null => the target's default categories
+      category       = optional(string, null)
+      category_group = optional(string, null)
+      enabled        = optional(bool, true) # false entries are dropped
+    })))
+    metrics = optional(set(object({ # null => the target's default metrics
+      category = optional(string, "AllMetrics")
+      enabled  = optional(bool, true)
+    })))
+    log_analytics_destination_type           = optional(string, null) # AVM defaults to "Dedicated"; null leaves Azure's default
+    workspace_resource_id                    = optional(string, null) # null, with no other destination => the site workspace
+    storage_account_resource_id              = optional(string, null)
+    event_hub_authorization_rule_resource_id = optional(string, null)
+    event_hub_name                           = optional(string, null)
+    marketplace_partner_resource_id          = optional(string, null)
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = alltrue([for ds in values(var.staging_slot_diagnostic_settings) : ds.logs == null ? true : alltrue([
+      for l in ds.logs : (l.category == null) != (l.category_group == null)
+    ])])
+    error_message = "staging_slot_diagnostic_settings: each logs entry sets exactly one of category or category_group."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.staging_slot_diagnostic_settings) : ds.log_analytics_destination_type == null ? true : contains(["Dedicated", "AzureDiagnostics"], ds.log_analytics_destination_type)])
+    error_message = "staging_slot_diagnostic_settings: log_analytics_destination_type must be null, Dedicated or AzureDiagnostics."
+  }
+
+  validation {
+    condition     = length(var.staging_slot_diagnostic_settings) <= 5
+    error_message = "staging_slot_diagnostic_settings: Azure allows at most 5 diagnostic settings per resource."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.staging_slot_diagnostic_settings) : ds.event_hub_name == null ? true : ds.event_hub_authorization_rule_resource_id != null])
+    error_message = "staging_slot_diagnostic_settings: event_hub_name needs event_hub_authorization_rule_resource_id; without it the provider drops the name at apply and plans a change on every run."
+  }
+
+  validation {
+    condition     = length([for ds in values(var.staging_slot_diagnostic_settings) : ds if ds.workspace_resource_id == null && ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null]) <= 1
+    error_message = "staging_slot_diagnostic_settings: at most one entry may fall back to the site workspace; two would send the same categories to the same destination, which Azure rejects at apply."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.staging_slot_diagnostic_settings) : ds.log_analytics_destination_type == null ? true : (ds.workspace_resource_id != null || (ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null))])
+    error_message = "staging_slot_diagnostic_settings: log_analytics_destination_type needs a Log Analytics destination: set workspace_resource_id, or leave every other destination unset so the site workspace applies."
+  }
+}
+
 # Standard availability tests, added in v4.1.0. Off when empty.
 # Every null guard below is a conditional, not ||: Terraform before 1.12 evaluates
 # both sides of || and &&, so `x == null || f(x)` still errors on a null x.

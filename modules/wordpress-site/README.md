@@ -77,6 +77,11 @@ exception listed below.
   `AzureDiagnostics`. Ingestion is billed. Both parameters are dynamic, so the server does not restart. Audit
   logging is not offered, and `MySqlAuditLogs` stays enabled but empty. See
   [MySQL slow query log](#mysql-slow-query-log).
+- **New, optional: `key_vault_diagnostic_settings`, `storage_blob_diagnostic_settings` and
+  `staging_slot_diagnostic_settings`.** Empty by default, so nothing changes. Each takes a map in the Azure
+  Verified Modules `diagnostic_settings` shape and creates one diagnostic setting per entry, sent to the site
+  workspace unless you choose another destination. The staging-slot input applies only on S* and P* SKUs. See
+  [Diagnostic settings](#diagnostic-settings) for the defaults and for where the mapping differs from AVM.
 
 ## Upgrading to v4.0.2
 
@@ -488,6 +493,67 @@ module "wordpress" {
 - Setting it back to `false` resets both parameters to their server defaults.
 - Audit logging is not offered, so `MySqlAuditLogs` stays enabled and empty.
 
+## Diagnostic settings
+
+The app service and MySQL diagnostic settings are unconditional. Three more targets are opt-in, each through a
+top-level map in the shape of the Azure Verified Modules `diagnostic_settings` interface. Each map entry
+becomes one diagnostic setting; an empty map (the default) creates none.
+
+```hcl
+module "wordpress" {
+  # ... existing configuration ...
+
+  key_vault_diagnostic_settings    = { default = {} } # AuditEvent + AllMetrics to the site workspace
+  storage_blob_diagnostic_settings = { default = {} } # StorageRead/Write/Delete + Transaction
+  staging_slot_diagnostic_settings = { default = {} } # S* and P* SKUs only
+
+  # Or choose categories and a destination explicitly:
+  # key_vault_diagnostic_settings = {
+  #   audit = {
+  #     logs                  = [{ category_group = "audit" }]
+  #     metrics               = []
+  #     workspace_resource_id = "/subscriptions/.../workspaces/central-security"
+  #   }
+  # }
+}
+```
+
+| Input | Target | `logs = null` sends | `metrics = null` sends | Default name |
+|---|---|---|---|---|
+| `key_vault_diagnostic_settings` | the site's Key Vault | `AuditEvent` | `AllMetrics` | `diag-keyvault-<site>-<key>` |
+| `storage_blob_diagnostic_settings` | `<storage account>/blobServices/default` | `StorageRead`, `StorageWrite`, `StorageDelete` | `Transaction` | `diag-blob-<site>-<key>` |
+| `staging_slot_diagnostic_settings` | the staging slot | the four App Service categories the app sends | `AllMetrics` | `diag-appservice-staging-<site>-<key>` |
+
+- **Blob metrics.** `AllMetrics` is rejected for the blob service: the API expands it into `Capacity` and
+  `Transaction`, so the plan would show a change on every run. List the categories you want instead.
+- **Staging slot.** Only S* and P* SKUs have a slot. On any other SKU the input is ignored and the plan
+  prints a warning.
+- **Destination type.** `log_analytics_destination_type` defaults to null, which leaves Azure's default for
+  the target (`AzureDiagnostics` for Key Vault). `"Dedicated"` selects resource-specific tables where the
+  service has them, such as `AZKVAuditLogs` for Key Vault. The argument is optional and computed, so null
+  does not plan a change.
+- **Azure limits.** A resource takes at most five diagnostic settings, and two settings cannot send the same
+  category to the same destination. Within one map the plan fails on either, and on two entries with the same
+  name. A diagnostic setting that Azure Policy deploys to the vault or the storage account can still conflict
+  with one of these at apply.
+- **Cost.** `StorageBlobLogs` records every media read, `AuditEvent` every secret read, and the slot sends its
+  own HTTP logs. All three are billed on ingestion.
+
+**Mapping from the AVM interface, and where this module differs:**
+
+- The attribute names match AVM's current (v2) shape: `name`, `logs` (`category`, `category_group`,
+  `enabled`), `metrics` (`category`, `enabled`), `log_analytics_destination_type`, `workspace_resource_id`,
+  `storage_account_resource_id`, `event_hub_authorization_rule_resource_id`, `event_hub_name` and
+  `marketplace_partner_resource_id`.
+- `log_analytics_destination_type` defaults to null, not AVM's `"Dedicated"`.
+- With no destination at all, the setting goes to the site workspace. AVM requires one.
+- Entries with `enabled = false` are dropped: azurerm has no per-category `enabled`.
+- `retention_policy` is not declared. Terraform drops attributes the type does not declare, so an AVM map
+  that carries it still converts, and the attribute is ignored.
+- The same leniency applies to an older AVM map in the v1 shape (`log_categories`, `log_groups`,
+  `metric_categories`): those attributes are dropped too, `logs` and `metrics` end up null, and the target
+  defaults apply **without an error**. Rename them to `logs` and `metrics` to take effect.
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
@@ -539,7 +605,10 @@ module "wordpress" {
 | [azurerm_monitor_activity_log_alert.resource_health](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_activity_log_alert) | resource |
 | [azurerm_monitor_diagnostic_setting.app_service](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
 | [azurerm_monitor_diagnostic_setting.front_door](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
+| [azurerm_monitor_diagnostic_setting.key_vault](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
 | [azurerm_monitor_diagnostic_setting.mysql](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
+| [azurerm_monitor_diagnostic_setting.staging_slot](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
+| [azurerm_monitor_diagnostic_setting.storage_blob](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) | resource |
 | [azurerm_monitor_metric_alert.availability](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
 | [azurerm_monitor_metric_alert.health_check](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
 | [azurerm_monitor_metric_alert.high_cpu](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_metric_alert) | resource |
@@ -577,6 +646,7 @@ module "wordpress" {
 | <a name="input_extra_secret_app_settings"></a> [extra\_secret\_app\_settings](#input\_extra\_secret\_app\_settings) | Map of App Service app setting name => secret name in the site's Key Vault. Each entry is rendered as @Microsoft.KeyVault(SecretUri=...) and applied to both the production app and the staging slot. Takes precedence over app\_service.extra\_app\_settings on key collision. | `map(string)` | `{}` | no |
 | <a name="input_extra_secrets"></a> [extra\_secrets](#input\_extra\_secrets) | Additional secrets to store in the site's Key Vault, as secret name => value. Module-owned names (db-password, storage-key, appinsights-connection) take precedence and cannot be overridden. Keys must be known at plan time. | `map(string)` | `{}` | no |
 | <a name="input_front_door"></a> [front\_door](#input\_front\_door) | Front Door configuration | <pre>object({<br/>    enabled               = optional(bool, true)<br/>    sku_name              = optional(string, "Premium_AzureFrontDoor")<br/>    waf_mode              = optional(string)<br/>    cache_uploads_minutes = optional(number, 180)<br/>    cache_static_minutes  = optional(number, 180)<br/>  })</pre> | `{}` | no |
+| <a name="input_key_vault_diagnostic_settings"></a> [key\_vault\_diagnostic\_settings](#input\_key\_vault\_diagnostic\_settings) | Diagnostic settings for the site's Key Vault, AVM diagnostic\_settings shape, one setting per map entry. Empty (the default) creates none. logs = null sends AuditEvent; metrics = null sends AllMetrics. With no destination set, it sends to the site workspace. | <pre>map(object({<br/>    name = optional(string, null) # null => diag-<target>-<site_name>-<map key><br/>    logs = optional(set(object({  # null => the target's default categories<br/>      category       = optional(string, null)<br/>      category_group = optional(string, null)<br/>      enabled        = optional(bool, true) # false entries are dropped<br/>    })))<br/>    metrics = optional(set(object({ # null => the target's default metrics<br/>      category = optional(string, "AllMetrics")<br/>      enabled  = optional(bool, true)<br/>    })))<br/>    log_analytics_destination_type           = optional(string, null) # AVM defaults to "Dedicated"; null leaves Azure's default<br/>    workspace_resource_id                    = optional(string, null) # null, with no other destination => the site workspace<br/>    storage_account_resource_id              = optional(string, null)<br/>    event_hub_authorization_rule_resource_id = optional(string, null)<br/>    event_hub_name                           = optional(string, null)<br/>    marketplace_partner_resource_id          = optional(string, null)<br/>  }))</pre> | `{}` | no |
 | <a name="input_key_vault_name_suffix"></a> [key\_vault\_name\_suffix](#input\_key\_vault\_name\_suffix) | Suffix appended to Key Vault name. Bump this to avoid conflicts with soft-deleted vaults that have purge protection enabled. | `string` | `"9"` | no |
 | <a name="input_key_vault_network_acls_ip_rules"></a> [key\_vault\_network\_acls\_ip\_rules](#input\_key\_vault\_network\_acls\_ip\_rules) | Public IPv4 addresses or CIDRs permitted to reach the Key Vault data plane. Add the deploying principal's egress IP (e.g. the CI runner). | `list(string)` | `[]` | no |
 | <a name="input_key_vault_network_acls_virtual_network_subnet_ids"></a> [key\_vault\_network\_acls\_virtual\_network\_subnet\_ids](#input\_key\_vault\_network\_acls\_virtual\_network\_subnet\_ids) | Extra subnet IDs permitted to reach the Key Vault data plane. The site's App Service subnet is always included. | `list(string)` | `[]` | no |
@@ -591,7 +661,9 @@ module "wordpress" {
 | <a name="input_shared_plan_sku"></a> [shared\_plan\_sku](#input\_shared\_plan\_sku) | SKU of the shared App Service Plan. Required when app\_service.use\_shared\_plan = true to determine feature availability. | `string` | `null` | no |
 | <a name="input_shared_resource_group_name"></a> [shared\_resource\_group\_name](#input\_shared\_resource\_group\_name) | Name of the shared resource group where the shared App Service Plan is located. Required when app\_service.use\_shared\_plan = true. | `string` | `null` | no |
 | <a name="input_site_name"></a> [site\_name](#input\_site\_name) | Site name used for resource naming (lowercase, hyphens only) | `string` | n/a | yes |
+| <a name="input_staging_slot_diagnostic_settings"></a> [staging\_slot\_diagnostic\_settings](#input\_staging\_slot\_diagnostic\_settings) | Diagnostic settings for the staging slot, AVM diagnostic\_settings shape, one setting per map entry. Empty (the default) creates none. Only S* and P* SKUs have a slot; on any other SKU this input is ignored, with a warning. logs = null sends the four App Service categories the production app sends; metrics = null sends AllMetrics. With no destination set, it sends to the site workspace. | <pre>map(object({<br/>    name = optional(string, null) # null => diag-<target>-<site_name>-<map key><br/>    logs = optional(set(object({  # null => the target's default categories<br/>      category       = optional(string, null)<br/>      category_group = optional(string, null)<br/>      enabled        = optional(bool, true) # false entries are dropped<br/>    })))<br/>    metrics = optional(set(object({ # null => the target's default metrics<br/>      category = optional(string, "AllMetrics")<br/>      enabled  = optional(bool, true)<br/>    })))<br/>    log_analytics_destination_type           = optional(string, null) # AVM defaults to "Dedicated"; null leaves Azure's default<br/>    workspace_resource_id                    = optional(string, null) # null, with no other destination => the site workspace<br/>    storage_account_resource_id              = optional(string, null)<br/>    event_hub_authorization_rule_resource_id = optional(string, null)<br/>    event_hub_name                           = optional(string, null)<br/>    marketplace_partner_resource_id          = optional(string, null)<br/>  }))</pre> | `{}` | no |
 | <a name="input_storage"></a> [storage](#input\_storage) | Storage account configuration | <pre>object({<br/>    additional_containers           = optional(map(object({ access_type = optional(string, "private") })), {})<br/>    versioning_enabled              = optional(bool, true)<br/>    blob_delete_retention_days      = optional(number, 30)<br/>    container_delete_retention_days = optional(number, 30)<br/>    lifecycle_policy_enabled        = optional(bool, true)<br/>    lifecycle_cool_tier_days        = optional(number, 30)<br/>    lifecycle_version_delete_days   = optional(number, 90)<br/>    lifecycle_snapshot_delete_days  = optional(number, 90)<br/>    lifecycle_prefix_match          = optional(list(string), ["uploads/"])<br/>  })</pre> | `{}` | no |
+| <a name="input_storage_blob_diagnostic_settings"></a> [storage\_blob\_diagnostic\_settings](#input\_storage\_blob\_diagnostic\_settings) | Diagnostic settings for the storage account's blob service, AVM diagnostic\_settings shape, one setting per map entry. Empty (the default) creates none. logs = null sends StorageRead, StorageWrite and StorageDelete; metrics = null sends Transaction. AllMetrics is rejected: the API expands it into Capacity and Transaction, which plans a change on every run. With no destination set, it sends to the site workspace. | <pre>map(object({<br/>    name = optional(string, null) # null => diag-<target>-<site_name>-<map key><br/>    logs = optional(set(object({  # null => the target's default categories<br/>      category       = optional(string, null)<br/>      category_group = optional(string, null)<br/>      enabled        = optional(bool, true) # false entries are dropped<br/>    })))<br/>    metrics = optional(set(object({ # null => the target's default metrics<br/>      category = optional(string, "AllMetrics")<br/>      enabled  = optional(bool, true)<br/>    })))<br/>    log_analytics_destination_type           = optional(string, null) # AVM defaults to "Dedicated"; null leaves Azure's default<br/>    workspace_resource_id                    = optional(string, null) # null, with no other destination => the site workspace<br/>    storage_account_resource_id              = optional(string, null)<br/>    event_hub_authorization_rule_resource_id = optional(string, null)<br/>    event_hub_name                           = optional(string, null)<br/>    marketplace_partner_resource_id          = optional(string, null)<br/>  }))</pre> | `{}` | no |
 | <a name="input_storage_network_rules_bypass"></a> [storage\_network\_rules\_bypass](#input\_storage\_network\_rules\_bypass) | Traffic permitted to bypass the storage network rules. Valid values: AzureServices, Logging, Metrics, None. | `set(string)` | <pre>[<br/>  "AzureServices"<br/>]</pre> | no |
 | <a name="input_storage_network_rules_default_action"></a> [storage\_network\_rules\_default\_action](#input\_storage\_network\_rules\_default\_action) | Default action for the storage account's network rules. Defaults to Deny. Set to 'Allow' if media is served straight from the blob endpoint rather than through a CDN custom domain. | `string` | `"Deny"` | no |
 | <a name="input_storage_network_rules_ip_rules"></a> [storage\_network\_rules\_ip\_rules](#input\_storage\_network\_rules\_ip\_rules) | Extra public IPv4 addresses or CIDRs permitted to reach the storage data plane. Cloudflare's live IPv4 egress ranges are added automatically when cdn\_provider = 'cloudflare'. Azure Storage rejects IPv6 CIDRs and /31-/32 prefixes. | `list(string)` | `[]` | no |
