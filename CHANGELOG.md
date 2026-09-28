@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0](https://github.com/agenticcodingops/azure-wordpress/compare/v4.0.2...v4.1.0) (2026-09-28)
+
+
+### Features
+
+* add AVM-shaped lock inputs for the site and shared resource groups ([#65](https://github.com/agenticcodingops/azure-wordpress/issues/65)) ([31b9f3e](https://github.com/agenticcodingops/azure-wordpress/commit/31b9f3e88970908a7fcc9d6e55a1890e47be8fdf))
+* **app-service:** let consumers drop the media-offload storage app settings ([#62](https://github.com/agenticcodingops/azure-wordpress/issues/62)) ([24e61b7](https://github.com/agenticcodingops/azure-wordpress/commit/24e61b7be04b92e31941a36ff62ceab6a6e612fc))
+* **database:** add opt-in slow query log server parameters ([#65](https://github.com/agenticcodingops/azure-wordpress/issues/65)) ([31b9f3e](https://github.com/agenticcodingops/azure-wordpress/commit/31b9f3e88970908a7fcc9d6e55a1890e47be8fdf))
+* **database:** expose the database server version, default unchanged ([#62](https://github.com/agenticcodingops/azure-wordpress/issues/62)) ([24e61b7](https://github.com/agenticcodingops/azure-wordpress/commit/24e61b7be04b92e31941a36ff62ceab6a6e612fc))
+* **wordpress-site:** accept the deploying principal's IDs as optional inputs ([#62](https://github.com/agenticcodingops/azure-wordpress/issues/62)) ([24e61b7](https://github.com/agenticcodingops/azure-wordpress/commit/24e61b7be04b92e31941a36ff62ceab6a6e612fc))
+* **wordpress-site:** add opt-in diagnostic settings for Key Vault, blob storage and the staging slot ([#65](https://github.com/agenticcodingops/azure-wordpress/issues/65)) ([31b9f3e](https://github.com/agenticcodingops/azure-wordpress/commit/31b9f3e88970908a7fcc9d6e55a1890e47be8fdf))
+* **wordpress-site:** add opt-in MySQL, 5xx-rate, health-check and Resource Health alerts ([#65](https://github.com/agenticcodingops/azure-wordpress/issues/65)) ([31b9f3e](https://github.com/agenticcodingops/azure-wordpress/commit/31b9f3e88970908a7fcc9d6e55a1890e47be8fdf))
+* **wordpress-site:** add standard availability tests with an N-of-M alert ([#65](https://github.com/agenticcodingops/azure-wordpress/issues/65)) ([31b9f3e](https://github.com/agenticcodingops/azure-wordpress/commit/31b9f3e88970908a7fcc9d6e55a1890e47be8fdf))
+
+
+### Bug Fixes
+
+* **app-service:** default the container image to the floating 8.3 tag, which plans an in-place image update of the app and any staging slot for consumers who leave it unset ([#62](https://github.com/agenticcodingops/azure-wordpress/issues/62)) ([24e61b7](https://github.com/agenticcodingops/azure-wordpress/commit/24e61b7be04b92e31941a36ff62ceab6a6e612fc))
+* bound every provider below its next major ([#62](https://github.com/agenticcodingops/azure-wordpress/issues/62)) ([24e61b7](https://github.com/agenticcodingops/azure-wordpress/commit/24e61b7be04b92e31941a36ff62ceab6a6e612fc))
+* **wordpress-site:** deprecate the unused plan_density_limit input ([#62](https://github.com/agenticcodingops/azure-wordpress/issues/62)) ([24e61b7](https://github.com/agenticcodingops/azure-wordpress/commit/24e61b7be04b92e31941a36ff62ceab6a6e612fc))
+* **wordpress-site:** stop deferring the CDN zone lookup behind the app service ([#62](https://github.com/agenticcodingops/azure-wordpress/issues/62)) ([24e61b7](https://github.com/agenticcodingops/azure-wordpress/commit/24e61b7be04b92e31941a36ff62ceab6a6e612fc))
+
 ## [4.0.2](https://github.com/agenticcodingops/azure-wordpress/compare/v4.0.1...v4.0.2) (2026-09-26)
 
 
