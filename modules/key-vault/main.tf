@@ -27,6 +27,9 @@ locals {
 
 # Key Vault
 resource "azurerm_key_vault" "main" {
+  # The site module sets purge protection per environment: off in nonprod on purpose,
+  # on in production. Checkov renders the nonprod branch.
+  #checkov:skip=CKV_AZURE_110:purge protection is environment-aware and on in production
   name                = local.kv_name
   location            = var.location
   resource_group_name = var.resource_group_name

@@ -447,6 +447,13 @@ This is why the Key Vault and Storage network settings are **top-level variables
 
 Measured when v3.0.0 introduced `coalesce(var.key_vault_purge_protection_enabled, var.environment == "production")`: CKV_AZURE_110 moved PASSED → UNKNOWN, CKV_AZURE_42 stayed PASSED, and the run went **0 failed → 0 failed**. CI stayed green with no skip added. The real cost is silent: a check that used to be enforced simply stops being evaluated.
 
+**A partial render makes results depend on graph size.** Checkov stops its variable-render loop early once `RENDER_EDGES_DUPLICATE_PERCENT` (default 90) of edges repeat for `RENDER_EDGES_DUPLICATE_ITER_COUNT` (default 4) iterations. Measured with 3.3.19 in v4.1.0: adding the MySQL alert locals to `wordpress-site` left `storage_network_rules_default_action` unresolved and failed CKV_AZURE_35/36 on the storage account, with no storage change at all. `validate.yml` therefore sets `RENDER_EDGES_DUPLICATE_ITER_COUNT: "50"`. Rendered fully, both the previous `main` and the change pass CKV_AZURE_35/36, and both surface the same two findings that the partial render had left UNKNOWN. Both are suppressed inline on their one resource (`#checkov:skip=`), not in `validate.yml`'s list, so the checks still run on any other Key Vault or web app:
+
+- **CKV_AZURE_110** (purge protection) renders the nonprod branch of the environment-aware default above: off in nonprod on purpose, on in production.
+- **CKV_AZURE_214** (always on) is a false positive. `always_on` defaults to `true` at every layer, but Checkov cannot read the `optional(bool, true)` inside `var.app_service` (the object-attribute blindness above).
+
+Set the same variable locally, or local results will not match CI.
+
 **So: measure, don't assume.** Run checkov `-d .` from the repo root (never `-d modules/<x>` alone — the at-risk instance is the one rendered through the `module` call, and Checkov reports only that nested instance) before and after, and diff the failed-check sets. Do not pre-emptively add a skip.
 
 Terraform itself has the same indirection, with a sharper consequence: an `optional()` default is substituted **before** the value reaches any `coalesce()`, so `coalesce(var.database.backup_retention_days, ...)` can never see `null` while that attribute declares `optional(number, 7)`. Any environment-aware default written that way is dead code. Leave the object attribute's default off and select in the `*_config` local.
@@ -572,8 +579,10 @@ rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl   # leave none behind 
 #     --jq '.content' | base64 -d | grep image:
 # Install SUFFIXED so plain `checkov` stays off PATH — see the hook warning below.
 pipx install --suffix=@3319 checkov==3.3.19
-# The skip list is read from validate.yml, so it cannot drift from what CI skips.
-checkov@3319 -d . --framework terraform -o json \
+# The skip list is read from validate.yml, so it cannot drift from what CI skips;
+# inline #checkov:skip comments on a resource apply on their own.
+# The render setting mirrors validate.yml's env (see Static Analysis Constraints).
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3319 -d . --framework terraform -o json \
   --skip-check "$(sed -n 's/^ *skip_check: *\([^[:space:]]*\).*/\1/p' .github/workflows/validate.yml)"
 # Drop --quiet when comparing before/after: it hides PASSED and UNKNOWN, which is
 # exactly the signal you need (see Static Analysis Constraints).

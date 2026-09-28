@@ -153,6 +153,9 @@ resource "azurerm_service_plan" "main" {
 
 # Linux Web App for WordPress
 resource "azurerm_linux_web_app" "main" {
+  # always_on defaults to true at every layer; Checkov cannot resolve the optional()
+  # attribute of the site module's app_service object that supplies it.
+  #checkov:skip=CKV_AZURE_214:always_on defaults to true through an optional() attribute Checkov cannot resolve
   name                = "app-${local.name_prefix}"
   location            = var.location
   resource_group_name = var.resource_group_name
