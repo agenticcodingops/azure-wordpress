@@ -16,7 +16,11 @@ This module creates a complete WordPress site deployment including:
 ## Upgrading to v4.1.0
 
 Additive. A consumer that sets no new input plans **no changes** against v4.0.2 state, apart from any
-exception listed below.
+exception listed below. Pin `?ref=v4.1.0` to upgrade.
+
+Everything new in this release is off until you set it: availability tests, the four `monitoring.alerts`
+families, the Key Vault, blob and staging-slot diagnostic settings, the MySQL slow query log, and `lock` on
+this module and on shared-infrastructure. All of them use the azurerm provider the module already requires.
 
 - **The Cloudflare zone lookup is no longer deferred.** This module's `module "cloudflare"` dropped its
   `depends_on = [module.app_service]`. Through v4.0.2 any pending app-service change, in this site or
@@ -143,7 +147,7 @@ Cloudflare still had an internet-reachable Kudu before v3.1.0.
 
 ```hcl
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.0.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.0"
 
   # ... existing configuration ...
 
