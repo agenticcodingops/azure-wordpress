@@ -83,7 +83,7 @@ variable "wordpress_version" {
 # giving them an optional() default here would mean null never reaches that coalesce
 # and the environment-aware branch could never run.
 variable "database" {
-  description = "Database configuration. sku_name, backup_retention_days and geo_redundant_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo_redundant_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql_version defaults to 8.0.21; changing it on an existing server is an irreversible major-version upgrade (plan it per agenticcodingops/trackroutinely#104, WP-43)."
+  description = "Database configuration. sku_name, backup_retention_days and geo_redundant_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo_redundant_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql_version defaults to 8.0.21; changing it on an existing server is an irreversible major-version upgrade (plan it per agenticcodingops/trackroutinely#104, WP-43). slow_query_log_enabled (default false) sets the slow_query_log and long_query_time server parameters (long_query_time defaults to 2 seconds), so the MySqlSlowLogs category of the MySQL diagnostic setting carries rows."
   type = object({
     sku_name                  = optional(string)
     storage_size_gb           = optional(number, 100)
@@ -94,6 +94,9 @@ variable "database" {
     storage_auto_grow_enabled = optional(bool, true)
     # Constant default, not environment-aware. See mysql_version in modules/database.
     mysql_version = optional(string, "8.0.21")
+    # Opt-in slow query log; constant defaults. Audit logging is not offered.
+    slow_query_log_enabled = optional(bool, false)
+    long_query_time        = optional(number, 2)
   })
   default = {}
 }
@@ -348,25 +351,437 @@ variable "cloudflare" {
 }
 
 # Monitoring configuration
+#
+# The alert families under monitoring.alerts (mysql, http_5xx_rate, health_check,
+# resource_health) were added in v4.1.0 and are all off by default. They are nested
+# here, not flat, because none is a security control and none is environment-aware:
+# constant optional() defaults are fine. An environment-aware default would need no
+# optional() default and a selection in a *_config local instead (see database).
 variable "monitoring" {
-  description = "Monitoring configuration"
+  description = "Monitoring configuration. alerts.mysql, alerts.http_5xx_rate, alerts.health_check and alerts.resource_health are opt-in alert families (enabled = false by default); enabling any of them needs alert_recipients or extra_action_group_ids. db_failure_threshold is the aborted-connections threshold of the MySQL family. log_analytics_workspace_location is the region of an external log_analytics_workspace_id: set it when that workspace is in another region and http_5xx_rate is enabled, because a log search alert rule must be in its workspace's region. See the README's Alerting section."
   type = object({
-    log_analytics_workspace_id = optional(string, null)
-    retention_days             = optional(number)
+    log_analytics_workspace_id       = optional(string, null)
+    log_analytics_workspace_location = optional(string) # the external workspace's region; see http_5xx_rate
+    retention_days                   = optional(number)
     alerts = optional(object({
       http_5xx_threshold   = optional(number, 10)
       high_cpu_threshold   = optional(number, 80)
       db_failure_threshold = optional(number, 5)
       alert_window_minutes = optional(number, 5)
+      mysql = optional(object({
+        enabled                         = optional(bool, false)
+        severity                        = optional(number, 2)
+        cpu_percent_threshold           = optional(number, 80)
+        memory_percent_threshold        = optional(number, 90)
+        storage_percent_threshold       = optional(number, 85)
+        active_connections_threshold    = optional(number)     # null => no active_connections alert (max_connections varies by SKU)
+        cpu_credits_remaining_threshold = optional(number, 30) # Burstable (B_) SKUs only
+      }), {})
+      http_5xx_rate = optional(object({
+        enabled              = optional(bool, false)
+        severity             = optional(number, 2)
+        threshold_percent    = optional(number, 5)
+        minimum_requests     = optional(number, 20)
+        window_duration      = optional(string, "PT15M")
+        evaluation_frequency = optional(string, "PT5M") # PT1M is not offered
+      }), {})
+      health_check = optional(object({
+        enabled     = optional(bool, false)
+        severity    = optional(number, 1)
+        threshold   = optional(number, 100)
+        window_size = optional(string, "PT15M")
+      }), {})
+      resource_health = optional(object({
+        enabled  = optional(bool, false)
+        current  = optional(list(string), ["Degraded", "Unavailable"])
+        previous = optional(list(string), ["Available", "Unknown"])
+        reasons  = optional(list(string), ["PlatformInitiated", "Unknown"])
+      }), {})
     }), {})
   })
   default = {}
+
+  validation {
+    condition     = var.monitoring.log_analytics_workspace_location == null || var.monitoring.log_analytics_workspace_id != null
+    error_message = "monitoring.log_analytics_workspace_location applies only to an external workspace: set log_analytics_workspace_id too, or leave it null."
+  }
+
+  # Unused before 4.1.0; it now drives the aborted-connections alert, where a
+  # negative threshold would always fire.
+  validation {
+    condition     = var.monitoring.alerts.db_failure_threshold >= 0
+    error_message = "monitoring.alerts.db_failure_threshold must not be negative: it is the aborted-connections count of the MySQL alert family."
+  }
+
+  validation {
+    condition = alltrue([
+      for s in [var.monitoring.alerts.mysql.severity, var.monitoring.alerts.http_5xx_rate.severity, var.monitoring.alerts.health_check.severity] :
+      contains([0, 1, 2, 3, 4], s)
+    ])
+    error_message = "monitoring.alerts: mysql.severity, http_5xx_rate.severity and health_check.severity must be 0-4 (0 is critical)."
+  }
+
+  validation {
+    condition = alltrue([
+      for t in [var.monitoring.alerts.mysql.cpu_percent_threshold, var.monitoring.alerts.mysql.memory_percent_threshold, var.monitoring.alerts.mysql.storage_percent_threshold] :
+      t >= 0 && t <= 100
+    ]) && var.monitoring.alerts.mysql.cpu_credits_remaining_threshold >= 0
+    error_message = "monitoring.alerts.mysql: the percent thresholds must be 0-100, and cpu_credits_remaining_threshold must not be negative."
+  }
+
+  validation {
+    condition     = var.monitoring.alerts.mysql.active_connections_threshold == null ? true : var.monitoring.alerts.mysql.active_connections_threshold >= 1
+    error_message = "monitoring.alerts.mysql.active_connections_threshold must be at least 1, or null for no active-connections alert."
+  }
+
+  validation {
+    condition     = var.monitoring.alerts.http_5xx_rate.threshold_percent >= 0 && var.monitoring.alerts.http_5xx_rate.threshold_percent < 100 && var.monitoring.alerts.http_5xx_rate.minimum_requests >= 1
+    error_message = "monitoring.alerts.http_5xx_rate: threshold_percent must be at least 0 and below 100, and minimum_requests at least 1."
+  }
+
+  # The provider's own enums, minus PT1M evaluation: the rule always skips query
+  # validation, which conflicts with a one-minute frequency. The window must hold at
+  # least one evaluation interval, since the query counts the whole window once.
+  validation {
+    condition = (
+      contains(["PT5M", "PT10M", "PT15M", "PT30M", "PT45M", "PT1H", "PT2H", "PT3H", "PT4H", "PT5H", "PT6H", "P1D"], var.monitoring.alerts.http_5xx_rate.evaluation_frequency) &&
+      contains(["PT5M", "PT10M", "PT15M", "PT30M", "PT45M", "PT1H", "PT2H", "PT3H", "PT4H", "PT5H", "PT6H", "P1D", "P2D"], var.monitoring.alerts.http_5xx_rate.window_duration) &&
+      lookup({ PT5M = 5, PT10M = 10, PT15M = 15, PT30M = 30, PT45M = 45, PT1H = 60, PT2H = 120, PT3H = 180, PT4H = 240, PT5H = 300, PT6H = 360, P1D = 1440, P2D = 2880 }, var.monitoring.alerts.http_5xx_rate.window_duration, 0) >=
+      lookup({ PT5M = 5, PT10M = 10, PT15M = 15, PT30M = 30, PT45M = 45, PT1H = 60, PT2H = 120, PT3H = 180, PT4H = 240, PT5H = 300, PT6H = 360, P1D = 1440 }, var.monitoring.alerts.http_5xx_rate.evaluation_frequency, 100000)
+    )
+    error_message = "monitoring.alerts.http_5xx_rate: evaluation_frequency must be one of PT5M, PT10M, PT15M, PT30M, PT45M, PT1H-PT6H or P1D; window_duration one of PT5M, PT10M, PT15M, PT30M, PT45M, PT1H-PT6H, P1D or P2D, and at least as long as evaluation_frequency."
+  }
+
+  # HealthCheckStatus has no grain below five minutes; the alert evaluates every PT5M.
+  validation {
+    condition     = contains(["PT5M", "PT15M", "PT30M", "PT1H"], var.monitoring.alerts.health_check.window_size) && var.monitoring.alerts.health_check.threshold >= 0 && var.monitoring.alerts.health_check.threshold <= 100
+    error_message = "monitoring.alerts.health_check: window_size must be PT5M, PT15M, PT30M or PT1H, and threshold 0-100."
+  }
+
+  validation {
+    condition = (
+      length(var.monitoring.alerts.resource_health.current) > 0 &&
+      length(var.monitoring.alerts.resource_health.previous) > 0 &&
+      length(var.monitoring.alerts.resource_health.reasons) > 0 &&
+      alltrue([for v in concat(var.monitoring.alerts.resource_health.current, var.monitoring.alerts.resource_health.previous) : contains(["Available", "Degraded", "Unavailable", "Unknown"], v)]) &&
+      alltrue([for v in var.monitoring.alerts.resource_health.reasons : contains(["PlatformInitiated", "UserInitiated", "Unknown"], v)])
+    )
+    error_message = "monitoring.alerts.resource_health: current and previous must be non-empty lists of Available, Degraded, Unavailable or Unknown; reasons a non-empty list of PlatformInitiated, UserInitiated or Unknown."
+  }
 }
 
 variable "alert_recipients" {
   description = "Email addresses for alert notifications"
   type        = list(string)
   default     = []
+}
+
+# Extra alert routing, added in v4.1.0. A list, not a set, so its length stays known
+# at plan time even when an entry is not.
+variable "extra_action_group_ids" {
+  description = "Additional action group resource IDs that every alert in this module notifies, alongside the site action group (which exists only when alert_recipients is non-empty). Use it to attach a platform-level group. Empty (the default) changes nothing. With no alert_recipients, setting it still creates the three baseline alerts (HTTP 5xx, CPU, response time), routed to these groups only."
+  type        = list(string)
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for id in var.extra_action_group_ids : can(regex("(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Insights/actionGroups/[^/]+$", id))])
+    error_message = "Each extra_action_group_ids entry must be an action group resource ID (/subscriptions/.../resourceGroups/.../providers/Microsoft.Insights/actionGroups/...)."
+  }
+
+  validation {
+    condition     = length(distinct(var.extra_action_group_ids)) == length(var.extra_action_group_ids)
+    error_message = "extra_action_group_ids must not contain duplicates."
+  }
+}
+
+# Diagnostic settings for the Key Vault, the blob service and the staging slot, added
+# in v4.1.0. All three are off when empty. They are flat top-level variables, not
+# object attributes, because audit logging is security-relevant and static analysers
+# cannot see through optional() object attributes. The type follows the Azure Verified
+# Modules diagnostic_settings interface (v2), reduced to what azurerm 5.x can express:
+# see the README's Diagnostic settings section for the mapping and its deviations.
+variable "key_vault_diagnostic_settings" {
+  description = "Diagnostic settings for the site's Key Vault, AVM diagnostic_settings shape, one setting per map entry. Empty (the default) creates none. logs = null sends AuditEvent; metrics = null sends AllMetrics. With no destination set, it sends to the site workspace."
+  type = map(object({
+    name = optional(string, null) # null => diag-<target>-<site_name>-<map key>
+    logs = optional(set(object({  # null => the target's default categories
+      category       = optional(string, null)
+      category_group = optional(string, null)
+      enabled        = optional(bool, true) # false entries are dropped
+    })))
+    metrics = optional(set(object({ # null => the target's default metrics
+      category = optional(string, "AllMetrics")
+      enabled  = optional(bool, true)
+    })))
+    log_analytics_destination_type           = optional(string, null) # AVM defaults to "Dedicated"; null leaves Azure's default
+    workspace_resource_id                    = optional(string, null) # null, with no other destination => the site workspace
+    storage_account_resource_id              = optional(string, null)
+    event_hub_authorization_rule_resource_id = optional(string, null)
+    event_hub_name                           = optional(string, null)
+    marketplace_partner_resource_id          = optional(string, null)
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = alltrue([for ds in values(var.key_vault_diagnostic_settings) : ds.logs == null ? true : alltrue([
+      for l in ds.logs : (l.category == null) != (l.category_group == null)
+    ])])
+    error_message = "key_vault_diagnostic_settings: each logs entry sets exactly one of category or category_group."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.key_vault_diagnostic_settings) : ds.log_analytics_destination_type == null ? true : contains(["Dedicated", "AzureDiagnostics"], ds.log_analytics_destination_type)])
+    error_message = "key_vault_diagnostic_settings: log_analytics_destination_type must be null, Dedicated or AzureDiagnostics."
+  }
+
+  validation {
+    condition     = length(var.key_vault_diagnostic_settings) <= 5
+    error_message = "key_vault_diagnostic_settings: Azure allows at most 5 diagnostic settings per resource."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.key_vault_diagnostic_settings) : ds.event_hub_name == null ? true : ds.event_hub_authorization_rule_resource_id != null])
+    error_message = "key_vault_diagnostic_settings: event_hub_name needs event_hub_authorization_rule_resource_id; without it the provider drops the name at apply and plans a change on every run."
+  }
+
+  validation {
+    condition     = length([for ds in values(var.key_vault_diagnostic_settings) : ds if ds.workspace_resource_id == null && ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null]) <= 1
+    error_message = "key_vault_diagnostic_settings: at most one entry may fall back to the site workspace; two would send the same categories to the same destination, which Azure rejects at apply."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.key_vault_diagnostic_settings) : ds.log_analytics_destination_type == null ? true : (ds.workspace_resource_id != null || (ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null))])
+    error_message = "key_vault_diagnostic_settings: log_analytics_destination_type needs a Log Analytics destination: set workspace_resource_id, or leave every other destination unset so the site workspace applies."
+  }
+}
+
+variable "storage_blob_diagnostic_settings" {
+  description = "Diagnostic settings for the storage account's blob service, AVM diagnostic_settings shape, one setting per map entry. Empty (the default) creates none. logs = null sends StorageRead, StorageWrite and StorageDelete; metrics = null sends Transaction. AllMetrics is rejected: the API expands it into Capacity and Transaction, which plans a change on every run. With no destination set, it sends to the site workspace."
+  type = map(object({
+    name = optional(string, null) # null => diag-<target>-<site_name>-<map key>
+    logs = optional(set(object({  # null => the target's default categories
+      category       = optional(string, null)
+      category_group = optional(string, null)
+      enabled        = optional(bool, true) # false entries are dropped
+    })))
+    metrics = optional(set(object({ # null => the target's default metrics
+      category = optional(string, "AllMetrics")
+      enabled  = optional(bool, true)
+    })))
+    log_analytics_destination_type           = optional(string, null) # AVM defaults to "Dedicated"; null leaves Azure's default
+    workspace_resource_id                    = optional(string, null) # null, with no other destination => the site workspace
+    storage_account_resource_id              = optional(string, null)
+    event_hub_authorization_rule_resource_id = optional(string, null)
+    event_hub_name                           = optional(string, null)
+    marketplace_partner_resource_id          = optional(string, null)
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = alltrue([for ds in values(var.storage_blob_diagnostic_settings) : ds.logs == null ? true : alltrue([
+      for l in ds.logs : (l.category == null) != (l.category_group == null)
+    ])])
+    error_message = "storage_blob_diagnostic_settings: each logs entry sets exactly one of category or category_group."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.storage_blob_diagnostic_settings) : ds.log_analytics_destination_type == null ? true : contains(["Dedicated", "AzureDiagnostics"], ds.log_analytics_destination_type)])
+    error_message = "storage_blob_diagnostic_settings: log_analytics_destination_type must be null, Dedicated or AzureDiagnostics."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.storage_blob_diagnostic_settings) : ds.metrics == null ? true : !contains([for m in ds.metrics : m.category], "AllMetrics")])
+    error_message = "storage_blob_diagnostic_settings: list blob metric categories explicitly (Transaction, Capacity). AllMetrics is expanded by the API and plans a change on every run."
+  }
+
+  validation {
+    condition     = length(var.storage_blob_diagnostic_settings) <= 5
+    error_message = "storage_blob_diagnostic_settings: Azure allows at most 5 diagnostic settings per resource."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.storage_blob_diagnostic_settings) : ds.event_hub_name == null ? true : ds.event_hub_authorization_rule_resource_id != null])
+    error_message = "storage_blob_diagnostic_settings: event_hub_name needs event_hub_authorization_rule_resource_id; without it the provider drops the name at apply and plans a change on every run."
+  }
+
+  validation {
+    condition     = length([for ds in values(var.storage_blob_diagnostic_settings) : ds if ds.workspace_resource_id == null && ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null]) <= 1
+    error_message = "storage_blob_diagnostic_settings: at most one entry may fall back to the site workspace; two would send the same categories to the same destination, which Azure rejects at apply."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.storage_blob_diagnostic_settings) : ds.log_analytics_destination_type == null ? true : (ds.workspace_resource_id != null || (ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null))])
+    error_message = "storage_blob_diagnostic_settings: log_analytics_destination_type needs a Log Analytics destination: set workspace_resource_id, or leave every other destination unset so the site workspace applies."
+  }
+}
+
+variable "staging_slot_diagnostic_settings" {
+  description = "Diagnostic settings for the staging slot, AVM diagnostic_settings shape, one setting per map entry. Empty (the default) creates none. Only S* and P* SKUs have a slot; on any other SKU this input is ignored, with a warning. logs = null sends the four App Service categories the production app sends; metrics = null sends AllMetrics. With no destination set, it sends to the site workspace."
+  type = map(object({
+    name = optional(string, null) # null => diag-<target>-<site_name>-<map key>
+    logs = optional(set(object({  # null => the target's default categories
+      category       = optional(string, null)
+      category_group = optional(string, null)
+      enabled        = optional(bool, true) # false entries are dropped
+    })))
+    metrics = optional(set(object({ # null => the target's default metrics
+      category = optional(string, "AllMetrics")
+      enabled  = optional(bool, true)
+    })))
+    log_analytics_destination_type           = optional(string, null) # AVM defaults to "Dedicated"; null leaves Azure's default
+    workspace_resource_id                    = optional(string, null) # null, with no other destination => the site workspace
+    storage_account_resource_id              = optional(string, null)
+    event_hub_authorization_rule_resource_id = optional(string, null)
+    event_hub_name                           = optional(string, null)
+    marketplace_partner_resource_id          = optional(string, null)
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = alltrue([for ds in values(var.staging_slot_diagnostic_settings) : ds.logs == null ? true : alltrue([
+      for l in ds.logs : (l.category == null) != (l.category_group == null)
+    ])])
+    error_message = "staging_slot_diagnostic_settings: each logs entry sets exactly one of category or category_group."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.staging_slot_diagnostic_settings) : ds.log_analytics_destination_type == null ? true : contains(["Dedicated", "AzureDiagnostics"], ds.log_analytics_destination_type)])
+    error_message = "staging_slot_diagnostic_settings: log_analytics_destination_type must be null, Dedicated or AzureDiagnostics."
+  }
+
+  validation {
+    condition     = length(var.staging_slot_diagnostic_settings) <= 5
+    error_message = "staging_slot_diagnostic_settings: Azure allows at most 5 diagnostic settings per resource."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.staging_slot_diagnostic_settings) : ds.event_hub_name == null ? true : ds.event_hub_authorization_rule_resource_id != null])
+    error_message = "staging_slot_diagnostic_settings: event_hub_name needs event_hub_authorization_rule_resource_id; without it the provider drops the name at apply and plans a change on every run."
+  }
+
+  validation {
+    condition     = length([for ds in values(var.staging_slot_diagnostic_settings) : ds if ds.workspace_resource_id == null && ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null]) <= 1
+    error_message = "staging_slot_diagnostic_settings: at most one entry may fall back to the site workspace; two would send the same categories to the same destination, which Azure rejects at apply."
+  }
+
+  validation {
+    condition     = alltrue([for ds in values(var.staging_slot_diagnostic_settings) : ds.log_analytics_destination_type == null ? true : (ds.workspace_resource_id != null || (ds.storage_account_resource_id == null && ds.event_hub_authorization_rule_resource_id == null && ds.marketplace_partner_resource_id == null))])
+    error_message = "staging_slot_diagnostic_settings: log_analytics_destination_type needs a Log Analytics destination: set workspace_resource_id, or leave every other destination unset so the site workspace applies."
+  }
+}
+
+# Standard availability tests, added in v4.1.0. Off when empty.
+# Every null guard below is a conditional, not ||: Terraform before 1.12 evaluates
+# both sides of || and &&, so `x == null || f(x)` still errors on a null x.
+variable "availability_tests" {
+  description = "Standard availability tests against the site's Application Insights component, one per map entry; each gets one metric alert that fires when failed_location_count or more locations fail. Empty (the default) creates nothing. url defaults to https://<custom_domain><path>, so tests probe the public site through the CDN. Requires alert_recipients or extra_action_group_ids. Each test is billed per execution; see the README before adding locations or raising the frequency."
+  type = map(object({
+    url                              = optional(string)      # null => "https://<custom_domain><path>"
+    path                             = optional(string, "/") # used only when url is null
+    http_verb                        = optional(string, "GET")
+    headers                          = optional(map(string), {}) # Host and User-Agent are reserved by the service
+    expected_status_code             = optional(number, 200)
+    content_match                    = optional(string) # the test passes only if this text is found
+    content_match_ignore_case        = optional(bool, false)
+    ssl_check_enabled                = optional(bool)        # null => true when the URL is https
+    ssl_cert_remaining_lifetime      = optional(number)      # days, 1-365; needs an https URL and the SSL check
+    frequency                        = optional(number, 300) # seconds: 300, 600 or 900
+    timeout                          = optional(number, 30)  # seconds: 30, 60, 90 or 120
+    geo_locations                    = optional(list(string), ["emea-ru-msa-edge", "emea-se-sto-edge", "emea-nl-ams-azr", "emea-gb-db3-azr", "emea-fr-pra-edge"])
+    failed_location_count            = optional(number) # null => max(1, locations - 2)
+    follow_redirects_enabled         = optional(bool, true)
+    parse_dependent_requests_enabled = optional(bool, false) # true also fetches media, which a deny-by-default blob endpoint refuses
+    retry_enabled                    = optional(bool, true)
+    enabled                          = optional(bool, true)
+    alert_severity                   = optional(number, 1)
+    description                      = optional(string)
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition     = alltrue([for key in keys(var.availability_tests) : can(regex("^[a-z0-9][a-z0-9-]{0,19}$", key))])
+    error_message = "availability_tests keys are used in resource names: 1-20 characters of lowercase letters, digits and hyphens, starting with a letter or digit."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : t.url == null ? true : can(regex("^(?i)https?://[^/]+", t.url))])
+    error_message = "availability_tests.url must be an absolute http:// or https:// URL."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : startswith(t.path, "/")])
+    error_message = "availability_tests.path must start with /."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : contains(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], t.http_verb)])
+    error_message = "availability_tests.http_verb must be one of GET, POST, PUT, PATCH, DELETE, HEAD or OPTIONS."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : alltrue([for h in keys(t.headers) : !contains(["host", "user-agent"], lower(h))])])
+    error_message = "availability_tests.headers cannot set Host or User-Agent: the service reserves both."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : t.expected_status_code >= 100 && t.expected_status_code <= 599 && floor(t.expected_status_code) == t.expected_status_code])
+    error_message = "availability_tests.expected_status_code must be an HTTP status code between 100 and 599."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : t.content_match == null ? true : length(t.content_match) > 0])
+    error_message = "availability_tests.content_match must be non-empty when set."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : contains([300, 600, 900], t.frequency)])
+    error_message = "availability_tests.frequency must be 300, 600 or 900 seconds."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : contains([30, 60, 90, 120], t.timeout)])
+    error_message = "availability_tests.timeout must be 30, 60, 90 or 120 seconds."
+  }
+
+  validation {
+    condition = alltrue([for t in values(var.availability_tests) : length(t.geo_locations) >= 1 && length(t.geo_locations) <= 16 && length(distinct(t.geo_locations)) == length(t.geo_locations) && alltrue([for l in t.geo_locations : contains([
+      "us-va-ash-azr", "us-il-ch1-azr", "us-tx-sn1-azr", "us-ca-sjc-azr", "us-fl-mia-edge",
+      "emea-ru-msa-edge", "emea-se-sto-edge", "emea-nl-ams-azr", "emea-gb-db3-azr", "emea-fr-pra-edge", "emea-ch-zrh-edge",
+      "apac-hk-hkn-azr", "apac-sg-sin-azr", "apac-jp-kaw-edge", "emea-au-syd-edge", "latam-br-gru-edge",
+    ], l)])])
+    error_message = "availability_tests.geo_locations must hold 1-16 distinct location IDs from Microsoft's public list (for example emea-nl-ams-azr or us-va-ash-azr); see the README."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : t.failed_location_count == null ? true : (t.failed_location_count >= 1 && t.failed_location_count <= length(t.geo_locations))])
+    error_message = "availability_tests.failed_location_count must be between 1 and the number of geo_locations."
+  }
+
+  # Mirrors the provider's https check, and stops a lifetime from being silently dropped
+  # (the provider sends it only with the SSL check on), which would diff on every plan.
+  validation {
+    condition = alltrue([for t in values(var.availability_tests) : t.ssl_cert_remaining_lifetime == null ? true : (
+      t.ssl_cert_remaining_lifetime >= 1 && t.ssl_cert_remaining_lifetime <= 365 &&
+      (t.ssl_check_enabled == null ? true : t.ssl_check_enabled) &&
+      (t.url == null ? true : startswith(lower(t.url), "https://"))
+    )])
+    error_message = "availability_tests.ssl_cert_remaining_lifetime must be 1-365 days, and needs an https URL with ssl_check_enabled left null or true."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : t.ssl_check_enabled == true ? (t.url == null ? true : startswith(lower(t.url), "https://")) : true])
+    error_message = "availability_tests.ssl_check_enabled = true needs an https URL."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.availability_tests) : contains([0, 1, 2, 3, 4], t.alert_severity)])
+    error_message = "availability_tests.alert_severity must be 0-4 (0 is critical)."
+  }
 }
 
 # Networking configuration
@@ -413,12 +828,44 @@ variable "key_vault_name_suffix" {
   default     = "9"
 }
 
-# Resource lock to prevent accidental deletion
-# Requires "User Access Administrator" role on the deploying service principal
+# Resource lock to prevent accidental deletion. Superseded by lock (below) and kept:
+# true renders exactly the lock lock = { kind = "CanNotDelete" } renders. Creating a lock
+# needs Microsoft.Authorization/locks/* (Owner or User Access Administrator have it;
+# Contributor does not).
 variable "enable_resource_lock" {
-  description = "Enable CanNotDelete lock on the resource group (requires User Access Administrator role)"
+  description = "Put a CanNotDelete lock (site-protection-lock) on the site resource group. Superseded by lock, and kept: true is equivalent to lock = { kind = \"CanNotDelete\" }, so switching plans no change. Do not set both. Needs Microsoft.Authorization/locks/* (Owner or User Access Administrator; Contributor lacks it). See the README's Resource locks section before enabling."
   type        = bool
   default     = false
+}
+
+# Resource lock in the Azure Verified Modules lock shape, added in v4.1.0. Flat, not an
+# object attribute: it is a security control (see the static-analysis note above).
+variable "lock" {
+  description = "Resource lock on the site resource group, in the Azure Verified Modules lock shape. null (the default) means no lock unless enable_resource_lock is true; do not set both. Only kind = \"CanNotDelete\" is accepted. name defaults to site-protection-lock and notes to the enable_resource_lock wording, so lock = { kind = \"CanNotDelete\" } plans no change against enable_resource_lock = true. Needs Microsoft.Authorization/locks/* (Owner or User Access Administrator; Contributor lacks it). While it exists, every removal or replacement in the group fails at apply: see the README's Resource locks section."
+  type = object({
+    kind  = string
+    name  = optional(string, null)
+    notes = optional(string, null) # in the current AVM lock spec; older AVM modules take only kind and name
+  })
+  default = null
+
+  # The AVM lock interface also allows ReadOnly. It is not offered: a ReadOnly lock blocks
+  # the POST list operations (storage keys, app settings, publishing credentials) that
+  # every refresh makes, so the module could no longer plan, or remove the lock.
+  validation {
+    condition     = var.lock == null ? true : var.lock.kind == "CanNotDelete"
+    error_message = "lock.kind must be \"CanNotDelete\". ReadOnly is not offered: it blocks the list operations every refresh needs, after which Terraform can no longer plan or remove the lock."
+  }
+
+  validation {
+    condition     = var.lock == null ? true : (var.lock.name == null ? true : can(regex("^[A-Za-z0-9_().-]{0,89}[A-Za-z0-9_()-]$", var.lock.name)))
+    error_message = "lock.name must be 1-90 characters of letters, digits, periods, underscores, hyphens and parentheses, and cannot end in a period."
+  }
+
+  validation {
+    condition     = var.lock == null ? true : (var.lock.notes == null ? true : length(var.lock.notes) <= 512)
+    error_message = "lock.notes must be at most 512 characters."
+  }
 }
 
 # App Service Plan density validation - DEPRECATED: nothing reads this input.

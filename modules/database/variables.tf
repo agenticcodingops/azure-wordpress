@@ -170,3 +170,24 @@ variable "enforce_production_sku" {
   type        = bool
   default     = true
 }
+
+# Slow query log. Opt-in: the MySqlSlowLogs diagnostic category carries rows only once
+# the slow_query_log server parameter is ON. Audit logging is deliberately not offered.
+variable "slow_query_log_enabled" {
+  description = "Set the slow_query_log server parameter to ON, and long_query_time with it, so the MySqlSlowLogs diagnostic category carries rows. Off (the default) leaves both parameters unmanaged. Turning it off again deletes the two configuration resources, which resets both parameters to their server defaults (OFF and 10 seconds)."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "long_query_time" {
+  description = "Seconds a statement must run to be logged as slow (the long_query_time server parameter). Applied only when slow_query_log_enabled is true. Defaults to 2, a WordPress-oriented value; the server's own default is 10. Fractions are allowed; 0 logs every statement. A change applies to new connections only."
+  type        = number
+  default     = 2
+  nullable    = false
+
+  validation {
+    condition     = var.long_query_time >= 0 && var.long_query_time <= 31536000
+    error_message = "long_query_time must be between 0 and 31536000 seconds."
+  }
+}

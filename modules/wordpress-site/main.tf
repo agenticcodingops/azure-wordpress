@@ -194,6 +194,14 @@ resource "azurerm_resource_group" "main" {
       condition     = (var.deployer_object_id == null) == (var.deployer_tenant_id == null)
       error_message = "Set deployer_object_id and deployer_tenant_id together, or leave both null."
     }
+
+    # An opt-in alert needs somewhere to go: the site action group (alert_recipients)
+    # or an extra action group. Checked here so it fails at plan, before anything is
+    # created.
+    precondition {
+      condition     = local.new_alerts_enabled ? local.has_alert_route : true
+      error_message = "An opt-in alert is enabled (availability_tests, or monitoring.alerts.mysql, http_5xx_rate, health_check or resource_health), but nothing would receive it. Set alert_recipients or extra_action_group_ids."
+    }
   }
 }
 
@@ -300,6 +308,8 @@ module "database" {
   high_availability_mode    = local.db_config.high_availability_mode
   storage_auto_grow_enabled = coalesce(var.database.storage_auto_grow_enabled, true)
   mysql_version             = local.db_config.mysql_version
+  slow_query_log_enabled    = var.database.slow_query_log_enabled
+  long_query_time           = var.database.long_query_time
 
   # Allow burstable SKUs for cost optimization (user choice)
   enforce_production_sku = false
@@ -538,8 +548,9 @@ resource "azurerm_key_vault_access_policy" "app_service_update" {
 resource "azurerm_key_vault_access_policy" "staging_slot" {
   # Count on the SKU, not on staging_slot_principal_id: that ID is unknown until the slot
   # exists, so on S*/P* a greenfield plan fails with "Invalid count argument". This mirrors
-  # the app-service module's local.sku_supports_slots on the exact SKU it receives.
-  count = can(regex("^(S|P)[0-9]", local.app_config.sku_name)) ? 1 : 0
+  # the app-service module's local.sku_supports_slots on the exact SKU it receives
+  # (local.sku_supports_slots is defined in monitoring.tf).
+  count = local.sku_supports_slots ? 1 : 0
 
   key_vault_id = module.key_vault.id
   tenant_id    = var.tenant_id
@@ -622,9 +633,12 @@ resource "azurerm_monitor_diagnostic_setting" "mysql" {
 
 # ============================================================================
 # ALERT RULES (AFTER APP SERVICE)
+# The three baseline alerts exist whenever an alert route does (alert_recipients or
+# extra_action_group_ids). The opt-in alerts added in v4.1.0 are in monitoring.tf.
 # ============================================================================
 
-# Alert rules configuration
+# Alert rules configuration. db_failure_threshold feeds the opt-in MySQL
+# aborted_connections alert in monitoring.tf.
 locals {
   alert_config = {
     http_5xx_threshold   = coalesce(try(var.monitoring.alerts.http_5xx_threshold, null), 10)
@@ -655,7 +669,7 @@ resource "azurerm_monitor_action_group" "main" {
 
 # Alert: HTTP 5xx Errors
 resource "azurerm_monitor_metric_alert" "http_5xx" {
-  count = length(var.alert_recipients) > 0 ? 1 : 0
+  count = local.has_alert_route ? 1 : 0
 
   name                = "alert-http5xx-${local.name_prefix}"
   resource_group_name = azurerm_resource_group.main.name
@@ -673,8 +687,13 @@ resource "azurerm_monitor_metric_alert" "http_5xx" {
     threshold        = local.alert_config.http_5xx_threshold
   }
 
-  action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
+  # The site action group plus any extra_action_group_ids. With no extra IDs this is
+  # the single block these alerts have always had.
+  dynamic "action" {
+    for_each = local.alert_action_group_ids
+    content {
+      action_group_id = action.value
+    }
   }
 
   tags = local.common_tags
@@ -686,7 +705,7 @@ resource "azurerm_monitor_metric_alert" "http_5xx" {
 # Scoped to the App Service Plan (Microsoft.Web/serverfarms) because
 # CpuPercentage is a plan-level metric; it does not exist on Web Apps.
 resource "azurerm_monitor_metric_alert" "high_cpu" {
-  count = length(var.alert_recipients) > 0 ? 1 : 0
+  count = local.has_alert_route ? 1 : 0
 
   name                = "alert-highcpu-${local.name_prefix}"
   resource_group_name = azurerm_resource_group.main.name
@@ -704,8 +723,13 @@ resource "azurerm_monitor_metric_alert" "high_cpu" {
     threshold        = local.alert_config.high_cpu_threshold
   }
 
-  action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
+  # The site action group plus any extra_action_group_ids. With no extra IDs this is
+  # the single block these alerts have always had.
+  dynamic "action" {
+    for_each = local.alert_action_group_ids
+    content {
+      action_group_id = action.value
+    }
   }
 
   tags = local.common_tags
@@ -715,7 +739,7 @@ resource "azurerm_monitor_metric_alert" "high_cpu" {
 
 # Alert: Response Time (MTTD < 5 minutes per spec)
 resource "azurerm_monitor_metric_alert" "response_time" {
-  count = length(var.alert_recipients) > 0 ? 1 : 0
+  count = local.has_alert_route ? 1 : 0
 
   name                = "alert-responsetime-${local.name_prefix}"
   resource_group_name = azurerm_resource_group.main.name
@@ -733,8 +757,13 @@ resource "azurerm_monitor_metric_alert" "response_time" {
     threshold        = 3 # 3 seconds per performance goal
   }
 
-  action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
+  # The site action group plus any extra_action_group_ids. With no extra IDs this is
+  # the single block these alerts have always had.
+  dynamic "action" {
+    for_each = local.alert_action_group_ids
+    content {
+      action_group_id = action.value
+    }
   }
 
   tags = local.common_tags
@@ -944,12 +973,44 @@ resource "azurerm_app_service_custom_hostname_binding" "main" {
 # Resource locks prevent accidental deletion (30-day recovery window via Azure)
 # ============================================================================
 
-# Lock the resource group to prevent accidental deletion
-# Requires "User Access Administrator" role on the deploying service principal
+# Lock the resource group to prevent accidental deletion.
+# Creating a lock needs Microsoft.Authorization/locks/* on the deploying principal
+# (Owner or User Access Administrator; Contributor lacks it).
+#
+# enable_resource_lock = true and lock = { kind = "CanNotDelete" } render the same three
+# strings at the same address, so moving from one to the other plans no change. Every
+# argument forces replacement, so any other name or notes value recreates the lock.
+locals {
+  site_lock_default_name  = "site-protection-lock"
+  site_lock_default_notes = "Protects WordPress site from accidental deletion. 30-day recovery window."
+
+  # enable_resource_lock = true, as it has always rendered.
+  site_lock_legacy = {
+    kind  = "CanNotDelete"
+    name  = local.site_lock_default_name
+    notes = local.site_lock_default_notes
+  }
+
+  # A conditional, never ||: only the chosen branch is evaluated, so var.lock.* is not
+  # read while var.lock is null.
+  site_lock = var.lock != null ? {
+    kind  = var.lock.kind
+    name  = var.lock.name != null ? var.lock.name : local.site_lock_default_name
+    notes = var.lock.notes != null ? var.lock.notes : local.site_lock_default_notes
+  } : (var.enable_resource_lock ? local.site_lock_legacy : null)
+}
+
 resource "azurerm_management_lock" "main" {
-  count      = var.enable_resource_lock ? 1 : 0
-  name       = "site-protection-lock"
+  count      = local.site_lock != null ? 1 : 0
+  name       = local.site_lock.name
   scope      = azurerm_resource_group.main.id
-  lock_level = "CanNotDelete"
-  notes      = "Protects WordPress site from accidental deletion. 30-day recovery window."
+  lock_level = local.site_lock.kind
+  notes      = local.site_lock.notes
+
+  lifecycle {
+    precondition {
+      condition     = !(var.enable_resource_lock && var.lock != null)
+      error_message = "Set lock or enable_resource_lock, not both. enable_resource_lock = true is equivalent to lock = { kind = \"CanNotDelete\" }."
+    }
+  }
 }

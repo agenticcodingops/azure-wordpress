@@ -46,7 +46,7 @@ data "azurerm_client_config" "current" {}
 
 module "shared" {
   # Pin to a specific version tag for stability
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.0.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.1.0"
 
   project_name    = var.project_name
   environment     = var.environment
@@ -64,7 +64,7 @@ module "shared" {
 module "wordpress_sites" {
   for_each = var.sites
   # Pin to a specific version tag for stability
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.0.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.0"
 
   project_name  = var.project_name
   site_name     = each.key

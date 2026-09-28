@@ -90,6 +90,13 @@ jobs:
 
       - name: Run Checkov
         uses: bridgecrewio/checkov-action@v12.3125.0
+        # Render variables to completion. Checkov's default stops the render loop once
+        # 90% of edges repeat for 4 iterations, so results depended on graph size:
+        # unrelated locals could leave the storage network rules unresolved and fail
+        # CKV_AZURE_35/36. See the Static Analysis Constraints section of the project
+        # guidance file.
+        env:
+          RENDER_EDGES_DUPLICATE_ITER_COUNT: "50"
         with:
           directory: .
           framework: terraform

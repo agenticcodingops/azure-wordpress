@@ -422,7 +422,9 @@ Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure`
   - All ten need the `modtm` provider, and all but MySQL need Terraform ≥ 1.9 (Storage ≥ 1.10, Key Vault ≥ 1.11). CI validates with Terraform 1.9.8. That meets the ≥ 1.9 floor, but not Storage's ≥ 1.10 or Key Vault's ≥ 1.11, so adopting either of those two still means raising `TERRAFORM_VERSION` in `validate.yml` first.
   - Five cap azurerm below this tree's `~> 5.6`: MySQL and CDN profile (`~> 4.0`), Key Vault (`< 5.1`), Log Analytics and Application Insights (`< 5.0.0`). Terraform intersects the constraints, so they cannot init here; write the azurerm resource until they support 5.6. The other five depend on azapi, not azurerm.
 - **If it is only Proposed, or absent** (as of that date: action group, metric alert, activity-log alert, scheduled-query rule, consumption budget, availability test), write the azurerm resource directly. Shape the variables to the AVM interface conventions so a later switch is cheap:
-  - `lock = { kind, name }`
+  - `lock = { kind, name }` (the current AVM spec adds an optional `notes`; `wordpress-site` and
+    `shared-infrastructure` take it, and accept only `kind = "CanNotDelete"`, because ReadOnly blocks the POST
+    list operations every refresh makes)
   - `diagnostic_settings` as a map
   - `role_assignments` as a map
   - `managed_identities = { system_assigned, user_assigned_resource_ids }`
@@ -444,6 +446,13 @@ This is why the Key Vault and Storage network settings are **top-level variables
 - `CKV_AZURE_35` fails instead only because its check body is a bare string equality with no variable guard.
 
 Measured when v3.0.0 introduced `coalesce(var.key_vault_purge_protection_enabled, var.environment == "production")`: CKV_AZURE_110 moved PASSED → UNKNOWN, CKV_AZURE_42 stayed PASSED, and the run went **0 failed → 0 failed**. CI stayed green with no skip added. The real cost is silent: a check that used to be enforced simply stops being evaluated.
+
+**A partial render makes results depend on graph size.** Checkov stops its variable-render loop early once `RENDER_EDGES_DUPLICATE_PERCENT` (default 90) of edges repeat for `RENDER_EDGES_DUPLICATE_ITER_COUNT` (default 4) iterations. Measured with 3.3.19 in v4.1.0: adding the MySQL alert locals to `wordpress-site` left `storage_network_rules_default_action` unresolved and failed CKV_AZURE_35/36 on the storage account, with no storage change at all. `validate.yml` therefore sets `RENDER_EDGES_DUPLICATE_ITER_COUNT: "50"`. Rendered fully, both the previous `main` and the change pass CKV_AZURE_35/36, and both surface the same two findings that the partial render had left UNKNOWN. Both are suppressed inline on their one resource (`#checkov:skip=`), not in `validate.yml`'s list, so the checks still run on any other Key Vault or web app:
+
+- **CKV_AZURE_110** (purge protection) renders the nonprod branch of the environment-aware default above: off in nonprod on purpose, on in production.
+- **CKV_AZURE_214** (always on) is a false positive. `always_on` defaults to `true` at every layer, but Checkov cannot read the `optional(bool, true)` inside `var.app_service` (the object-attribute blindness above).
+
+Set the same variable locally, or local results will not match CI.
 
 **So: measure, don't assume.** Run checkov `-d .` from the repo root (never `-d modules/<x>` alone — the at-risk instance is the one rendered through the `module` call, and Checkov reports only that nested instance) before and after, and diff the failed-check sets. Do not pre-emptively add a skip.
 
@@ -472,6 +481,11 @@ When `cdn_provider = "cloudflare"`, Cloudflare's live IPv4 egress ranges are add
 - A purge-protected soft-deleted vault locks its name for the full retention window against **everyone**: `az keyvault purge` returns `MethodNotAllowed` even for subscription Owner. No role or flag shortens it.
 - Recovery restores a vault **in its original region**. Reusing a name while changing `location` silently strands Key Vault in the old region — a data-residency violation. Always bump `key_vault_name_suffix` when changing region.
 - With purge protection *off*, none of this applies: `purge_soft_delete_on_destroy` (default `true`) purges on destroy and frees the name immediately.
+
+**A CanNotDelete lock turns every replacement into a failed apply.** `lock` (or the older
+`enable_resource_lock`) on `wordpress-site`, and `lock` on `shared-infrastructure`, block every DELETE in the
+group, extension resources included. Any ForceNew change above, and any removal (a site, a slot, a v4.1.0
+web test, alert or diagnostic setting), needs the lock removed in an earlier apply.
 
 Vault names are capped at 24 chars — `kv-{site≤14}-{env}{suffix}` — so a long site name plus a 3-char suffix overflows.
 
@@ -506,6 +520,11 @@ Vault names are capped at 24 chars — `kv-{site≤14}-{env}{suffix}` — so a l
 
 - The standalone `monitoring` module enforces a production floor of `max(var.retention_days, 90)`; the composition applies its own environment-aware default with **no floor**.
 - Changes to `modules/monitoring` do not affect consumers of `wordpress-site`.
+- The composition's alerts are its own as well: three baseline metric alerts in `main.tf` and, from v4.1.0, the
+  opt-in availability tests and the `monitoring.alerts` families (MySQL, 5xx rate, health check, Resource Health)
+  in `monitoring.tf`. Every one of them routes through `local.alert_action_group_ids` (the site action group plus
+  `extra_action_group_ids`). `monitoring.alerts.db_failure_threshold`, dead code before v4.1.0, now feeds the
+  MySQL `aborted_connections` alert.
 
 `modules/database` similarly has a `null_resource` guard rejecting Burstable SKUs in production, but the composition hardcodes `enforce_production_sku = false`, so that guard is unreachable through `wordpress-site`.
 
@@ -560,8 +579,10 @@ rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl   # leave none behind 
 #     --jq '.content' | base64 -d | grep image:
 # Install SUFFIXED so plain `checkov` stays off PATH — see the hook warning below.
 pipx install --suffix=@3319 checkov==3.3.19
-# The skip list is read from validate.yml, so it cannot drift from what CI skips.
-checkov@3319 -d . --framework terraform -o json \
+# The skip list is read from validate.yml, so it cannot drift from what CI skips;
+# inline #checkov:skip comments on a resource apply on their own.
+# The render setting mirrors validate.yml's env (see Static Analysis Constraints).
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3319 -d . --framework terraform -o json \
   --skip-check "$(sed -n 's/^ *skip_check: *\([^[:space:]]*\).*/\1/p' .github/workflows/validate.yml)"
 # Drop --quiet when comparing before/after: it hides PASSED and UNKNOWN, which is
 # exactly the signal you need (see Static Analysis Constraints).

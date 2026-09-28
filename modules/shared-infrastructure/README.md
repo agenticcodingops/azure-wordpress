@@ -78,6 +78,7 @@ module "wordpress_sites" {
 | Resource Group | `rg-trackroutinely-shared-{env}` | Contains shared resources |
 | App Service Plan | `asp-trackroutinely-shared-{env}` | Hosts all WordPress web apps |
 | Auto-scale Setting | `autoscale-trackroutinely-shared-{env}` | Optional CPU/memory scaling |
+| Management Lock | `shared-protection-lock` | Optional (`lock`): CanNotDelete on the resource group |
 
 Where `{env}` is `np` for nonprod or `prod` for production.
 
@@ -93,6 +94,7 @@ Where `{env}` is `np` for nonprod or `prod` for production.
 | `autoscale_min_workers` | number | `1` | Minimum workers when scaling |
 | `autoscale_max_workers` | number | `5` | Maximum workers when scaling |
 | `tags` | map(string) | `{}` | Tags to apply to all resources |
+| `lock` | object | `null` | Resource lock on the shared resource group (AVM shape; `CanNotDelete` only) |
 
 ## Outputs
 
@@ -151,6 +153,19 @@ When migrating existing sites to use a shared plan:
    - Delete orphaned apps from both site-specific and shared resource groups
    - Remove stale entries from Terraform state
 
+## Resource Lock
+
+`lock = { kind = "CanNotDelete" }` locks the shared resource group (name `shared-protection-lock` unless
+`lock.name` is set). It follows the Azure Verified Modules lock shape, but only `CanNotDelete` is accepted: a
+ReadOnly lock blocks the list operations every refresh makes (storage keys, app settings), after which
+Terraform can no longer plan or remove the lock.
+
+Creating the lock needs `Microsoft.Authorization/locks/*` (Owner or User Access Administrator; Contributor
+lacks it). While it exists, Azure refuses every DELETE in the group. Web apps on the shared plan, their
+staging slots and their diagnostic settings all live here, so removing any shared-plan site, moving a site off
+the plan, or replacing the plan fails at apply. Remove the lock (`lock = null`), apply, make the change, then
+put it back. See the wordpress-site module's "Resource locks" section for the full list.
+
 ## See Also
 
 - [wordpress-site composition](../../compositions/wordpress-site/README.md) - Uses this module's outputs
@@ -178,6 +193,7 @@ No modules.
 
 | Name | Type |
 |------|------|
+| [azurerm_management_lock.shared](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/management_lock) | resource |
 | [azurerm_monitor_autoscale_setting.shared](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_autoscale_setting) | resource |
 | [azurerm_resource_group.shared](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/resource_group) | resource |
 | [azurerm_service_plan.shared](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/service_plan) | resource |
@@ -192,6 +208,7 @@ No modules.
 | <a name="input_enable_autoscale"></a> [enable\_autoscale](#input\_enable\_autoscale) | Enable auto-scaling for the shared App Service Plan | `bool` | `false` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for resources | `string` | n/a | yes |
+| <a name="input_lock"></a> [lock](#input\_lock) | Resource lock on the shared resource group, in the Azure Verified Modules lock shape. null (the default) means no lock. Only kind = "CanNotDelete" is accepted. name defaults to shared-protection-lock. Sites on the shared plan keep their app and staging slot in this group, so while the lock exists, removing any such site, or replacing the plan, fails at apply. Needs Microsoft.Authorization/locks/* (Owner or User Access Administrator; Contributor lacks it). | <pre>object({<br/>    kind  = string<br/>    name  = optional(string, null)<br/>    notes = optional(string, null) # in the current AVM lock spec; older AVM modules take only kind and name<br/>  })</pre> | `null` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources | `map(string)` | `{}` | no |
 | <a name="input_worker_count"></a> [worker\_count](#input\_worker\_count) | Number of workers (instances) for the shared plan | `number` | `1` | no |
