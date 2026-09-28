@@ -57,6 +57,10 @@ this module and on shared-infrastructure. All of them use the azurerm provider t
   `wp-config.php` constants. So unless you run that plugin they are inert, and `false` removes them from the app
   and its staging slot, taking the storage account key out of the app's environment. Setting `false` updates the app
   settings in place. The `storage-key` Key Vault secret is unchanged.
+- **Provider constraints now have upper bounds.** azapi is `>= 1.13.0, < 3.0`; it was `>= 1.12.0`, but the
+  object-typed Front Door `body` needs 1.13.0, and 1.12.x already failed to validate. random is `< 4.0`, time
+  `< 1.0` and null `< 4.0`, with their floors unchanged. A root that pins versions inside these ranges needs
+  no change.
 - **Deprecated: `plan_density_limit`.** Nothing reads it, so it never limited the number of sites per plan. It
   stays, with its validation, so configurations that set it still plan. It will be removed in the next major
   release, so remove it from your configuration.
@@ -71,8 +75,9 @@ this module and on shared-infrastructure. All of them use the azurerm provider t
 - **New, optional: four alert families under `monitoring.alerts`**: `mysql`, `http_5xx_rate`, `health_check` and
   `resource_health`, each `enabled = false` by default (see [Alerting](#alerting)). Unset, nothing changes.
   Enabling one needs `alert_recipients` or `extra_action_group_ids`, or the plan fails. `db_failure_threshold`,
-  declared but never read before, is now the MySQL `aborted_connections` threshold, and only when
-  `mysql.enabled` is true. Azure also creates a "Failure Anomalies" rule next to every Application Insights
+  declared but never read before, is now the MySQL `aborted_connections` threshold when `mysql.enabled` is
+  true. It is validated whether or not the family is on: it must be 0 or more, so a negative value, harmless
+  before because nothing read it, now fails the plan. Azure also creates a "Failure Anomalies" rule next to every Application Insights
   component, outside Terraform; see [Failure Anomalies](#failure-anomalies-platform-created).
 - **New, optional: `database.slow_query_log_enabled` and `database.long_query_time`** (and `slow_query_log_enabled`
   and `long_query_time` on the database module). Off by default, so nothing changes. When on, the module sets
@@ -93,6 +98,13 @@ this module and on shared-infrastructure. All of them use the azurerm provider t
   (Owner or User Access Administrator; Contributor lacks it). Read [Resource locks](#resource-locks) first: while
   the lock exists, every removal or replacement in the group fails at apply, including removing a web test,
   an alert or a diagnostic setting added by this release, or turning an alert family off.
+- **Inline Checkov suppressions now ship with the modules.** The Key Vault in `modules/key-vault` carries
+  `#checkov:skip=CKV_AZURE_110` (purge protection), and the web app in `modules/app-service` carries
+  `#checkov:skip=CKV_AZURE_214` (always on). They keep this repository's own scan honest: purge protection is
+  off in nonprod by design, and Checkov cannot read the `optional()` default that turns always on. But if your
+  pipeline scans these modules, for example Checkov with external modules downloaded, it no longer reports
+  either check on those two resources. Purge protection defaults to on in production and `always_on` to
+  `true`, so keep those values, or check them another way.
 
 ## Upgrading to v4.0.2
 

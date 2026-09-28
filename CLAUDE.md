@@ -201,6 +201,10 @@ github.com.** `.githooks/allowed-authors.txt` is read by the `commit-msg` and `p
 | `vibecoddingops@outlook.com` | The GitHub account's commit email. It authors every web-UI merge on `main`, and every release-please commit (`RELEASE_PLEASE_TOKEN` belongs to that account). |
 | `noreply@github.com` | GitHub's web-flow committer on every web-UI merge. |
 
+**A merge made through the API picks its author email for you,** and that address is not guaranteed to be on
+the list. Pass an allow-listed address explicitly: `mergePullRequest(input: {..., authorEmail: ...})` in
+GraphQL, with `expectedHeadOid` pinned. #63 was merged that way.
+
 Without the last two, every push to `main` fails the check: at setup, 60 of the 76 commits on
 `main` used only those two identities. Listing them would also let a local commit claim one, so
 `commit-msg` additionally requires author and committer to equal `git config user.name` /
@@ -359,6 +363,22 @@ release unit, so each `feat:`/`fix:` subject reaches `main` and earns its own ch
 If the branch carries `wip`/`fixup`/`address review comments` noise, **squash** instead —
 release-please parses every subject that lands, and a merge would drag the noise into the
 changelog. That is why release-please's own default recommendation is squash-merge.
+
+**A release-unit PR that was squash-merged anyway** reaches the changelog as a single PR-title entry.
+Recover per-unit entries before merging the release PR:
+
+- Append a `BEGIN_COMMIT_OVERRIDE` ... `END_COMMIT_OVERRIDE` block to the merged PR's body.
+- Inside it: one conventional header per line at column 0, with a blank line between entries.
+  - End each line with ` (#N)`, so the PR link survives.
+  - Write no bodies, and no `BREAKING-CHANGE:` text anywhere; that string alone forces a major version.
+- Then re-run the last `Release` run with `gh run rerun <id>`, because `release.yml` has no dispatch trigger. release-please
+  re-reads PR bodies live and regenerates the release PR.
+- The first occurrence of the begin marker in a body wins, so never mention it in prose above the block.
+- The override works only on squash commits. On a merge commit every constituent commit carries it, and the
+  entries duplicate.
+
+v4.1.0 was released this way, after #62 and #65 were squash-merged (release-please 17.6.0, the version
+action v5 bundles).
 
 **Recovering an already-stacked branch** — two options, with a real trade-off:
 
