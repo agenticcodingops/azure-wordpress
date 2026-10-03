@@ -65,8 +65,13 @@ app_settings = {
 ## Network Access
 
 The vault **denies public network access by default** (`network_acls.default_action = "Deny"`).
-`bypass = "AzureServices"` lets trusted Azure services through, which covers App Service
-resolving `@Microsoft.KeyVault(...)` references.
+`bypass = "AzureServices"` lets Microsoft's listed trusted services through. It does **not**
+cover App Service resolving `@Microsoft.KeyVault(...)` references: Microsoft lists App Service
+as trusted only for deploying certificates
+([trusted services](https://learn.microsoft.com/en-us/azure/key-vault/general/overview-vnet-service-endpoints#trusted-services)).
+References reach the vault through the app's virtual network integration, from a subnet that
+is allow-listed in `network_acls_virtual_network_subnet_ids` and carries the
+`Microsoft.KeyVault` service endpoint. The `wordpress-site` module sets this up for you.
 
 Terraform is **not** a trusted Azure service. Its data-plane calls create the secrets in this
 module, so if it cannot reach the vault the apply fails with a 403 on
