@@ -16,7 +16,8 @@ This module configures Cloudflare as the DNS provider and optionally as the CDN/
 
 ## Prerequisites
 
-1. **Domain registered with Cloudflare Registrar** - Zone is created automatically
+1. **An existing Cloudflare zone for `domain`** - The module looks the zone up by name (`data.cloudflare_zones`)
+   and never creates it. Add the domain to Cloudflare before you apply.
 2. **Cloudflare API Token** with permissions:
    - Zone:DNS:Edit
    - Zone:Zone:Read

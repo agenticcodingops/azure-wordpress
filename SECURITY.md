@@ -59,10 +59,13 @@ When using azure-wordpress, follow these security recommendations:
 
 ### Network Security
 
-- Keep **private endpoints enabled** for MySQL (default configuration)
+- Keep MySQL on its **delegated subnet** (private access, the only mode the module deploys). The server has no
+  public endpoint and is reached only from the virtual network
 - Use **Cloudflare proxy** or **Azure Front Door WAF** to protect origin
 - Restrict App Service access to CDN IPs only when using Cloudflare
-- Enable **TLS 1.2 minimum** (enforced by default)
+- **TLS 1.2 minimum** is enforced on the web app, the storage account and the Front Door custom domain. MySQL
+  does not require TLS: the module sets `require_secure_transport = OFF`
+- See [docs/architecture.md](docs/architecture.md#network) for the network design
 
 ### Access Control
 

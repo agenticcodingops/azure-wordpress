@@ -8,7 +8,9 @@ This module creates:
 - Virtual Network (VNet) with site-specific address space
 - App Service integration subnet (delegated to Microsoft.Web/serverFarms)
 - Database subnet (delegated to Microsoft.DBforMySQL/flexibleServers)
-- Private Endpoint subnet for Storage/Key Vault
+- A subnet reserved for private endpoints (`snet-pe-*`). Nothing in this repository deploys into it: Storage and
+  Key Vault are reached through service endpoints on the App Service subnet, and MySQL uses the delegated
+  database subnet
 - Network Security Groups (NSGs) with least-privilege rules
 
 ## Architecture
@@ -31,8 +33,8 @@ This module creates:
 │  │   PE Subnet     │                                   │
 │  │  (10.0.2.0/24)  │                                   │
 │  │                 │                                   │
-│  │  Private        │                                   │
-│  │  Endpoints      │                                   │
+│  │  Reserved,      │                                   │
+│  │  empty          │                                   │
 │  └─────────────────┘                                   │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -82,7 +84,9 @@ module "networking" {
 ## Security
 
 - NSGs implement least-privilege access
-- App subnet only allows HTTPS from Azure Front Door
+- The App subnet NSG has inbound rules for HTTPS from Azure Front Door and App Service management. Inbound NSG
+  rules do not apply to an App Service integration subnet, so the web app's access restrictions filter inbound
+  requests instead; see [Network](../../docs/architecture.md#network)
 - Database subnet only allows MySQL (3306) from App subnet
 - All other inbound traffic is denied
 
