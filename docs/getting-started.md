@@ -246,8 +246,9 @@ terraform plan -input=false -lock-timeout=10m -out=tfplan
 terraform apply -input=false tfplan
 ```
 
-Its plan summary must match the one you reviewed in step 6. If it does not, something changed in between: stop
-and find out what.
+The job applies straight after it plans, with no pause. Afterwards, read its plan summary in the job log: it must
+match the one you reviewed in step 6. If it does not, something changed in between. Hold further changes and
+find out what before the next apply.
 
 ### Step 8: Open the site
 
