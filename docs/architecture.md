@@ -34,8 +34,9 @@ code nor Microsoft's documentation settles a question, the text says **UNKNOWN**
   The web app reads them through Key Vault references, as its managed identity.
 - Key Vault and Storage deny public data-plane access by default. The App Service subnet reaches both through
   service endpoints.
-- With the storage plugin, browsers fetch media from the storage account's blob endpoint directly, not through the
-  CDN.
+- With the storage plugin, media URLs point at the storage account's blob endpoint, so browsers fetch media from
+  Azure directly, not through the CDN. That works only if the storage firewall and the container's access allow
+  those requests, and the defaults do not. See [Media](#media).
 - The composition creates Log Analytics and Application Insights itself. It never calls `modules/monitoring`.
 
 Sources: `modules/wordpress-site/variables.tf:324-333` (`cdn_provider`), `modules/app-service/main.tf:24`,
@@ -204,8 +205,8 @@ Sources: `modules/wordpress-site/main.tf:1-12`, `:185-213`, `:221-251`, `:260-28
 
 ## Request flow: Cloudflare
 
-With `cdn_provider = "cloudflare"` and `cloudflare.enabled = true`, the composition creates a proxied CNAME for
-the site that points at the web app's default host name.
+With `cdn_provider = "cloudflare"`, `cloudflare.enabled = true` and `cloudflare.proxied = true` (the default), the
+composition creates a proxied CNAME for the site that points at the web app's default host name.
 
 ```mermaid
 sequenceDiagram
@@ -250,6 +251,9 @@ What the code sets up for this flow:
 - **Edge rules.** Three page rules are on by default: bypass the cache for `wp-admin` and `wp-login.php`, and cache
   `wp-content`. Cache rules (`enable_cache_rules`), WAF rulesets (`enable_waf`, which needs the Pro plan or higher)
   and zone setting overrides are off by default.
+- **`cloudflare.proxied = false` makes the site unreachable.** The CNAME becomes DNS-only, so browsers go straight
+  to the web app. The web app's restrictions depend only on `cdn_provider`, so it still admits only Cloudflare's
+  ranges and denies them.
 - **`cloudflare.enabled` defaults to `false`.** With `cdn_provider = "cloudflare"` but `enabled = false`, the
   origin lock-down and the storage allow-list still apply, but no DNS record, wait or Cloudflare rule is created.
   The hostname binding is still created, so you must create the DNS records yourself.
@@ -523,8 +527,11 @@ NSGs `:87-171`); `modules/dns-zones/main.tf:7-27`; `modules/database/main.tf:64-
 ## Monitoring
 
 The composition creates its own Log Analytics workspace (unless you pass `monitoring.log_analytics_workspace_id`)
-and a workspace-based Application Insights component. Retention is 90 days in production and 30 in nonprod, unless
-you set `monitoring.retention_days`.
+and a workspace-based Application Insights component. It sets retention to 90 days in production and 30 in
+nonprod, unless you set `monitoring.retention_days`, on the workspace it creates. It passes the same value to the
+component's own `retention_in_days`. Microsoft documents that retention for workspace-based Application Insights is
+set on the Log Analytics workspace. So when you pass your own workspace, set its retention yourself. Whether the
+component's own setting then has any effect is UNKNOWN.
 
 ```mermaid
 flowchart TB
@@ -601,6 +608,8 @@ Sources: `modules/wordpress-site/main.tf:166-170`, `:181`, `:201-204`, `:260-282
 `:800-826`; `modules/wordpress-site/monitoring.tf:20-37`, `:41`, `:44-146`, `:152-274`, `:282-344`, `:351-380`,
 `:386-426`, `:433-658`; `modules/wordpress-site/variables.tf:360-496`; `modules/app-service/main.tf:78`;
 site module README, [Failure Anomalies](../modules/wordpress-site/README.md#failure-anomalies-platform-created).
+Microsoft:
+[Set the data retention](https://learn.microsoft.com/azure/azure-monitor/app/create-workspace-resource#set-the-data-retention).
 
 ## Shared App Service plan
 

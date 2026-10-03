@@ -23,16 +23,18 @@ One call to `modules/wordpress-site` deploys one site:
 
 - **Edge.** `cdn_provider` chooses Cloudflare (`cloudflare`), Azure Front Door (`azure_front_door`) or no CDN
   (`direct`, the default). Only one is created. With a CDN, the web app's main site accepts only that CDN's
-  traffic: Cloudflare's address ranges, or your own Front Door profile. The staging slot and the SCM endpoint have
-  looser rules; see [Network](docs/architecture.md#network).
+  traffic: Cloudflare's address ranges, or your own Front Door profile when `front_door.enabled` is true (the
+  default). The staging slot and the SCM endpoint have looser rules; see [Network](docs/architecture.md#network).
 - **Web tier.** A Linux web app runs the Microsoft WordPress container, with a staging slot on S\* and P\* SKUs.
   Several sites can share one App Service plan.
 - **Database.** MySQL Flexible Server runs on a delegated subnet and is found through a private DNS zone. It has
   no public endpoint. No module in this repository creates a private endpoint.
 - **Secrets.** Key Vault holds the database password, the storage key and the Application Insights connection
   string. The web app reads them through Key Vault references, as its managed identity.
-- **Media.** Uploads go to Blob Storage through the storage plugin. Browsers then fetch media from the blob
-  endpoint directly, not through the CDN.
+- **Media.** Uploads go to Blob Storage through the storage plugin. The plugin points media URLs at the blob
+  endpoint, so browsers fetch media from Azure directly, not through the CDN. That works only if the storage
+  firewall and the container's access allow those requests, and the defaults do not; see
+  [Media](docs/architecture.md#media).
 - **Monitoring.** The site module creates Log Analytics, Application Insights, diagnostic settings and alerts
   itself. It does not use the standalone `monitoring` module.
 
@@ -180,7 +182,8 @@ module "site1" {
 - **Firewalls**: Key Vault and Storage deny public data-plane access by default; the App Service subnet is allowed
   through service endpoints
 - **IP Restrictions**: With `cloudflare`, the main site accepts only Cloudflare's address ranges. With
-  `azure_front_door`, it accepts only your Front Door profile, while the staging slot accepts any Front Door
+  `azure_front_door` and `front_door.enabled` true (the default), it accepts only your Front Door profile, while the
+  staging slot accepts any Front Door profile. With `front_door.enabled = false`, both accept any Front Door
   profile. The SCM (Kudu) endpoint has its own rules and allows all addresses by default
 - **TLS 1.2**: Minimum version on the web app, the storage account and the Front Door custom domain. MySQL does
   not require TLS (`require_secure_transport = OFF`)
