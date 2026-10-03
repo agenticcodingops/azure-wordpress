@@ -78,6 +78,16 @@ module "wordpress_site" {
     subdomain  = "blog"
   }
 
+  # Key Vault and Storage deny public data-plane access by default.
+  # Terraform writes the vault's secrets itself and is not a trusted Azure service,
+  # so from a hosted CI runner the first apply fails with a Key Vault 403 unless
+  # the vault is reachable. On a runner with a fixed egress IP, use
+  # key_vault_network_acls_ip_rules = ["<runner IP>"] instead.
+  key_vault_public_network_access_enabled = true
+  # Visitors' browsers fetch media straight from the blob endpoint, so with "Deny"
+  # every image returns 403. Keep "Deny" only behind a CDN custom domain.
+  storage_network_rules_default_action = "Allow"
+
   # Backup container for UpdraftPlus (v1.1.0+)
   storage = {
     additional_containers = {
@@ -97,6 +107,12 @@ module "wordpress_site" {
 > **Version pinning:** Always use `?ref=v<VERSION>` to pin to a specific release. Check the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page for the latest version. See [Versioning](#versioning) for upgrade guidance.
 
 See [examples/](examples/) for complete configurations.
+
+- **First deployment:** [docs/getting-started.md](docs/getting-started.md) is the smallest configuration that
+  applies from CI, with no CDN and no DNS, and explains the two network inputs above.
+- **Production pattern:** [docs/deployment-guide.md](docs/deployment-guide.md) covers remote state, OIDC from CI,
+  provider pins, locks, staging slots, shared plans, and adding and removing sites.
+- **Cost:** [docs/cost.md](docs/cost.md) has the dated price table.
 
 ## Modules
 
@@ -130,7 +146,7 @@ The order, and the reason for it, is in [Deployment order](docs/architecture.md#
 | Provider | Cost | WAF | SSL | Best For |
 |----------|------|-----|-----|----------|
 | `cloudflare` | Free tier available | Free | Universal SSL | Cost-optimized deployments |
-| `azure_front_door` | ~$35/month base | Included (Premium) | Managed certs | Enterprise, compliance |
+| `azure_front_door` | Monthly base fee; the default SKU is Premium (see [cost guide](docs/cost.md)) | Included (Premium) | Managed certs | Enterprise, compliance |
 | `direct` | None | None | App Service cert | Dev/testing |
 
 ## Cost Optimization
@@ -165,14 +181,17 @@ module "site1" {
 }
 ```
 
-**Cost Savings**: ~50% reduction by consolidating plans.
+**Cost savings:** the plan is paid once instead of once per site. Each site still pays for its own MySQL server.
+See the [cost guide](docs/cost.md#2-estimate-a-shared-plan) for a worked comparison.
 
 ### SKU Recommendations
 
-| Environment | App Service | MySQL | Estimated Cost |
-|-------------|-------------|-------|----------------|
-| Dev/Test | B1 (shared) | B_Standard_B2s | ~$40/month/site |
-| Production | P1v3 (shared) | GP_Standard_D2ds_v4 | ~$150/month/site |
+| Environment | App Service | MySQL |
+|-------------|-------------|-------|
+| Dev/Test | B1 (shared) | B_Standard_B2s |
+| Production | P1v3 (shared) | GP_Standard_D2ds_v4 |
+
+Prices for each SKU, with their date and region, are in the [cost guide](docs/cost.md).
 
 ## Security
 
