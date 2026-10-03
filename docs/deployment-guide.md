@@ -26,7 +26,7 @@ which is release v4.1.1. Every name, ID and host name below is a placeholder.
 ## Prerequisites
 
 - **Azure:** Owner, or Contributor plus User Access Administrator, on the subscriptions you deploy to. You need
-  this once, to create role assignments in steps 1, 2 and 9.
+  this once, to create the role assignments in steps 2 and 9.
 - **Separate subscriptions** for nonprod and production are recommended, so that each CI identity can be scoped
   to one.
 - **GitHub:** admin rights on the repository, to create environments and their protection rules. The steps use
@@ -102,7 +102,8 @@ az storage container-rm create --storage-account sttfstateexample --name tfstate
 ```
 
 - **Shared keys off.** Turning off shared-key access means only Microsoft Entra identities can read the state.
-  The backend then needs `use_azuread_auth = true` (or `ARM_USE_AZUREAD=true`).
+  The backend then needs `use_azuread_auth = true`, in `backend.hcl` or as `ARM_USE_AZUREAD=true`. The
+  `backend.hcl` in [getting started](getting-started.md#the-configuration) sets it.
 - **Versioning and soft delete** let you recover an earlier state file after a bad write.
 - **Locking.** The `azurerm` backend locks state with Azure Blob Storage's own mechanisms, so two jobs cannot
   write the same state at once.
@@ -117,6 +118,8 @@ Create one identity per environment. A user-assigned managed identity is shown h
 the same way.
 
 ```bash
+az group create --name rg-identities-example --location eastus
+
 az identity create --name id-wordpress-nonprod --resource-group rg-identities-example --location eastus
 
 az identity federated-credential create --name github-pull-request \
@@ -132,6 +135,22 @@ az identity federated-credential create --name github-env-nonprod \
 
 Create `id-wordpress-production` the same way, with **one** federated credential, for
 `repo:ORG/REPO:environment:production`.
+
+Then assign each identity its roles. For the nonprod identity:
+
+```bash
+principal_id=$(az identity show --name id-wordpress-nonprod --resource-group rg-identities-example \
+  --query principalId -o tsv)
+
+az role assignment create --assignee-object-id "$principal_id" --assignee-principal-type ServicePrincipal \
+  --role Contributor --scope /subscriptions/<nonprod-subscription-id>
+
+az role assignment create --assignee-object-id "$principal_id" --assignee-principal-type ServicePrincipal \
+  --role "Storage Blob Data Contributor" \
+  --scope /subscriptions/<state-subscription-id>/resourceGroups/rg-tfstate-example/providers/Microsoft.Storage/storageAccounts/sttfstateexample/blobServices/default/containers/tfstate
+```
+
+Repeat for the production identity, with the production subscription.
 
 | Identity | Federated subjects | Azure roles |
 |---|---|---|
@@ -200,7 +219,7 @@ git add .terraform.lock.hcl
 - **CI runs `terraform init` without `-upgrade`,** so it installs exactly what the lock file records.
 - **Upgrade in a pull request:** change the pin, run `terraform init -upgrade` and the `providers lock` command
   again, and review the plan.
-- This module's own repository does not commit a lock file (`.gitignore:15`), because it is a library. Your root
+- This module's own repository does not commit a lock file (`.gitignore:16`), because it is a library. Your root
   configuration is not.
 
 ### Step 4: Lay out one root configuration per environment
@@ -310,9 +329,14 @@ jobs:
       - run: terraform apply -input=false tfplan
 ```
 
-- **The reviewer approves before the production plan exists.** If reviewers must read the production plan
-  first, split `apply-production` into a plan job and a gated apply job that applies the saved plan. A saved
-  plan file can contain the same secrets as the state, so protect the artifact the same way.
+- **What reviewers see.** Each pull request shows the nonprod plan, and the nonprod apply runs before the
+  production job. The production job plans and applies after its approval, so the reviewer approves before the
+  production plan exists. Because the two environments use the same module and the same site map, the nonprod
+  plan is the preview.
+- **If reviewers must read the production plan first,** split `apply-production` into a plan job and a gated
+  job that applies the saved plan. A saved plan file can contain the same secrets as the state. Anyone who is
+  signed in to GitHub and can read the repository can download a workflow artifact, so do not pass the plan
+  file as an artifact in a public repository.
 - **`concurrency`** runs one job per environment at a time, so two applies never compete for the state lock.
   A newer pending run replaces an older pending one; the newer run applies `main` as it is then.
 
@@ -324,8 +348,11 @@ The module gives the identity that runs Terraform an access policy on each site'
 the secrets (`modules/key-vault/main.tf:87-101`). By default the module reads that identity itself, with
 `data "azurerm_client_config"` (`modules/wordpress-site/main.tf:66`, `:73-74`).
 
-That read returns **whoever runs the plan**. If someone plans as a different identity, for example an operator
-running `terraform plan` with their own `az login`, the plan shows the Terraform access policy being replaced.
+That read returns **whoever runs the plan**. If plan and apply run as different identities, for example a
+separate identity that plans pull requests, the plan shows the Terraform access policy being replaced. The
+planning identity also needs `Get` and `List` on each vault's secrets, granted outside the module, or the refresh
+fails: the module gives secret access only to the deployer and the app identities
+(`modules/key-vault/main.tf:70-101`, `modules/wordpress-site/main.tf:530-568`).
 
 Set `deployer_object_id` and `deployer_tenant_id` when either of these is true
 (`modules/wordpress-site/variables.tf:46-66`):
@@ -389,8 +416,8 @@ When a slot exists:
 
 - it is named `staging` and has its own system-assigned identity (`modules/app-service/main.tf:331-353`);
 - that identity gets `Get` and `List` on the site's Key Vault secrets (`modules/wordpress-site/main.tf:548-568`);
-- `WP_HOME` and `WP_SITEURL` point at `https://app-<project>-<site>-<env>-staging.azurewebsites.net`, and `WP_DEBUG`
-  is `true` (`modules/app-service/main.tf:436-440`);
+- `WP_HOME` and `WP_SITEURL` point at `https://app-<project>-<site>-<np|prod>-staging.azurewebsites.net`, and
+  `WP_DEBUG` is `true` (`modules/app-service/main.tf:7`, `:436-440`);
 - `always_on` is off on the slot unless you set `app_service.staging_always_on` (`modules/wordpress-site/variables.tf:289`).
 
 Slots cost nothing extra. They exist on Standard, Premium and Isolated plans only
@@ -403,8 +430,11 @@ S or P to B deletes its slot, and a resource lock blocks that (step 9).
 
 ```hcl
 module "wordpress_sites" {
+  for_each = local.sites
   # ...
-  lock = { kind = "CanNotDelete" } # on each site's resource group
+
+  # Per site, so that one site can be unlocked without unlocking the others.
+  lock = each.value.locked ? { kind = "CanNotDelete" } : null
 }
 
 module "shared" {
@@ -426,8 +456,9 @@ module "shared" {
     `geo_redundant_backup`.
 
   The full list is in "Resource locks" in [`modules/wordpress-site/README.md`](../modules/wordpress-site/README.md#resource-locks).
-- **To make such a change:** set `lock = null` and apply, then make the change and apply, then set the lock back
-  and apply.
+- **To make such a change:** unlock that site (`locked = false` in the pattern above) and apply, then make the
+  change and apply, then lock it again and apply. A site that still uses `enable_resource_lock = true` needs
+  `enable_resource_lock = false` instead.
 - **Shared plan.** The shared lock covers every shared-plan site's app and slot
   (`modules/shared-infrastructure/main.tf:156-167`).
 
@@ -439,40 +470,58 @@ module "shared" {
 flowchart TD
     A["Operator: choose site_name"] --> B{"Names free?"}
     B -- No --> A
-    B -- Yes --> C["Operator: add the site to the nonprod sites map"]
-    C --> D["Operator: open a pull request"]
-    D --> E["CI: plan nonprod"]
-    E --> F{"STOP: only the new site is added, and no existing access policy changes?"}
-    F -- No --> G["Operator: fix the configuration. Check for depends_on on the module call"]
-    G --> D
-    F -- Yes --> H["Operator: merge. CI: apply nonprod"]
-    H --> I{"STOP: nonprod site verified?"}
-    I -- No --> G
-    I -- Yes --> J["Operator: add the site to the production map in a new pull request"]
-    J --> K["Reviewer: approve the production job"]
-    K --> L["CI: plan and apply production"]
-    L --> M{"cdn_provider"}
-    M -- cloudflare --> N["Module creates the DNS records, then binds the domain"]
-    M -- "azure_front_door or direct" --> O["Operator: create the DNS records the bindings need"]
+    B -- Yes --> C{"cdn_provider"}
+    C -- cloudflare --> E["Operator: add the site to the nonprod map and open a pull request"]
+    C -- "azure_front_door or direct, with a custom domain" --> D["Operator: create the DNS records the custom-domain binding needs"]
+    D --> E
+    E --> F["CI: plan nonprod"]
+    F --> G{"STOP: only the new site is added, and no existing access policy changes?"}
+    G -- No --> H["Operator: fix the configuration. Check for depends_on on the module call"]
+    H --> E
+    G -- Yes --> I["Operator: merge. CI: apply nonprod"]
+    I --> J{"STOP: nonprod site verified?"}
+    J -- No --> H
+    J -- Yes --> K["Operator: add the site to the production map, then open and merge a pull request"]
+    K --> L["Reviewer: approve the production job"]
+    L --> M["CI: plan and apply production"]
+    M --> N{"STOP: production plan added only the new site, and the site works?"}
+    N -- No --> O["Operator: hold further changes and investigate"]
+    N -- Yes --> P["Done"]
 ```
 
 1. **Choose the name.** Four names are global across Azure, and the Key Vault and storage names use only
    `site_name` and the environment. See
    [names that must be unique](getting-started.md#names-that-must-be-unique).
-2. **Add one map entry** in `infra/nonprod/main.tf` and open a pull request.
-3. **Read the plan.** It must add only the new site's resources. It must not update or replace
-   `azurerm_key_vault_access_policy.terraform` on any existing site. If it does, look for a `depends_on` on the
-   module call (step 7) or a change of planning identity (step 6).
-4. **Merge,** let CI apply nonprod, and check the site.
-5. **Repeat in `infra/production/`.** The production job waits for a reviewer.
-6. **DNS.**
+2. **Prepare DNS, unless Cloudflare does it.**
    - With `cdn_provider = "cloudflare"` and `cloudflare.enabled = true`, the module creates the site's records and
      the `asuid` verification record in your existing zone. It waits 120 seconds, then binds the custom domain to
-     the app (`modules/wordpress-site/main.tf:878-969`).
-   - With `azure_front_door` or `direct`, the module creates no DNS records. The App Service hostname binding is
-     still created for any custom domain that does not end in `.azurewebsites.net`
-     (`modules/wordpress-site/main.tf:942-944`). Create the records it needs, and for Front Door the
-     domain-validation record (`modules/front-door/README.md`), yourself.
+     the app (`modules/wordpress-site/main.tf:878-969`). Nothing to do here.
+   - With `azure_front_door` or `direct` and a custom domain that does not end in `.azurewebsites.net`, the module
+     creates no DNS records. It still creates the App Service hostname binding, in the same apply
+     (`modules/wordpress-site/main.tf:942-944`). App Service checks that you own the domain when the binding is
+     created, from a CNAME to the app or from an `asuid.<subdomain>` TXT record
+     ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/app-service/app-service-web-tutorial-custom-domain)).
+     Create those records first, for each environment's domain.
+   - The TXT value is the app's domain verification ID, which exists only once the app does:
+
+     ```bash
+     az webapp show --name app-example-examplewp01-np --resource-group rg-example-examplewp01-np \
+       --query customDomainVerificationId -o tsv
+     ```
+
+     If you cannot create the record before the first apply, that apply fails at the binding. Create the record,
+     then run the pipeline again.
+   - With Front Door, also create the `_dnsauth` record from the `custom_domain_validation_token` output
+     (`modules/wordpress-site/outputs.tf:161-164`, `modules/front-door/README.md:88`).
+3. **Add one map entry** in `infra/nonprod/main.tf` and open a pull request.
+4. **Read the plan.** It must add only the new site's resources. It must not update or replace
+   `azurerm_key_vault_access_policy.terraform` on any existing site. If it does, look for a `depends_on` on the
+   module call (step 7) or a change of planning identity (step 6).
+5. **Merge,** let CI apply nonprod, and check the site.
+6. **Repeat in `infra/production/`** in a second pull request. Its plan job plans nonprod, which shows no
+   changes. After you merge, the production job waits for a reviewer, then plans and applies.
+7. **Read the production job's plan** in its log. It must meet the same test as item 4. If it does not, hold
+   further changes and investigate before the next apply.
 
 ### Step 11: Host several sites on a shared plan
 
@@ -527,7 +576,7 @@ The [cost guide](cost.md#2-estimate-a-shared-plan) compares dedicated and shared
 1. **Back up** what you need: export the database and copy the media container. Blob soft delete does not
    protect against deleting the storage account
    ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/storage/blobs/soft-delete-blob-overview)).
-2. **Remove the locks.** Set `lock = null` on the site, and on the shared plan if the site uses it. Apply.
+2. **Remove the locks.** Unlock that site (step 9), and the shared plan if the site uses it. Apply.
 3. **Remove the map entry** and open a pull request.
 4. **Read the plan.** It must destroy only that site's resources. If it plans any change to another site, stop.
 5. **Merge and apply,** nonprod first, then production.
@@ -572,8 +621,8 @@ After removal:
 - **Changes that cannot be undone:**
   - turning Key Vault purge protection on (`modules/wordpress-site/variables.tf:152`);
   - the soft-delete retention period, which is fixed when the vault is created (`modules/wordpress-site/variables.tf:158`);
-  - `geo_redundant_backup`, which replaces the MySQL server (`modules/wordpress-site/variables.tf:86`);
-  - a MySQL major-version upgrade (`modules/wordpress-site/variables.tf:86`).
+  - `geo_redundant_backup`, which replaces the MySQL server;
+  - a MySQL major-version upgrade (`database.mysql_version`).
 
   See "Environment-aware Defaults" in the [README](../README.md#environment-aware-defaults), and
   [`modules/wordpress-site/README.md`](../modules/wordpress-site/README.md).

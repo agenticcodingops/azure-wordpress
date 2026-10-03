@@ -28,7 +28,11 @@ and choose a CDN; [`examples/basic-site`](../examples/basic-site/) shows Cloudfl
   [deployment guide](deployment-guide.md).
 - **Terraform 1.6.0 or later** (`modules/wordpress-site/main.tf:15`). The module's own CI uses 1.9.8, and the
   configuration below was tested on 1.9.8.
-- **Outbound access from the runner** to `github.com` (the module source) and `registry.terraform.io` (providers).
+- **Outbound access from the runner:**
+  - `github.com`, for the module source;
+  - `registry.terraform.io`, and the hosts it sends provider downloads to: `releases.hashicorp.com` for the
+    HashiCorp providers, and GitHub release downloads for `azapi` and `cloudflare`;
+  - Microsoft Entra ID, Azure Resource Manager, the state account's blob endpoint and the new vault's data plane.
 
 ## The configuration
 
@@ -49,16 +53,11 @@ terraform {
   backend "azurerm" {}
 }
 
+# The subscription, tenant and identity come from the ARM_* environment variables.
 provider "azurerm" {
-  subscription_id                 = var.subscription_id
   resource_provider_registrations = "legacy"
 
   features {}
-}
-
-variable "subscription_id" {
-  description = "Azure subscription to deploy into."
-  type        = string
 }
 
 data "azurerm_client_config" "current" {}
@@ -106,7 +105,11 @@ resource_group_name  = "rg-tfstate-example"
 storage_account_name = "sttfstateexample"
 container_name       = "tfstate"
 key                  = "wordpress/nonprod.tfstate"
+use_azuread_auth     = true
 ```
+
+`use_azuread_auth` makes the backend sign in to the state account with Microsoft Entra ID. It is needed because
+the state account in the deployment guide has shared-key access turned off.
 
 ### The two network inputs
 
@@ -158,8 +161,8 @@ Four of the names the module builds are global across all of Azure, not just you
 |---|---|---|
 | App Service | `app-<project_name>-<site_name>-np` | `modules/app-service/main.tf:10`, `:159` |
 | MySQL server | `mysql-<project_name>-<site_name>-np` | `modules/database/main.tf:36` |
-| Key Vault | `kv-<first 14 characters of site_name, without hyphens>-np<key_vault_name_suffix>` (the suffix defaults to `9`) | `modules/key-vault/main.tf:25`, `modules/wordpress-site/variables.tf:825-829` |
-| Storage account | `sttr<first 12 characters of site_name, without hyphens>np` | `modules/storage/main.tf:11` |
+| Key Vault | `kv-<site_name with its hyphens removed, then cut to 14 characters>-np<key_vault_name_suffix>` (the suffix defaults to `9`) | `modules/key-vault/main.tf:25`, `modules/wordpress-site/variables.tf:825-829` |
+| Storage account | `sttr<site_name with its hyphens removed, then cut to 12 characters>np` | `modules/storage/main.tf:11` |
 
 The Key Vault and storage names do **not** include `project_name`. A short, common `site_name` such as `blog`
 is therefore likely to be taken. Choose a distinctive one.
@@ -180,12 +183,13 @@ az storage account check-name --name sttrexamplewp01np --query nameAvailable
 A clash on the other three names shows up as a "name already in use" error at apply. If that happens, change
 `site_name` and run again.
 
-### Step 2: Prepare state and the CI identity
+### Step 2: Prepare state, the CI identity and the pipeline
 
-**Who:** Azure administrator. **STOP:** yes. This needs permission to create role assignments.
+**Who:** Azure administrator, then operator. **STOP:** yes. This needs permission to create role assignments.
 
-Follow steps 1 and 2 of the [deployment guide](deployment-guide.md). You need the state storage account and an
-identity that CI can sign in as with OIDC.
+Follow steps 1, 2 and 5 of the [deployment guide](deployment-guide.md). You need the state storage account, an
+identity that CI can sign in as with OIDC, and a pipeline that plans on pull requests and applies from `main`.
+For this guide, the nonprod jobs of that pipeline are enough.
 
 ### Step 3: Add the configuration
 
@@ -205,21 +209,23 @@ git add .terraform.lock.hcl
 
 Commit the lock file. Step 3 of the [deployment guide](deployment-guide.md) explains why.
 
-### Step 5: Plan in CI
+### Step 5: Open a pull request
 
-**Who:** CI. **STOP:** no.
+**Who:** operator, then CI. **STOP:** no.
+
+Open a pull request with the configuration. The pipeline's plan job runs:
 
 ```bash
 terraform init -input=false -backend-config=backend.hcl
-terraform plan -input=false -var "subscription_id=$ARM_SUBSCRIPTION_ID" -out=tfplan
+terraform plan -input=false -lock-timeout=10m
 ```
 
-The OIDC environment variables (`ARM_USE_OIDC`, `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`) come from
-step 2 of the [deployment guide](deployment-guide.md).
+The job sets `ARM_USE_OIDC`, `ARM_USE_AZUREAD`, `ARM_CLIENT_ID`, `ARM_TENANT_ID` and `ARM_SUBSCRIPTION_ID`
+(step 5 of the [deployment guide](deployment-guide.md#step-5-write-the-pipeline)).
 
 ### Step 6: Review the plan
 
-**Who:** operator. **STOP:** yes. Do not apply until all four checks pass.
+**Who:** operator. **STOP:** yes. Do not merge until all four checks pass in the pull request's plan.
 
 1. The summary reads `Plan: 33 to add, 0 to change, 0 to destroy.` That is the count for this configuration at
    v4.1.1.
@@ -229,13 +235,19 @@ step 2 of the [deployment guide](deployment-guide.md).
    `network_rules`.
 4. The resource names match the ones you checked in step 1.
 
-### Step 7: Apply
+### Step 7: Merge and apply
 
-**Who:** CI. **STOP:** no.
+**Who:** operator, then CI. **STOP:** no.
+
+Merge the pull request. The pipeline's nonprod job plans again and applies that plan:
 
 ```bash
+terraform plan -input=false -lock-timeout=10m -out=tfplan
 terraform apply -input=false tfplan
 ```
+
+Its plan summary must match the one you reviewed in step 6. If it does not, something changed in between: stop
+and find out what.
 
 ### Step 8: Open the site
 
@@ -246,7 +258,7 @@ shows its installer, complete it.
 
 ## Verify
 
-**Who:** operator.
+**Who:** operator, from a shell signed in to Azure with read access to the subscription and the state.
 
 1. The site's URL is the app's own host name:
 
@@ -286,8 +298,20 @@ does not prove that Azure accepts it: it never calls Azure.
 **Who:** operator, then CI. **STOP:** yes. This deletes the site and its data.
 
 1. Back up anything you want to keep: the database and the media container.
-2. Run `terraform plan -destroy -out=tfplan` in CI. Check that it destroys only this site's resources.
-3. Run `terraform apply tfplan`.
+2. Run the destroy as the identity that applied, the CI identity, for example from a manually started pipeline
+   job. Another identity has no access policy on the vault (`modules/key-vault/main.tf:70-101`,
+   `modules/wordpress-site/main.tf:530-568`), so it cannot read the secrets during the refresh.
+
+   ```bash
+   terraform plan -destroy -input=false -out=tfplan
+   ```
+
+3. Check that the plan destroys only this site's resources: `0 to add, 0 to change, 33 to destroy`.
+4. Apply it:
+
+   ```bash
+   terraform apply -input=false tfplan
+   ```
 
 The vault was created without purge protection, and the azurerm provider purges a vault on destroy by default
 (`purge_soft_delete_on_destroy`,
