@@ -8,7 +8,9 @@ This module creates:
 - Virtual Network (VNet) with site-specific address space
 - App Service integration subnet (delegated to Microsoft.Web/serverFarms)
 - Database subnet (delegated to Microsoft.DBforMySQL/flexibleServers)
-- Private Endpoint subnet for Storage/Key Vault
+- A subnet reserved for private endpoints (`snet-pe-*`). Nothing in this repository deploys into it: Storage and
+  Key Vault are reached through service endpoints on the App Service subnet, and MySQL uses the delegated
+  database subnet
 - Network Security Groups (NSGs) with least-privilege rules
 
 ## Architecture
@@ -31,8 +33,8 @@ This module creates:
 │  │   PE Subnet     │                                   │
 │  │  (10.0.2.0/24)  │                                   │
 │  │                 │                                   │
-│  │  Private        │                                   │
-│  │  Endpoints      │                                   │
+│  │  Reserved,      │                                   │
+│  │  empty          │                                   │
 │  └─────────────────┘                                   │
 └─────────────────────────────────────────────────────────┘
 ```
