@@ -8,8 +8,8 @@ This module creates:
 - Virtual Network (VNet) with site-specific address space
 - App Service integration subnet (delegated to Microsoft.Web/serverFarms)
 - Database subnet (delegated to Microsoft.DBforMySQL/flexibleServers)
-- Private Endpoint subnet for Storage/Key Vault
-- Network Security Groups (NSGs) with least-privilege rules
+- Private Endpoint subnet (reserved: no module in this repository places an endpoint in it)
+- Network Security Groups (NSGs) on the App Service and database subnets (see [Security](#security))
 
 ## Architecture
 
@@ -31,8 +31,8 @@ This module creates:
 │  │   PE Subnet     │                                   │
 │  │  (10.0.2.0/24)  │                                   │
 │  │                 │                                   │
-│  │  Private        │                                   │
-│  │  Endpoints      │                                   │
+│  │  (reserved,     │                                   │
+│  │   unused)       │                                   │
 │  └─────────────────┘                                   │
 └─────────────────────────────────────────────────────────┘
 ```

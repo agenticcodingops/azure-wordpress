@@ -43,13 +43,14 @@ protect another.
 ```mermaid
 flowchart LR
     visitor(["Visitor browser"])
+    other(["Another tenant of the same CDN"])
     operator(["Operator or CI runner"])
 
     subgraph edge["Edge"]
         cdn["Cloudflare zone or Front Door profile<br/>TLS to visitors, optional WAF"]
     end
 
-    subgraph origin["Origin: App Service default endpoint"]
+    subgraph origin["Origin: App Service public endpoint"]
         rules{"Access restrictions"}
         app["Web app and staging slot<br/>WordPress container"]
     end
@@ -71,7 +72,9 @@ flowchart LR
     arm["Azure Resource Manager<br/>control plane"]
 
     visitor -->|"HTTPS"| cdn
-    cdn -->|"HTTPS"| rules
+    cdn -->|"forwarded request"| rules
+    visitor -.->|"when cdn_provider = direct, the default"| rules
+    other -.->|"shares the CDN's egress addresses"| rules
     rules -->|"allowed"| app
     operator -->|"HTTPS and credentials"| kudu
     kudu -.->|"shell and file access"| app
@@ -116,7 +119,7 @@ unmatched-rule action is `Allow`, so anyone can reach the app
   `:375-383`) and every IPv6 range (`:233-241`, slot `:385-393`);
 - `Deny` for everything else (`modules/app-service/main.tf:258`, slot `:414`).
 
-The ranges are read at apply time from Cloudflare's published list
+The ranges are read on every run from Cloudflare's published list
 (`modules/wordpress-site/main.tf:52-54` and `:507-508`). A built-in list is the fallback
 when the module is used on its own (`modules/app-service/main.tf:33-61`). These rules
 depend only on `cdn_provider`. They apply even when `cloudflare.enabled` is `false` and the
@@ -124,7 +127,8 @@ module manages no Cloudflare resources (`modules/wordpress-site/main.tf:153`).
 
 **With `cdn_provider = "azure_front_door"`**:
 
-- The app and the slot allow the `AzureFrontDoor.Backend` service tag and deny the rest
+- The app and the slot allow the health probe address above and the
+  `AzureFrontDoor.Backend` service tag, and deny the rest
   (`modules/app-service/main.tf:244-258`, slot `:401-414`).
 - The service tag covers every Front Door instance, not only yours. A second step pins the
   main app to your instance: after Front Door exists, `azapi_update_resource` replaces the
@@ -137,6 +141,14 @@ module manages no Cloudflare resources (`modules/wordpress-site/main.tf:153`).
   header list (`modules/app-service/main.tf:252`, with `front_door_id` never passed in,
   `modules/wordpress-site/main.tf:499-502`). In that window it admits any Front Door
   instance, as the comment at `modules/wordpress-site/main.tf:831` warns.
+- The web app resource manages the whole rule list and does not ignore changes to it
+  (`modules/app-service/main.tf:316-326`). Whether a later apply removes the header check
+  again is **UNKNOWN**; see [Unknowns](#unknowns).
+- The origin rules follow `cdn_provider` alone (`modules/wordpress-site/main.tf:501`).
+  Front Door itself, and the header update, also need `front_door.enabled`, which defaults
+  to `true` (`modules/wordpress-site/main.tf:141`, `:776`, `:834`). With
+  `cdn_provider = "azure_front_door"` and `front_door.enabled = false`, the app admits every
+  Front Door instance and never gets the header check.
 
 Microsoft documents the service-tag-plus-header pattern in
 [Access restrictions](https://learn.microsoft.com/en-us/azure/app-service/overview-access-restrictions#restrict-access-to-a-specific-azure-front-door-instance).
@@ -184,7 +196,8 @@ What the module sets:
   (`modules/app-service/main.tf:172-173`, `:342-343`).
 - **SCM never inherits the main site's rules.** The module leaves
   `scm_use_main_ip_restriction` at its provider default, `false`
-  (`modules/app-service/main.tf:263-266`). Inheriting would lock operators out of Kudu.
+  (`modules/app-service/main.tf:263-266`). With a CDN set, inheriting would lock operators
+  out of Kudu.
 
 Hardening SCM is therefore opt-in. The
 [app-service README](../modules/app-service/README.md#scmkudu-network-posture) explains how
@@ -209,8 +222,9 @@ what breaks when you turn basic auth off.
   References reach the vault through the allow-listed subnet instead. The code comment at
   `modules/key-vault/main.tf:50-51` says otherwise; the Microsoft table is the authority.
 - Terraform is not a trusted service. Its secret writes need an entry in
-  `key_vault_network_acls_ip_rules`, or public access turned on
-  (`modules/wordpress-site/variables.tf:130-140`).
+  `key_vault_network_acls_ip_rules`, a runner subnet in
+  `key_vault_network_acls_virtual_network_subnet_ids`, or public access turned on
+  (`modules/wordpress-site/variables.tf:130-146`).
 - The vault uses access policies, not Azure RBAC (`modules/key-vault/main.tf:45`).
 - Purge protection is on in production and off in nonprod, unless you set it
   (`modules/wordpress-site/main.tf:113-116`).
@@ -291,6 +305,7 @@ sequenceDiagram
     TF->>KV: Write secret db-password (needs an allow-list entry)
     TF->>AS: Create the app with DATABASE_PASSWORD set to a Key Vault reference
     TF->>KV: Grant the app identity Get and List on secrets
+    Note over TF,AS: The app exists, and can start, before this grant
     Note over AS,KV: Resolved at start, after a configuration change,<br/>and at least every 24 hours
     AS->>ID: Request a token for the app identity
     ID-->>AS: Access token
@@ -318,6 +333,12 @@ pages:
 - If a reference cannot be resolved, the app sees the literal `@Microsoft.KeyVault(...)`
   string instead of the secret.
 
+The module grants the app's access only after the app exists: both access policies depend
+on the app-service module (`modules/wordpress-site/main.tf:541-544`, `:564-567`), and the
+key-vault module's own app policy is never created, because it receives a placeholder ID
+(`modules/wordpress-site/main.tf:403`; `modules/key-vault/main.tf:73`). How soon the app
+resolves its references after the grant is **UNKNOWN**; see [Unknowns](#unknowns).
+
 ### TLS settings
 
 | Where | Setting | Code |
@@ -330,11 +351,13 @@ pages:
 | Front Door route | HTTPS to the origin, HTTP redirected to HTTPS | `modules/front-door/main.tf:93`, `:95` |
 | Front Door origin | Certificate name check on | `modules/front-door/main.tf:69` |
 | Cloudflare zone | `ssl = strict`, minimum TLS 1.2, Always Use HTTPS, **only when `cloudflare.enable_zone_setting_overrides = true`** | `modules/cloudflare/main.tf:134-158`; defaults `modules/cloudflare/variables.tf:68-72`, `:79-82`; off by default `modules/wordpress-site/variables.tf:347` |
+| Cloudflare page rules | `ssl = strict` on `/wp-admin/*`, `/wp-login.php*` and `/wp-content/*`, **on by default** whenever `cloudflare.enabled = true` (`cloudflare.enable_page_rules` defaults to `true`) | `modules/cloudflare/page-rules.tf:17-86`; default `modules/wordpress-site/variables.tf:345` |
 | MySQL | TLS **not** required: `require_secure_transport = OFF` | `modules/database/main.tf:91-96` |
 
 The custom host-name binding on App Service has no certificate
-(`modules/wordpress-site/main.tf:942-969`). Which Cloudflare SSL mode works end to end with
-that binding is **UNKNOWN**; see [Unknowns](#unknowns).
+(`modules/wordpress-site/main.tf:942-969`). Whether Full (strict) works end to end with that
+binding is **UNKNOWN**; see [Unknowns](#unknowns). With the default page rules, that question
+applies to the admin, login and content paths whatever the zone setting is.
 
 ### Edge
 
@@ -346,9 +369,12 @@ that binding is **UNKNOWN**; see [Unknowns](#unknowns).
   (`modules/front-door/main.tf:127-166`). The default SKU is Premium
   (`modules/wordpress-site/main.tf:142`).
 - **Cloudflare** (`cdn_provider = "cloudflare"` and `cloudflare.enabled = true`): the
-  module manages the zone's DNS records and proxies them unless you set
+  module manages the site's DNS records and proxies the site's CNAME records unless you set
   `cloudflare.proxied = false` (`modules/wordpress-site/main.tf:153`;
-  `modules/wordpress-site/variables.tf:343`; `modules/cloudflare/main.tf:55`). With `cloudflare.enable_waf = true` (default `false`,
+  `modules/wordpress-site/variables.tf:343`; `modules/cloudflare/main.tf:48-126`). Page
+  rules, on by default, bypass the cache and set `security_level = "high"` and
+  `ssl = "strict"` on `/wp-admin/*` and `/wp-login.php*` (`modules/cloudflare/page-rules.tf:17-64`;
+  `modules/wordpress-site/variables.tf:345`). With `cloudflare.enable_waf = true` (default `false`,
   `modules/wordpress-site/variables.tf:344`), the module adds custom block and challenge
   rules (`modules/cloudflare/waf.tf:131-181`) and rate limits on `/wp-login.php` and
   `/xmlrpc.php` (`modules/cloudflare/waf.tf:82-124`). It also adds skip rules in the
@@ -372,12 +398,19 @@ staging slot is not (see [Origin restricted to the CDN](#origin-restricted-to-th
 
 ### Protecting `/wp-admin`
 
-Nothing in the module protects `/wp-admin` or `/wp-login.php` beyond WordPress's own login.
-When `enable_waf = true`, the Cloudflare rules rate-limit login POSTs
-(`modules/cloudflare/waf.tf:93-107`), and they skip the managed-rules phase for admin paths
-(`modules/cloudflare/waf.tf:30-44`). A pattern for adding an identity-aware proxy at the edge
-and a token check at the origin is tracked in
-[issue #76](https://github.com/agenticcodingops/azure-wordpress/issues/76).
+The module puts no identity or access gate in front of `/wp-admin` or `/wp-login.php`.
+WordPress's own login is the only authentication. The edge features that do touch those
+paths are general, not an access control:
+
+- the Front Door WAF policy covers every path (`modules/front-door/main.tf:186-198`);
+- the Cloudflare page rules set `security_level = "high"` on both paths
+  (`modules/cloudflare/page-rules.tf:29`, `:56`);
+- with `enable_waf = true`, the Cloudflare rules rate-limit login POSTs
+  (`modules/cloudflare/waf.tf:93-107`) and add skip rules for admin paths in the
+  managed-rules phase (`modules/cloudflare/waf.tf:30-44`).
+
+A pattern for adding an identity-aware proxy at the edge and a token check at the origin is
+tracked in [issue #76](https://github.com/agenticcodingops/azure-wordpress/issues/76).
 
 ### WAF rules beyond what the CDN plan provides
 
@@ -385,9 +418,13 @@ The module configures the WAF features listed under [Edge](#edge) and nothing mo
 rule sets, bot management and rate limiting depend on your CDN plan:
 
 - On Cloudflare, `enable_waf` needs a Pro plan or higher
-  (`modules/wordpress-site/main.tf:150-151`). The module deploys no managed ruleset. If you
-  deploy one yourself, check how it interacts with the skip rules above, which match on a
-  cookie name that any client can send (`modules/cloudflare/waf.tf:51-55`).
+  (`modules/wordpress-site/main.tf:150-151`). Its rate-limit ruleset has two rules with a
+  60-second period (`modules/cloudflare/waf.tf:91-123`). Cloudflare's Free plan allows one
+  rule with a 10-second period; Pro allows two, with periods up to one minute
+  ([rate limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)).
+- The module deploys no Cloudflare managed ruleset. If you deploy one yourself, check how
+  it interacts with the skip rules above, which match on a cookie name that any client can
+  send (`modules/cloudflare/waf.tf:51-55`).
 - On Front Door, the WAF policy takes the profile's SKU (`modules/front-door/main.tf:117`).
   Microsoft's managed rule set and bot protection are available on the Premium tier, not
   on Standard
@@ -421,8 +458,8 @@ creates no lower-privilege database user.
 
 The blob service allows `GET`, `HEAD`, `PUT` and `OPTIONS` from any origin
 (`modules/storage/main.tf:67-73`). The code comment says "Restricted by WAF", but direct
-requests to the blob endpoint do not pass through a CDN WAF. Writes still need a valid key
-or SAS token.
+requests to the blob endpoint do not pass through a CDN WAF. Writes still need
+authorization: the account key, a SAS token or a Microsoft Entra ID token.
 
 ### Secret rotation
 
@@ -449,7 +486,17 @@ For each site, state holds at least:
   `modules/storage/outputs.tf:24-34`);
 - the Application Insights connection string (`modules/wordpress-site/main.tf:380`);
 - every value you pass in `extra_secrets` (`modules/wordpress-site/variables.tf:808-813`),
-  because each becomes a Key Vault secret resource (`modules/key-vault/main.tf:105-110`).
+  because each becomes a Key Vault secret resource (`modules/key-vault/main.tf:105-110`);
+- the publishing credentials of the app and the slot. The azurerm provider exports a
+  `site_credential` block on the web app, with "the Site Credentials Password used for
+  publishing"
+  ([linux_web_app](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/linux_web_app)).
+  With basic auth on (the default, see [SCM plane](#scm-plane)), these open Kudu;
+- the Log Analytics workspace's shared keys, when the module creates the workspace
+  (`modules/wordpress-site/main.tf:260-270`), and the Application Insights instrumentation
+  key (`modules/wordpress-site/main.tf:273-282`). The provider exports both as attributes
+  ([log_analytics_workspace](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/log_analytics_workspace),
+  [application_insights](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/application_insights)).
 
 Plan files can hold the same values: HashiCorp says "Terraform state and plan files"
 can contain sensitive values.
@@ -495,7 +542,8 @@ terraform {
 > ignores password changes (`ignore_changes = [administrator_password]`,
 > `modules/database/main.tf:80-83`). A new `random_password` result updates the
 > `db-password` Key Vault secret, which the app reads, but not the server. WordPress would
-> then fail to connect. A tested rotation procedure is **UNKNOWN**: none exists yet.
+> fail to connect as soon as the app refetches the secret. A tested rotation procedure is
+> **UNKNOWN**: none exists yet.
 
 ## Unknowns
 
@@ -505,14 +553,27 @@ These could not be confirmed from the code or from vendor documentation:
    comment at `modules/database/main.tf:88-90` says.
 2. Whether the WordPress container can use TLS for its MySQL connection if
    `require_secure_transport` were turned on.
-3. Whether a later apply that changes the web app briefly removes the `X-Azure-FDID`
-   check before `azapi_update_resource` adds it back
-   (`modules/wordpress-site/main.tf:833-871`). This has not been tested.
-4. Which Cloudflare SSL mode works end to end with the module's host-name binding, which
-   carries no certificate (`modules/wordpress-site/main.tf:942-969`).
-5. What the Cloudflare skip rules in the managed-rules phase skip, given that the module
-   deploys no managed ruleset (`modules/cloudflare/waf.tf:19-75`).
-6. A tested procedure for rotating the database password, the storage key or the
+3. Whether a later apply removes the `X-Azure-FDID` check, and for how long. The web app
+   resource manages the whole rule list with no `ignore_changes`
+   (`modules/app-service/main.tf:316-326`), and in the azurerm provider source `ip_restriction`
+   is optional, not computed
+   ([`IpRestrictionSchema`](https://github.com/hashicorp/terraform-provider-azurerm/blob/main/internal/services/appservice/helpers/shared_schema.go)). So the next plan may show drift and restore the rules without
+   the header, until `azapi_update_resource` (`modules/wordpress-site/main.tf:833-871`) adds it
+   back on a later apply. This has not been tested.
+4. Whether Cloudflare's Full (strict) mode works end to end with the module's host-name
+   binding, which carries no certificate (`modules/wordpress-site/main.tf:942-969`). The
+   default page rules use it on the admin, login and content paths
+   (`modules/cloudflare/page-rules.tf:30`, `:57`, `:79`).
+5. What the Cloudflare skip rules achieve. A skip with `ruleset = "current"` skips the
+   remaining rules of the ruleset it is in
+   ([actions](https://developers.cloudflare.com/ruleset-engine/rules-language/actions/)).
+   The module's managed-phase ruleset holds only skip rules
+   (`modules/cloudflare/waf.tf:19-75`), so on its own it appears to skip nothing. How it
+   interacts with a managed ruleset deployed outside Terraform is not known.
+6. How soon a new app resolves its Key Vault references after the module grants its
+   identity access, which happens after the app is created
+   (`modules/wordpress-site/main.tf:541-544`).
+7. A tested procedure for rotating the database password, the storage key or the
    Application Insights connection string.
 
 ## References
@@ -529,10 +590,17 @@ Microsoft:
 - [SAS expiration policy](https://learn.microsoft.com/en-us/azure/storage/common/sas-expiration-policy)
 - [Azure Front Door tier comparison](https://learn.microsoft.com/en-us/azure/frontdoor/front-door-cdn-comparison)
 
+Cloudflare:
+
+- [Rate limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)
+- [Rules language: actions](https://developers.cloudflare.com/ruleset-engine/rules-language/actions/)
+
 HashiCorp:
 
 - [Manage sensitive data in your configuration](https://developer.hashicorp.com/terraform/language/state/sensitive-data)
 - [Input variables](https://developer.hashicorp.com/terraform/language/values/variables)
+- [azurerm provider resources](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs):
+  `linux_web_app`, `log_analytics_workspace`, `application_insights`
 - [azurerm backend](https://developer.hashicorp.com/terraform/language/backend/azurerm)
 
 This repository:
