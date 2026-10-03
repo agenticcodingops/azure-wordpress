@@ -22,7 +22,9 @@ Deploy production-ready WordPress sites on Azure with Cloudflare CDN using Terra
 One call to `modules/wordpress-site` deploys one site:
 
 - **Edge.** `cdn_provider` chooses Cloudflare (`cloudflare`), Azure Front Door (`azure_front_door`) or no CDN
-  (`direct`, the default). Only one is created. With a CDN, the web app accepts requests only from it.
+  (`direct`, the default). Only one is created. With a CDN, the web app's main site accepts only that CDN's
+  traffic: Cloudflare's address ranges, or your own Front Door profile. The staging slot and the SCM endpoint have
+  looser rules; see [Network](docs/architecture.md#network).
 - **Web tier.** A Linux web app runs the Microsoft WordPress container, with a staging slot on S\* and P\* SKUs.
   Several sites can share one App Service plan.
 - **Database.** MySQL Flexible Server runs on a delegated subnet and is found through a private DNS zone. It has
@@ -113,7 +115,8 @@ See [examples/](examples/) for complete configurations.
 
 - Your configuration calls `wordpress-site` once per site, and `shared-infrastructure` once if sites share a plan.
 - `wordpress-site` calls `networking` and `dns-zones` (Layer 1), then `database`, `storage`, `key-vault` and
-  `app-service` (Layer 2). After the web app exists it calls `front-door` or `cloudflare`, as `cdn_provider` says.
+  `app-service` (Layer 2). It also calls `front-door` or `cloudflare`, as `cdn_provider` says. Front Door and the
+  Cloudflare DNS records wait for the web app.
 - `wordpress-site` creates Log Analytics, Application Insights, diagnostic settings, alerts and the action group
   itself. `monitoring` is a standalone module that it does not call.
 
@@ -176,8 +179,9 @@ module "site1" {
 - **Key Vault References**: Secrets loaded at runtime
 - **Firewalls**: Key Vault and Storage deny public data-plane access by default; the App Service subnet is allowed
   through service endpoints
-- **IP Restrictions**: With `cloudflare` or `azure_front_door`, the main site accepts only that CDN. The SCM
-  (Kudu) endpoint has its own rules and allows all addresses by default
+- **IP Restrictions**: With `cloudflare`, the main site accepts only Cloudflare's address ranges. With
+  `azure_front_door`, it accepts only your Front Door profile, while the staging slot accepts any Front Door
+  profile. The SCM (Kudu) endpoint has its own rules and allows all addresses by default
 - **TLS 1.2**: Minimum version on the web app, the storage account and the Front Door custom domain. MySQL does
   not require TLS (`require_secure_transport = OFF`)
 

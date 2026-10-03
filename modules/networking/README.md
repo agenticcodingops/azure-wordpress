@@ -84,7 +84,9 @@ module "networking" {
 ## Security
 
 - NSGs implement least-privilege access
-- App subnet only allows HTTPS from Azure Front Door
+- The App subnet NSG has inbound rules for HTTPS from Azure Front Door and App Service management. Inbound NSG
+  rules do not apply to an App Service integration subnet, so the web app's access restrictions filter inbound
+  requests instead; see [Network](../../docs/architecture.md#network)
 - Database subnet only allows MySQL (3306) from App subnet
 - All other inbound traffic is denied
 

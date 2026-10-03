@@ -72,7 +72,7 @@ flowchart TB
     browser -->|"HTTPS"| cf
     browser -->|"HTTPS"| afd
     browser -.->|"HTTPS, cdn_provider = direct"| app
-    cf -->|"HTTPS to the origin"| app
+    cf -->|"to the origin"| app
     afd -->|"HTTPS to the origin"| app
     browser -.->|"media URLs written by the storage plugin"| st
     plan --- app
@@ -93,7 +93,7 @@ What each part is:
 | Part | Created by | Notes |
 | --- | --- | --- |
 | Cloudflare proxy | `modules/cloudflare`, only when `cdn_provider = "cloudflare"` and `cloudflare.enabled = true` | Reads an existing zone. It does not create one. |
-| Front Door | `modules/front-door`, only when `cdn_provider = "azure_front_door"` | Premium SKU by default. |
+| Front Door | `modules/front-door`, only when `cdn_provider = "azure_front_door"` and `front_door.enabled` is true (the default) | Premium SKU by default. |
 | App Service plan | `modules/app-service`, unless you pass `plan_id` or `use_shared_plan = true` | Its own plan gets an autoscale setting of 1 to 5 instances. |
 | Linux web app | `modules/app-service` | System-assigned managed identity. Outbound virtual network integration. |
 | Staging slot | `modules/app-service`, only on S\* and P\* SKUs | Its own managed identity. The same database and storage settings as the web app. |
@@ -103,11 +103,12 @@ What each part is:
 | Log Analytics, Application Insights | `modules/wordpress-site` itself | The workspace is skipped when you pass `monitoring.log_analytics_workspace_id`. |
 | Alert rules, action group | `modules/wordpress-site` itself | See [Monitoring](#monitoring). |
 
-Everything lives in the site resource group `rg-PROJECT-SITE-ENV`, except in one case. With
+Everything lives in the site resource group `rg-PROJECT-SITE-SUFFIX`, where `SUFFIX` is `np` or `prod`, except in
+one case. With
 `use_shared_plan = true`, the web app and its slot live in the shared plan's resource group, because Azure needs a
 web app and its plan in the same group.
 
-Sources: `modules/wordpress-site/main.tf:135`, `:141`, `:153`, `:185-188`, `:260-282`, `:291-327`, `:330-372`,
+Sources: `modules/wordpress-site/main.tf:79`, `:135`, `:141-142`, `:153`, `:185-188`, `:260-282`, `:291-327`, `:330-372`,
 `:387-437`, `:452-528`, `:652-668`, `:775-797`, `:878-913`; `modules/app-service/main.tf:16`, `:139-152`,
 `:155-181`, `:331-351`, `:436-440`, `:449-464`; `modules/database/main.tf:35-85`, `:120-126`;
 `modules/key-vault/main.tf:29-68`; `modules/storage/main.tf:15-24`, `:88-92`; `modules/storage/variables.tf:110-114`;
@@ -127,7 +128,7 @@ flowchart TB
         dns["module.dns_zones<br/>MySQL private DNS zone and VNet link"]
     end
 
-    subgraph early["Created between the layers, inline"]
+    subgraph early["Early and inline, parallel to Layer 1"]
         law["Log Analytics workspace<br/>skipped if you pass one in"]
         appi["Application Insights"]
     end
@@ -143,7 +144,7 @@ flowchart TB
     subgraph after["After the web app"]
         fd["module.front_door<br/>azure_front_door only"]
         patch["azapi_update_resource<br/>X-Azure-FDID restriction"]
-        cfm["module.cloudflare<br/>cloudflare only"]
+        cfm["module.cloudflare DNS records<br/>cloudflare only"]
         wait["time_sleep 120 s<br/>cloudflare only"]
         bind["Custom hostname binding"]
     end
@@ -158,6 +159,7 @@ flowchart TB
     app -->|"principal IDs"| pol
     app --> fd --> patch
     app --> cfm --> wait --> bind
+    app --> bind
 ```
 
 **Why Application Insights comes first** (the bold arrows). The web app's `APPLICATIONINSIGHTS_CONNECTION_STRING`
@@ -167,9 +169,10 @@ setting is a Key Vault reference to the `appinsights-connection` secret. So the 
 2. `module.key_vault` stores that connection string as a secret. It depends on `azurerm_application_insights.main`.
 3. `module.app_service` gets the secret's URI. It depends on `module.key_vault`.
 
-The standalone `modules/monitoring` cannot fill step 1. It takes `app_service_id` as an input, so it can only be
-created after the web app, and the web app needs the secret first. That is why the composition creates the
-workspace and Application Insights inline, and never calls `modules/monitoring`.
+The composition creates the workspace and Application Insights itself, early, and its comments describe this as
+breaking a circular dependency. It never calls the standalone `modules/monitoring`, which bundles Application
+Insights with diagnostic settings and alerts that take the web app's ID as an input. The workspace and
+Application Insights depend only on the resource group, so Terraform creates them in parallel with Layer 1.
 
 **Why the Key Vault access policies come last.** The web app's managed identity exists only once the web app does.
 `module.key_vault` therefore receives an all-zero placeholder principal, which skips its own app policy. The
@@ -182,8 +185,10 @@ Other ordering facts, left out of the diagram:
   `module.database` and `module.key_vault`.
 - Diagnostic settings and alerts follow the resource they watch. Availability tests wait for the hostname binding
   and, with Front Door, for `module.front_door`.
-- `module.cloudflare` has no `depends_on`. Its records wait for the web app through the default host name and
-  domain verification ID it receives.
+- `module.cloudflare` has no `depends_on`. Its DNS records wait for the web app through the default host name and
+  domain verification ID they receive. Its zone lookup and rules do not wait.
+- The hostname binding always waits for the web app. With Cloudflare it also waits for the DNS records and the
+  120-second wait.
 - The 120-second wait gives the `asuid` TXT record time to propagate before the hostname binding is created. It
   exists only with Cloudflare and a custom domain that is not an `azurewebsites.net` name.
 - The management lock depends only on the resource group. A `CanNotDelete` lock makes Azure refuse every delete in
@@ -194,7 +199,8 @@ Sources: `modules/wordpress-site/main.tf:1-12`, `:185-213`, `:221-251`, `:260-28
 `:377-381`, `:387-437` (placeholder `:403`, `depends_on` `:432-436`), `:452-528` (`depends_on` `:522-527`),
 `:531-568`, `:581-632`, `:775-797`, `:833-871`, `:878-913`, `:924-969`, `:1003-1016`;
 `modules/wordpress-site/monitoring.tf:117`; `modules/app-service/main.tf:78`; `modules/key-vault/main.tf:72-84`;
-`modules/monitoring/variables.tf:63-66`; `modules/wordpress-site/README.md:608-622`.
+`modules/monitoring/main.tf:43-54`, `:57-59`; `modules/monitoring/variables.tf:63-66`; `modules/wordpress-site/main.tf:253-257`, `:265`,
+`:277`, `:947`, `:956-960`; site module README, [Resource locks](../modules/wordpress-site/README.md#resource-locks).
 
 ## Request flow: Cloudflare
 
@@ -216,7 +222,7 @@ sequenceDiagram
     alt Served from the Cloudflare cache
         CF-->>B: Cached response
     else Forwarded to the origin
-        CF->>App: HTTPS request to the web app
+        CF->>App: Request to the web app, protocol set by the zone SSL/TLS mode
         App->>App: Access restrictions allow Cloudflare ranges and 168.63.129.16, deny the rest
         App->>DB: SQL over the virtual network
         DB-->>App: Rows
@@ -224,7 +230,7 @@ sequenceDiagram
         CF-->>B: Response
     end
     B->>Blob: GET each media file directly, not through Cloudflare
-    Blob-->>B: Media file, or 403 while the storage firewall denies public access
+    Blob-->>B: Media file, or an error - see the Media section
 ```
 
 What the code sets up for this flow:
@@ -237,6 +243,10 @@ What the code sets up for this flow:
 - **Origin lock-down.** The web app and the slot allow Cloudflare's IPv4 and IPv6 ranges and `168.63.129.16/32`, and
   deny everything else. The composition reads the ranges live from `data.cloudflare_ip_ranges` on every run. The
   app-service module falls back to a built-in list only when it is called without them.
+- **Origin protocol.** Cloudflare connects to the origin over HTTP or HTTPS, as the zone's SSL/TLS mode says. The
+  module sets that mode only when `enable_zone_setting_overrides` is true (off by default), and the three page
+  rules set `ssl = "strict"` for their own paths. The web app has `https_only = true`. Which mode an unmanaged zone
+  uses, and whether strict mode validates against the web app with no custom-domain certificate bound, is UNKNOWN.
 - **Edge rules.** Three page rules are on by default: bypass the cache for `wp-admin` and `wp-login.php`, and cache
   `wp-content`. Cache rules (`enable_cache_rules`), WAF rulesets (`enable_waf`, which needs the Pro plan or higher)
   and zone setting overrides are off by default.
@@ -246,13 +256,13 @@ What the code sets up for this flow:
 
 Sources: `modules/wordpress-site/main.tf:52-54`, `:152-163`, `:504-508`, `:878-913`, `:924-969`;
 `modules/wordpress-site/variables.tf:336-351`; `modules/cloudflare/main.tf:37-40`, `:48-87`, `:111-126`,
-`:134-140`; `modules/cloudflare/page-rules.tf:17-95`, `:97`; `modules/cloudflare/waf.tf:20`, `:83`, `:132`;
-`modules/app-service/main.tf:28-61`, `:214-241`, `:258`, `:368-393`, `:414`.
+`:134-140`; `modules/cloudflare/variables.tf:68-72`; `modules/cloudflare/page-rules.tf:17-86` (`ssl` `:30`, `:57`, `:79`), `:97`; `modules/cloudflare/waf.tf:20`, `:83`, `:132`;
+`modules/wordpress-site/main.tf:161`; `modules/app-service/main.tf:28-61`, `:165`, `:214-241`, `:258`, `:368-393`, `:414`.
 
 ## Request flow: Azure Front Door
 
-With `cdn_provider = "azure_front_door"`, the composition creates a Front Door profile and then narrows the web
-app's access restriction to that one profile. The restriction is patched after Front Door exists, because the web
+With `cdn_provider = "azure_front_door"` (and `front_door.enabled`, which defaults to `true`), the composition
+creates a Front Door profile and then narrows the web app's access restriction to that one profile. The restriction is patched after Front Door exists, because the web
 app has to exist before Front Door can name it as an origin.
 
 ```mermaid
@@ -294,10 +304,15 @@ What the code sets up for this flow:
   because other Azure customers' Front Door profiles use the same `AzureFrontDoor.Backend` addresses.
 - **The patch replaces the whole list.** After it runs, the web app's main-site restrictions are exactly two rules:
   the Front Door allow rule and a deny-all rule. The `AllowAzureHealthProbe` rule that the app-service module
-  declares is not in the patched list. Whether a later `terraform plan` then shows a change on the web app is
-  UNKNOWN: this repository has no plan or test of this mode.
+  declares is not in the patched list. The web app resource ignores changes only to one app setting, so a later
+  `terraform plan` is expected to show an update that restores the module's own list: the health-probe rule, and
+  no `X-Azure-FDID` value. This follows from the code but is untested here. Review the web app's plan in this mode
+  before every apply.
 - **The staging slot is not patched.** It allows the `AzureFrontDoor.Backend` service tag without an `X-Azure-FDID`
   check, so any Front Door profile can reach it.
+- **`front_door.enabled = false`** with `cdn_provider = "azure_front_door"` creates no profile and no patch. The
+  web app and the slot still allow the `AzureFrontDoor.Backend` service tag with no `X-Azure-FDID` check, and deny
+  the rest.
 - **WAF.** The policy uses Microsoft's Default Rule Set 2.1 and Bot Manager 1.1, with WordPress cookie exclusions.
   Rules 942230 and 941320 are set to log only. The mode is `Prevention` in production and `Detection` in nonprod
   unless you set `front_door.waf_mode`.
@@ -314,9 +329,10 @@ What the code sets up for this flow:
   app's domain verification ID. Both examples in this repository use `cloudflare`, so whether this mode applies
   cleanly on a first deploy is UNKNOWN.
 
-Sources: `modules/wordpress-site/main.tf:140-146`, `:775-797`, `:833-871`, `:878-880`, `:942-969`;
+Sources: `modules/wordpress-site/main.tf:140-146`, `:501-502`, `:775-797`, `:833-871`, `:878-880`, `:942-969`;
 `modules/wordpress-site/outputs.tf:146-164`; `modules/front-door/main.tf:17-201`, `:204-289` (route `:85-104`);
-`modules/front-door/outputs.tf:14-17`; `modules/app-service/main.tf:244-258`, `:395-414`;
+`modules/front-door/outputs.tf:14-17`; `modules/wordpress-site/variables.tf:311-321`;
+`modules/app-service/main.tf:28`, `:244-258`, `:322-325`, `:395-414`;
 `examples/basic-site/main.tf:109`; `examples/multi-site/main.tf:107`. Microsoft:
 [Secure traffic to origins](https://learn.microsoft.com/azure/frontdoor/origin-security),
 [What is a rule set?](https://learn.microsoft.com/azure/frontdoor/front-door-rules-engine).
@@ -347,9 +363,10 @@ WordPress media is stored in Blob Storage, not on an Azure Files mount. The web 
 3. **Reads.** The plugin rewrites media URLs to the account's own blob endpoint,
    `https://ACCOUNT.blob.core.windows.net/...`. Browsers therefore fetch media directly from Azure, not through
    Cloudflare or Front Door.
-4. **The firewall decides.** `storage_network_rules_default_action` defaults to `Deny`, which returns 403 to those
+4. **The firewall is one gate.** `storage_network_rules_default_action` defaults to `Deny`, which returns 403 to those
    browsers. Set it to `Allow` when media is served from the blob endpoint. Keep `Deny` only if you front the blob
-   endpoint with a CDN custom domain and allow-list that CDN's egress ranges.
+   endpoint with a CDN custom domain and allow-list that CDN's egress ranges. The container's access level is the
+   other gate; see the UNKNOWN below.
 
 With `cdn_provider = "cloudflare"`, Cloudflare's live IPv4 ranges are added to the account's allow-list. That
 covers Cloudflare origin pulls only if you put the blob endpoint behind a Cloudflare custom domain, which this
@@ -498,7 +515,8 @@ Sources: `modules/networking/main.tf:14-183` (app subnet `:27-52`, db subnet `:5
 NSGs `:87-171`); `modules/dns-zones/main.tf:7-27`; `modules/database/main.tf:64-66`, `:91-96`;
 `modules/wordpress-site/main.tf:173-178`, `:221-236`, `:357-366`, `:417-422`, `:513-517`, `:833-871`;
 `modules/wordpress-site/variables.tf:218-254`, `:788-797`; `modules/app-service/main.tf:85`, `:176`, `:191`,
-`:214-283`, `:416-432`; `modules/wordpress-site/README.md:153-178`. Microsoft:
+`:214-283`, `:416-432`; site module README,
+[Hardening the SCM/Kudu endpoint](../modules/wordpress-site/README.md#hardening-the-scmkudu-endpoint). Microsoft:
 [Integrate your app with an Azure virtual network](https://learn.microsoft.com/azure/app-service/overview-vnet-integration),
 [Private network access for Azure Database for MySQL](https://learn.microsoft.com/azure/mysql/flexible-server/concepts-networking-vnet).
 
@@ -550,7 +568,7 @@ flowchart TB
 | --- | --- | --- | --- |
 | Web app | Always | `AppServiceHTTPLogs`, `AppServiceConsoleLogs`, `AppServiceAppLogs`, `AppServicePlatformLogs` | `AllMetrics` |
 | MySQL server | Always | `MySqlSlowLogs`, `MySqlAuditLogs` | `AllMetrics` |
-| Front Door profile | `cdn_provider = "azure_front_door"` | `FrontDoorAccessLog`, `FrontDoorHealthProbeLog`, `FrontDoorWebApplicationFirewallLog` | `AllMetrics` |
+| Front Door profile | `cdn_provider = "azure_front_door"` and `front_door.enabled` | `FrontDoorAccessLog`, `FrontDoorHealthProbeLog`, `FrontDoorWebApplicationFirewallLog` | `AllMetrics` |
 | Key Vault | `key_vault_diagnostic_settings` is set | `AuditEvent` by default | `AllMetrics` by default |
 | Blob service | `storage_blob_diagnostic_settings` is set | `StorageRead`, `StorageWrite`, `StorageDelete` by default | `Transaction` by default |
 | Staging slot | `staging_slot_diagnostic_settings` is set, on S\* and P\* only | The four App Service categories by default | `AllMetrics` by default |
@@ -565,7 +583,7 @@ action group exists only when `alert_recipients` is non-empty, and has one email
 - The three baseline alerts exist whenever a route exists: `alert_recipients` or `extra_action_group_ids`.
 - The opt-in families, and the availability alerts, fail the plan if you enable them with no route.
 - The 5xx-rate alert queries `AppServiceHTTPLogs` in the workspace. It counts only the production app, and drops
-  requests to the app's Kudu host and its `/AppServiceTunnel/` path.
+  requests to the app's Kudu host, and requests to any `/AppServiceTunnel/` path.
 - The Resource Health alert watches the web app, MySQL server, Key Vault and storage account, plus the plan when the
   site owns it.
 - Availability tests are Standard tests. Classic URL ping tests are never created.
@@ -582,7 +600,7 @@ For thresholds and examples, see [Alerting](../modules/wordpress-site/README.md#
 Sources: `modules/wordpress-site/main.tf:166-170`, `:181`, `:201-204`, `:260-282`, `:576-632`, `:642-772`,
 `:800-826`; `modules/wordpress-site/monitoring.tf:20-37`, `:41`, `:44-146`, `:152-274`, `:282-344`, `:351-380`,
 `:386-426`, `:433-658`; `modules/wordpress-site/variables.tf:360-496`; `modules/app-service/main.tf:78`;
-`modules/wordpress-site/README.md:483-497`.
+site module README, [Failure Anomalies](../modules/wordpress-site/README.md#failure-anomalies-platform-created).
 
 ## Shared App Service plan
 

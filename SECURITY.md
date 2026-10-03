@@ -64,7 +64,7 @@ When using azure-wordpress, follow these security recommendations:
 - Use **Cloudflare proxy** or **Azure Front Door WAF** to protect origin
 - Restrict App Service access to CDN IPs only when using Cloudflare
 - **TLS 1.2 minimum** is enforced on the web app, the storage account and the Front Door custom domain. MySQL
-  does not require TLS by default (`require_secure_transport = OFF`)
+  does not require TLS: the module sets `require_secure_transport = OFF`
 - See [docs/architecture.md](docs/architecture.md#network) for the network design
 
 ### Access Control
