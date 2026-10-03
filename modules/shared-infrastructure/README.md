@@ -30,13 +30,9 @@ This module creates a shared App Service Plan that hosts multiple WordPress site
 
 ## Cost Savings
 
-| Configuration | App Service Plans | Monthly Cost (B1) |
-|---------------|-------------------|-------------------|
-| **Before** (1 plan/site) | 4 plans | ~$52 |
-| **After** (shared) | 2 plans | ~$26 |
-| **Savings** | 50% | ~$26/month |
-
-*Savings increase as more sites are added to the shared plans.*
+A shared plan is paid once instead of once per site; each site still pays for its own MySQL server, storage,
+Key Vault and DNS zone. See the [cost guide](../../docs/cost.md#2-estimate-a-shared-plan) for dated prices and a
+worked comparison.
 
 ## Usage
 

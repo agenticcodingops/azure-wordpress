@@ -57,7 +57,7 @@ outside that table; this example's Cloudflare settings work on the Free plan.
 ## SKU Note
 
 With a dedicated plan, the app-service module also creates an autoscale setting on the plan
-(`modules/app-service/main.tf:449-450`). Microsoft documents autoscale for Standard tier and up, and whether
+(`modules/app-service/main.tf:449-450` at v4.1.1). Microsoft documents autoscale for Standard tier and up, and whether
 Azure accepts it on a B1 plan has not been tested. If the apply fails on that setting, use `S1`, or a shared
 plan as in [`examples/multi-site`](../multi-site/). See
 [getting started](../../docs/getting-started.md#the-other-choices).

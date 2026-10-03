@@ -175,7 +175,7 @@ module "wordpress_site" {
   source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.0"
 
   project_name  = "myproject"
-  site_name     = "blog"
+  site_name     = "blog" # Key Vault and storage names derive from this and must be globally unique
   environment   = "nonprod"
   location      = "eastus"
   tenant_id     = data.azurerm_client_config.current.tenant_id
@@ -294,7 +294,7 @@ flowchart TB
 | Provider | Cost | WAF | SSL | Best For |
 |----------|------|-----|-----|----------|
 | `cloudflare` | Free tier available | Free | Universal SSL | Cost-optimized deployments |
-| `azure_front_door` | Monthly base fee; the default SKU is Premium (see [cost guide](docs/cost.md)) | Included (Premium) | Managed certs | Enterprise, compliance |
+| `azure_front_door` | Premium monthly base fee: the module's WAF policy needs Premium (see [cost guide](docs/cost.md)) | Included (Premium) | Managed certs | Enterprise, compliance |
 | `direct` | None | None | App Service cert | Dev/testing |
 
 ## Cost Optimization
