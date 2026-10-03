@@ -6,8 +6,8 @@ The following versions of azure-wordpress are currently supported with security 
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| 4.x     | :white_check_mark: |
+| < 4.0   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -48,7 +48,9 @@ Please include the following information in your report:
 
 ## Security Best Practices for Users
 
-When using azure-wordpress, follow these security recommendations:
+When using azure-wordpress, follow these security recommendations. The
+[security model](docs/security-model.md) explains what the module enforces, what it leaves
+to you, and the code behind each control.
 
 ### Secrets Management
 
@@ -59,21 +61,29 @@ When using azure-wordpress, follow these security recommendations:
 
 ### Network Security
 
-- Keep **private endpoints enabled** for MySQL (default configuration)
-- Use **Cloudflare proxy** or **Azure Front Door WAF** to protect origin
-- Restrict App Service access to CDN IPs only when using Cloudflare
-- Enable **TLS 1.2 minimum** (enforced by default)
+- MySQL Flexible Server uses **private access (VNet integration)** in a delegated subnet,
+  so it has no public endpoint. The module does not create a private endpoint for it.
+- Set `cdn_provider` to `"cloudflare"` or `"azure_front_door"`. The module then restricts
+  the origin to that CDN. The default, `"direct"`, leaves the origin open to everyone.
+- Restrict the **SCM (Kudu) endpoint** with `app_service_scm_ip_restrictions` and
+  `app_service_scm_ip_restriction_default_action = "Deny"`. It is open by default.
+- **TLS 1.2** is the minimum on App Service, the storage account and Front Door custom
+  domains. MySQL connections do **not** require TLS.
 
 ### Access Control
 
 - Follow **least privilege** principles for Azure RBAC
 - Use **separate service principals** for different environments
-- Enable **Azure AD authentication** for administrative access
+- Enable **Microsoft Entra ID authentication** for administrative access
 - Regularly rotate credentials and access keys
 
 ### State File Security
 
+- Terraform state holds the generated database password, the storage account key and
+  other secrets **in plain text**. Treat read access to state as access to those secrets.
+  See [Terraform state](docs/security-model.md#terraform-state-holds-generated-secrets).
 - Store Terraform state in **Azure Storage with encryption**
+- Authenticate the backend with **Microsoft Entra ID** (`use_azuread_auth = true`)
 - Enable **state file locking** using Azure Blob lease
 - Restrict access to state storage account
 - Consider using **Terraform Cloud** or **Azure DevOps** for state management
@@ -81,7 +91,7 @@ When using azure-wordpress, follow these security recommendations:
 ### Monitoring
 
 - Enable **Application Insights** for runtime monitoring
-- Configure **Azure Security Center** for threat detection
+- Configure **Microsoft Defender for Cloud** for threat detection
 - Set up **alerts** for suspicious activities
 - Regularly review **Azure Activity Logs**
 

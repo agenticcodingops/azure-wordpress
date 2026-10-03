@@ -81,10 +81,21 @@ module "networking" {
 
 ## Security
 
-- NSGs implement least-privilege access
-- App subnet only allows HTTPS from Azure Front Door
-- Database subnet only allows MySQL (3306) from App subnet
-- All other inbound traffic is denied
+- **Database subnet:** its NSG allows MySQL (TCP 3306) from the App Service subnet's address
+  range and denies all other inbound traffic.
+- **App Service subnet:** its NSG does **not** filter traffic to the web app. Virtual network
+  integration carries only outbound traffic from the app, and Microsoft states that
+  "inbound rules in an NSG don't apply to your app"
+  ([virtual network integration](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration#network-routing)).
+  The NSG's inbound rules (HTTPS from `AzureFrontDoor.Backend` and `AppServiceManagement`,
+  then deny all) therefore do not restrict visitors. App Service access restrictions in the
+  `app-service` module do that. The NSG has no outbound rules, so Azure's default outbound
+  rules apply.
+- **Private endpoint subnet:** created, but no module in this repository places a private
+  endpoint in it.
+
+See the [security model](../../docs/security-model.md) for how these fit with the other
+controls.
 
 ## Validation Rules
 
