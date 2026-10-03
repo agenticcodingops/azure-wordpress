@@ -11,7 +11,7 @@ This module creates:
 - A subnet reserved for private endpoints (`snet-pe-*`). Nothing in this repository deploys into it: Storage and
   Key Vault are reached through service endpoints on the App Service subnet, and MySQL uses the delegated
   database subnet
-- Network Security Groups (NSGs) with least-privilege rules
+- Network Security Groups (NSGs) on the App Service and database subnets (see [Security](#security))
 
 ## Architecture
 

@@ -78,7 +78,9 @@ to you, and the code behind each control.
 - Follow **least privilege** principles for Azure RBAC
 - Use **separate service principals** for different environments
 - Enable **Microsoft Entra ID authentication** for administrative access
-- Regularly rotate credentials and access keys
+- Regularly rotate credentials and access keys. Read the
+  [rotation warning](docs/security-model.md#how-to-protect-state) first: replacing the
+  generated database password through Terraform breaks the site
 
 ### State File Security
 
@@ -87,9 +89,9 @@ to you, and the code behind each control.
   See [Terraform state](docs/security-model.md#terraform-state-holds-generated-secrets).
 - Store Terraform state in **Azure Storage with encryption**
 - Authenticate the backend with **Microsoft Entra ID** (`use_azuread_auth = true`)
-- Enable **state file locking** using Azure Blob lease
+- The `azurerm` backend **locks state** automatically, using Azure Blob Storage
 - Restrict access to state storage account
-- Consider using **Terraform Cloud** or **Azure DevOps** for state management
+- Consider a managed state service such as **HCP Terraform** (formerly Terraform Cloud)
 
 ### Monitoring
 
