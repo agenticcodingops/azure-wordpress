@@ -331,8 +331,9 @@ jobs:
 
 - **What reviewers see.** Each pull request shows the nonprod plan, and the nonprod apply runs before the
   production job. The production job plans and applies after its approval, so the reviewer approves before the
-  production plan exists. Because the two environments use the same module and the same site map, the nonprod
-  plan is the preview.
+  production plan exists. The nonprod plan shows what the module creates for a change, but not production's
+  values: production resolves different defaults for the MySQL SKU, backups, Key Vault purge protection and
+  retention, and log retention (`modules/wordpress-site/main.tf:97-116`, `:168`).
 - **If reviewers must read the production plan first,** split `apply-production` into a plan job and a gated
   job that applies the saved plan. A saved plan file can contain the same secrets as the state. Anyone who is
   signed in to GitHub and can read the repository can download a workflow artifact, so do not pass the plan
@@ -473,6 +474,7 @@ flowchart TD
     B -- Yes --> C{"cdn_provider"}
     C -- cloudflare --> E["Operator: add the site to the nonprod map and open a pull request"]
     C -- "azure_front_door or direct, with a custom domain" --> D["Operator: create the DNS records the custom-domain binding needs"]
+    C -- "direct, on *.azurewebsites.net" --> E
     D --> E
     E --> F["CI: plan nonprod"]
     F --> G{"STOP: only the new site is added, and no existing access policy changes?"}
@@ -502,7 +504,7 @@ flowchart TD
      created, from a CNAME to the app or from an `asuid.<subdomain>` TXT record
      ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/app-service/app-service-web-tutorial-custom-domain)).
      Create those records first, for each environment's domain.
-   - The TXT value is the app's domain verification ID, which exists only once the app does:
+   - The TXT value is the app's domain verification ID. `az webapp show` returns it for an app that exists:
 
      ```bash
      az webapp show --name app-example-examplewp01-np --resource-group rg-example-examplewp01-np \
@@ -511,8 +513,11 @@ flowchart TD
 
      If you cannot create the record before the first apply, that apply fails at the binding. Create the record,
      then run the pipeline again.
-   - With Front Door, also create the `_dnsauth` record from the `custom_domain_validation_token` output
-     (`modules/wordpress-site/outputs.tf:161-164`, `modules/front-door/README.md:88`).
+   - With Front Door, create the `_dnsauth` record **after** the first apply. Its value is the
+     `custom_domain_validation_token` output, which exists only once that apply has created the Front Door custom
+     domain (`modules/wordpress-site/outputs.tf:161-164`, `modules/front-door/README.md:88`).
+   - With `direct` and a custom domain ending in `.azurewebsites.net`, as in
+     [getting started](getting-started.md), there is no binding and no DNS to prepare.
 3. **Add one map entry** in `infra/nonprod/main.tf` and open a pull request.
 4. **Read the plan.** It must add only the new site's resources. It must not update or replace
    `azurerm_key_vault_access_policy.terraform` on any existing site. If it does, look for a `depends_on` on the
