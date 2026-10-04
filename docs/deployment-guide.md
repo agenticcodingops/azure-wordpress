@@ -672,10 +672,11 @@ After removal:
    ```
 
 5. **No CI identity can reach the management subscription.** List role assignments there for each identity's
-   principal ID. Expect only the container-scoped data role:
+   principal ID, including any inherited from a management group above it. Expect only the container-scoped data
+   role:
 
    ```bash
-   az role assignment list --subscription <management-subscription-id> --all \
+   az role assignment list --subscription <management-subscription-id> --all --include-inherited \
      --assignee <principal-id> --query "[].{role:roleDefinitionName, scope:scope}" -o table
    ```
 
