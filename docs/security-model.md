@@ -3,7 +3,9 @@
 This page explains what the `wordpress-site` module protects, where its trust boundaries
 are, and what you must protect yourself. Read it before you deploy a site to production.
 
-To report a vulnerability, see [SECURITY.md](../SECURITY.md).
+To report a vulnerability, see [SECURITY.md](../SECURITY.md). For the components, the request
+flows and the network layout, see [Architecture](architecture.md). To deploy, start with
+[Getting started](getting-started.md) and the [Deployment guide](deployment-guide.md).
 
 > **Version.** This page describes v4.1.1. Every `file:line` reference points to commit
 > [`9cf59db`](https://github.com/agenticcodingops/azure-wordpress/tree/9cf59dbf1f984a2e043cd7b6180187dda8cfcd5a).
@@ -200,8 +202,9 @@ What the module sets:
   out of Kudu.
 
 Hardening SCM is therefore opt-in. The
-[app-service README](../modules/app-service/README.md#scmkudu-network-posture) explains how
-to restrict it without losing the SSH console, and
+[app-service README](../modules/app-service/README.md#scmkudu-network-posture) and the site
+module's [Hardening the SCM/Kudu endpoint](../modules/wordpress-site/README.md#hardening-the-scmkudu-endpoint)
+explain how to restrict it without losing the SSH console, and
 [Publishing Credentials](../modules/app-service/README.md#publishing-credentials) explains
 what breaks when you turn basic auth off.
 
@@ -270,6 +273,8 @@ endpoint. Sites that do so must set `Allow`. The
   it.
 - The admin password is a 32-character random value (`modules/wordpress-site/main.tf:209-213`).
 
+[Architecture: Network](architecture.md#network) has the full subnet and DNS layout.
+
 ### Managed identities resolve Key Vault references
 
 The module stores three secrets of its own in the site's vault: `db-password`,
@@ -325,7 +330,8 @@ sequenceDiagram
     WP->>DB: Connect as wpadmin inside the VNet
 ```
 
-The sequence follows Microsoft's
+[Architecture: Secrets](architecture.md#secrets) shows the same flow from Terraform's side,
+including how the database password is created. The sequence follows Microsoft's
 [Key Vault references](https://learn.microsoft.com/en-us/azure/app-service/app-service-key-vault-references)
 and [virtual network integration](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration#app-settings-using-key-vault-references)
 pages:
@@ -519,7 +525,11 @@ access policies say.
 
 ### How to protect state
 
-The module does not configure a backend. Protect yours:
+The module does not configure a backend. Step 1 of the
+[Deployment guide](deployment-guide.md#step-1-create-the-state-store) creates a state store
+along these lines, with one container per environment, and
+[Getting started](getting-started.md#the-configuration) shows the backend settings. The
+principles:
 
 1. **Store state remotely**, never in a local file or in version control. HashiCorp
    recommends storing state remotely, encrypting it at rest, limiting access and keeping
@@ -536,20 +546,6 @@ The module does not configure a backend. Protect yours:
    ([Storage encryption](https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption)).
 5. **Turn on logging** for the state account, so you can see who read state.
 6. **Treat saved plan files like state.** Do not upload them as public CI artifacts.
-
-A minimal backend block:
-
-```hcl
-terraform {
-  backend "azurerm" {
-    resource_group_name  = "rg-tfstate"
-    storage_account_name = "sttfstateexample"
-    container_name       = "tfstate"
-    key                  = "wordpress.tfstate"
-    use_azuread_auth     = true
-  }
-}
-```
 
 > **Do not rotate the database password by replacing `random_password.db`.** The server
 > ignores password changes (`ignore_changes = [administrator_password]`,
@@ -619,6 +615,9 @@ HashiCorp:
 This repository:
 
 - [SECURITY.md](../SECURITY.md)
+- [Architecture](architecture.md)
+- [Getting started](getting-started.md)
+- [Deployment guide](deployment-guide.md)
 - [app-service module](../modules/app-service/README.md)
 - [key-vault module](../modules/key-vault/README.md)
 - [storage module](../modules/storage/README.md)

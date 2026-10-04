@@ -66,8 +66,11 @@ Notes:
    30 days in nonprod and 90 days in production (`modules/wordpress-site/main.tf:168`). So in production, the
    App Service and MySQL log tables are charged retention for the days beyond 31.
 3. **Cloudflare** plan fees are not Azure prices, so they are not in the table. The module's Cloudflare defaults
-   are chosen to work on the Free plan. `cloudflare.enable_waf` needs Pro or higher
-   (`modules/wordpress-site/variables.tf:344`). See [Cloudflare plans](https://www.cloudflare.com/plans/).
+   are chosen to work on the Free plan. `cloudflare.enable_waf` needs Business or higher: its login
+   rate limit matches on the request method, which Cloudflare offers in rate-limiting rules from Business up
+   (`modules/cloudflare/waf.tf:101-104`;
+   [rate limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)). The code comment at
+   `modules/wordpress-site/variables.tf:344` still says Pro. See [Cloudflare plans](https://www.cloudflare.com/plans/).
 4. **Front Door needs Premium.** With `cdn_provider = "azure_front_door"` the module creates a **Premium** profile
    unless you set `front_door.sku_name` (`modules/wordpress-site/main.tf:142`). Do not set it to
    `Standard_AzureFrontDoor`. The module's WAF policy always carries managed rule sets
