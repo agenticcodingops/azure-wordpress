@@ -6,7 +6,7 @@ Deploy production-ready WordPress sites on Azure with Cloudflare CDN using Terra
 
 - **Azure App Service** (Linux) with managed WordPress container
 - **Staging Deployment Slots** with configurable app settings and always-on control
-- **Azure MySQL Flexible Server** with Private Endpoint (secure database access)
+- **Azure MySQL Flexible Server** on a delegated subnet with private DNS (no public endpoint)
 - **Backup & Recovery** -- configurable PITR retention (1-35 days), geo-redundant backup, storage auto-grow
 - **Azure Blob Storage** for media uploads (no Azure Files latency)
 - **Blob Protection** -- versioning, soft-delete retention, additional containers (e.g., wp-backups)
@@ -19,145 +19,34 @@ Deploy production-ready WordPress sites on Azure with Cloudflare CDN using Terra
 
 ## Architecture
 
+One call to `modules/wordpress-site` deploys one site:
 
-```text
-┌──────────────────────────────────────────────────────────────────┐
-│                        Cloudflare Edge                           │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │  CDN + WAF + SSL + DDoS Protection                         │  │
-│  └────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────┴────────────────────────────────────┐
-│                        Azure Region                              │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │           Shared Resource Group (per environment)          │  │
-│  │  ┌──────────────────────────────────────────────────────┐  │  │
-│  │  │            Shared App Service Plan                   │  │  │
-│  │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │  │  │
-│  │  │  │   Site 1    │  │   Site 2    │  │   Site N    │  │  │  │
-│  │  │  │  WordPress  │  │  WordPress  │  │  WordPress  │  │  │  │
-│  │  │  └─────────────┘  └─────────────┘  └─────────────┘  │  │  │
-│  │  └──────────────────────────────────────────────────────┘  │  │
-│  └────────────────────────────────────────────────────────────┘  │
-│                                                                  │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │           Per-Site Resources                               │  │
-│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐   │  │
-│  │  │ MySQL Server │ │ Blob Storage │ │     Key Vault    │   │  │
-│  │  │   (Private)  │ │   (Media)    │ │    (Secrets)     │   │  │
-│  │  └──────────────┘ └──────────────┘ └──────────────────────┘  │
-│  └────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
-```
+- **Edge.** `cdn_provider` chooses Cloudflare (`cloudflare`), Azure Front Door (`azure_front_door`) or no CDN
+  (`direct`, the default). Only one is created. With a CDN, the web app's main site accepts only that CDN's
+  traffic: Cloudflare's address ranges, or your own Front Door profile when `front_door.enabled` is true (the
+  default). It also allows Azure's `168.63.129.16` address, except after the Front Door patch, which drops that
+  rule. The staging slot and the SCM endpoint have looser rules; see [Network](docs/architecture.md#network).
+- **Web tier.** A Linux web app runs the Microsoft WordPress container, with a staging slot on S\* and P\* SKUs.
+  Several sites can share one App Service plan.
+- **Database.** MySQL Flexible Server runs on a delegated subnet and is found through a private DNS zone. It has
+  no public endpoint. No module in this repository creates a private endpoint.
+- **Secrets.** Key Vault holds the database password, the storage key and the Application Insights connection
+  string. The web app reads them through Key Vault references, as its managed identity.
+- **Media.** Uploads go to Blob Storage through the storage plugin. The plugin points media URLs at the blob
+  endpoint, so browsers fetch media from Azure directly, not through the CDN. That works only if the storage
+  firewall and the container's access allow those requests, and the defaults do not; see
+  [Media](docs/architecture.md#media).
+- **Monitoring.** The site module creates Log Analytics, Application Insights, diagnostic settings and alerts
+  itself. It does not use the standalone `monitoring` module.
 
-### Infrastructure Overview
+**[docs/architecture.md](docs/architecture.md)** has the diagrams and the code references for each of these:
 
-```mermaid
-flowchart TB
-    subgraph Internet["🌐 Internet"]
-        Users[("👥 Users")]
-    end
-
-    subgraph Cloudflare["☁️ Cloudflare Edge"]
-        CF_CDN["CDN Cache"]
-        CF_WAF["WAF Protection"]
-        CF_SSL["Universal SSL"]
-        CF_DNS["DNS Management"]
-    end
-
-    subgraph Azure["☁️ Azure Region"]
-        subgraph SharedRG["📦 Shared Resource Group"]
-            ASP["App Service Plan\n(B1/P1v3)"]
-            subgraph Sites["WordPress Sites"]
-                Site1["🌐 Site 1"]
-                Site2["🌐 Site 2"]
-                SiteN["🌐 Site N"]
-            end
-        end
-
-        subgraph SiteRG["📦 Per-Site Resources"]
-            MySQL[("🗄️ MySQL\nPrivate Endpoint")]
-            Storage[("📁 Blob Storage\nMedia Files")]
-            KV["🔐 Key Vault\nSecrets"]
-            AppInsights["📊 App Insights"]
-        end
-
-        subgraph Network["🔒 Private Network"]
-            VNet["Virtual Network"]
-            PrivateDNS["Private DNS Zone"]
-        end
-    end
-
-    Users --> CF_CDN
-    CF_CDN --> CF_WAF --> CF_SSL
-    CF_SSL --> Site1 & Site2 & SiteN
-    Site1 & Site2 & SiteN --> ASP
-    Site1 --> MySQL & Storage & KV
-    MySQL -.-> VNet
-    VNet -.-> PrivateDNS
-```
-
-### Module Dependency Flow
-
-```mermaid
-flowchart LR
-    subgraph Layer1["Layer 1: Foundation"]
-        NET["networking"]
-        DNS["dns-zones"]
-    end
-
-    subgraph Layer2["Layer 2: Application"]
-        DB["database"]
-        STOR["storage"]
-        KV["key-vault"]
-        APP["app-service"]
-        MON["monitoring"]
-        FD["front-door"]
-    end
-
-    subgraph External["External"]
-        CF["cloudflare"]
-    end
-
-    NET --> DNS
-    DNS --> DB
-    NET --> APP
-    STOR --> KV
-    KV --> APP
-    DB --> APP
-    APP --> MON
-    APP --> FD
-    APP --> CF
-```
-
-### Request Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Cloudflare as Cloudflare CDN
-    participant AppService as Azure App Service
-    participant MySQL as MySQL (Private)
-    participant Blob as Blob Storage
-
-    User->>Cloudflare: HTTPS Request
-    Cloudflare->>Cloudflare: WAF Check
-    Cloudflare->>Cloudflare: Cache Check
-
-    alt Cache Hit
-        Cloudflare-->>User: Cached Response
-    else Cache Miss
-        Cloudflare->>AppService: Forward Request
-        AppService->>MySQL: Query (Private Endpoint)
-        MySQL-->>AppService: Data
-        AppService->>Blob: Fetch Media (if needed)
-        Blob-->>AppService: Media Files
-        AppService-->>Cloudflare: Response
-        Cloudflare->>Cloudflare: Cache Response
-        Cloudflare-->>User: Response
-    end
-```
+- [Container view](docs/architecture.md#container-view)
+- [Deployment order](docs/architecture.md#deployment-order), and why Application Insights is created before App Service
+- Request flows for [Cloudflare](docs/architecture.md#request-flow-cloudflare) and
+  [Azure Front Door](docs/architecture.md#request-flow-azure-front-door)
+- [Media](docs/architecture.md#media), [Secrets](docs/architecture.md#secrets),
+  [Network](docs/architecture.md#network) and [Monitoring](docs/architecture.md#monitoring)
 
 ## Quick Start
 
@@ -223,55 +112,18 @@ See [examples/](examples/) for complete configurations.
 | [dns-zones](modules/dns-zones/) | Private DNS zones |
 | [cloudflare](modules/cloudflare/) | Cloudflare DNS and CDN |
 | [front-door](modules/front-door/) | Azure Front Door CDN + WAF |
-| [monitoring](modules/monitoring/) | Application Insights and alerts |
+| [monitoring](modules/monitoring/) | Standalone Application Insights and alerts. `wordpress-site` does not call it |
 
 ### Module Composition
 
-```mermaid
-flowchart TB
-    subgraph User["Your Terraform Config"]
-        MAIN["main.tf"]
-    end
+- Your configuration calls `wordpress-site` once per site, and `shared-infrastructure` once if sites share a plan.
+- `wordpress-site` calls `networking` and `dns-zones` (Layer 1), then `database`, `storage`, `key-vault` and
+  `app-service` (Layer 2). It also calls `front-door` or `cloudflare`, as `cdn_provider` says. Front Door and the
+  Cloudflare DNS records wait for the web app.
+- `wordpress-site` creates Log Analytics, Application Insights, diagnostic settings, alerts and the action group
+  itself. `monitoring` is a standalone module that it does not call.
 
-    subgraph Shared["shared-infrastructure"]
-        ASP["App Service Plan"]
-        RG_S["Resource Group"]
-    end
-
-    subgraph WPSite["wordpress-site (composition)"]
-        RG["Resource Group"]
-
-        subgraph L1["Layer 1: Foundation"]
-            NET["networking\n• VNet\n• Subnets\n• NSGs"]
-            DNS["dns-zones\n• Private DNS\n• VNet Links"]
-        end
-
-        subgraph L2["Layer 2: Application"]
-            DB["database\n• MySQL Flexible\n• Private Endpoint"]
-            STOR["storage\n• Blob Container\n• Media Files"]
-            KV["key-vault\n• Secrets\n• Access Policies"]
-            APP["app-service\n• Linux Web App\n• Managed Identity"]
-            MON["monitoring\n• App Insights\n• Alerts"]
-            FD["front-door\n• CDN\n• WAF"]
-        end
-
-        CF["cloudflare\n• DNS Records\n• Proxy Settings"]
-    end
-
-    MAIN --> Shared
-    MAIN --> WPSite
-    Shared --> |"plan_id"| APP
-    RG --> L1
-    L1 --> L2
-    NET --> DNS
-    DNS --> DB
-    STOR --> KV
-    KV --> APP
-    DB --> APP
-    APP --> MON
-    APP --> FD
-    APP --> CF
-```
+The order, and the reason for it, is in [Deployment order](docs/architecture.md#deployment-order).
 
 ## CDN Options
 
@@ -324,11 +176,21 @@ module "site1" {
 
 ## Security
 
-- **VNet Integration**: App Service connects to MySQL via private endpoint
+- **VNet Integration**: App Service reaches MySQL over the virtual network. The server sits on a delegated subnet
+  with private DNS and has no public endpoint.
 - **Managed Identity**: No credentials stored in code
 - **Key Vault References**: Secrets loaded at runtime
-- **IP Restrictions**: Only Cloudflare IPs can reach origin (when enabled)
-- **TLS 1.2**: Minimum version enforced everywhere
+- **Firewalls**: Key Vault and Storage deny public data-plane access by default; the App Service subnet is allowed
+  through service endpoints
+- **IP Restrictions**: With `cloudflare`, the main site accepts Cloudflare's address ranges and Azure's
+  `168.63.129.16` address. With `azure_front_door` and `front_door.enabled` true (the default), it accepts only your
+  Front Door profile; the patch that sets this drops the `168.63.129.16` rule. The staging slot accepts any Front
+  Door profile. With `front_door.enabled = false`, both accept any Front Door profile, and the main site keeps the
+  `168.63.129.16` rule. The SCM (Kudu) endpoint has its own rules and allows all addresses by default
+- **TLS 1.2**: Minimum version on the web app, the storage account and the Front Door custom domain. MySQL does
+  not require TLS (`require_secure_transport = OFF`)
+
+See [Network](docs/architecture.md#network) for the detail.
 
 ## Custom Secrets
 

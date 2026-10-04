@@ -7,11 +7,16 @@ Complete WordPress deployment composition module that orchestrates all sub-modul
 This module creates a complete WordPress site deployment including:
 - Resource Group
 - Virtual Network with subnets
-- MySQL Flexible Server with private endpoint
+- MySQL Flexible Server on a delegated subnet, resolved through a private DNS zone (no private endpoint)
 - Azure Blob Storage for media
 - Key Vault for secrets management
 - App Service with managed identity
-- Optional monitoring and CDN
+- Log Analytics, Application Insights, diagnostic settings and alerts, created in this module. It does not call
+  `modules/monitoring`.
+- Optional CDN: Cloudflare or Azure Front Door, chosen by `cdn_provider`
+
+Diagrams of the deployment order, request flows, secrets, network and monitoring are in
+[docs/architecture.md](../../docs/architecture.md).
 
 ## Upgrading to v4.1.0
 
