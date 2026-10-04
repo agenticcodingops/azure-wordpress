@@ -26,16 +26,16 @@ flows and the network layout, see [Architecture](architecture.md). To deploy, st
 
 | Control | Default | You must act? |
 | --- | --- | --- |
-| Origin admits only the CDN | Off: `cdn_provider` defaults to `"direct"`, which admits everyone | Yes. Set `cdn_provider` |
+| Origin admits only the CDN's network | Off: `cdn_provider` defaults to `"direct"`, which admits everyone | Yes. Set `cdn_provider` |
 | Key Vault data plane denies public access | On | Allow-list the deploying principal |
-| Storage data plane denies public access | On | Yes, for media served from the blob endpoint. `Allow` alone is not enough: see [Storage](#key-vault-and-storage-deny-public-access-by-default) |
+| Storage data plane denies public access | On | Yes, if media is served from the blob endpoint: set `storage_network_rules_default_action = "Allow"`, which is necessary but not sufficient, because the account disallows anonymous reads. Before go-live, load an uploaded media URL in a signed-out browser; unsigned URLs fail. See [Unknown 8](#unknowns) and [Storage](#key-vault-and-storage-deny-public-access-by-default) |
 | SCM (Kudu) restricted to an allow-list | Off: default action `Allow` | Yes. Set the SCM variables |
 | FTP | Off at the transport layer | No |
 | Basic-auth publishing credentials | On | Turn off if you can |
 | Key Vault references resolved by managed identity | On | No |
 | MySQL has no public endpoint | On | No |
 | TLS required on MySQL connections | Off | See [Not covered](#mysql-connections-do-not-require-tls) |
-| Certificate for the custom domain on App Service | Not managed by the module | Yes, with `cdn_provider = "direct"`. See [TLS settings](#tls-settings) |
+| Certificate for the custom domain on App Service | Not managed by the module | Yes, with `cdn_provider = "direct"` and a `custom_domain` of your own (not `*.azurewebsites.net`, for which the module creates no binding, `modules/wordpress-site/main.tf:944`). See [TLS settings](#tls-settings) |
 | Terraform state protected | Not managed by the module | Yes. See [Terraform state](#terraform-state-holds-generated-secrets) |
 
 ## Trust boundaries
@@ -93,7 +93,7 @@ flowchart LR
 | Boundary | What crosses it | What guards it |
 | --- | --- | --- |
 | Edge | Visitor requests | The CDN you choose. The module can add WAF rules on Front Door, and on Cloudflare when `enable_waf = true`. See [Edge](#edge). |
-| Origin | Requests from the CDN to `app-<name>.azurewebsites.net` | App Service access restrictions on the app and the slot. See [Origin restricted to the CDN](#origin-restricted-to-the-cdn). |
+| Origin | Requests from the CDN to `app-<project_name>-<site_name>-<np\|prod>.azurewebsites.net` | App Service access restrictions on the app and the slot. See [Origin restricted to the CDN](#origin-restricted-to-the-cdn). |
 | SCM plane | Kudu, deployment and SSH console traffic | A separate rule list, and authentication. See [SCM plane](#scm-plane). |
 | Data plane | Secret reads, media reads and writes, database queries | Key Vault and Storage firewalls, the delegated MySQL subnet, and Key Vault access policies. See [Key Vault and Storage](#key-vault-and-storage-deny-public-access-by-default) and [Database network](#database-network). |
 | Terraform state | Every attribute Terraform manages, secrets included | Your backend. The module does not manage it. See [Terraform state](#terraform-state-holds-generated-secrets). |
@@ -126,7 +126,9 @@ The ranges are read on every run from Cloudflare's published list
 (`modules/wordpress-site/main.tf:52-54` and `:507-508`). A built-in list is the fallback
 when the module is used on its own (`modules/app-service/main.tf:33-61`). These rules
 depend only on `cdn_provider`. They apply even when `cloudflare.enabled` is `false` and the
-module manages no Cloudflare resources (`modules/wordpress-site/main.tf:153`).
+module manages no Cloudflare resources (`modules/wordpress-site/main.tf:153`). Cloudflare's
+ranges are shared by every Cloudflare account; see
+[Binding the origin to one CDN account](#binding-the-origin-to-one-cdn-account).
 
 **With `cdn_provider = "azure_front_door"`**:
 
@@ -226,7 +228,7 @@ what breaks when you turn basic auth off.
   References reach the vault through the allow-listed subnet instead. The code comment at
   `modules/key-vault/main.tf:50-51` says otherwise; the Microsoft table is the authority.
 - Terraform is not a trusted service. Its secret writes need an entry in
-  `key_vault_network_acls_ip_rules`, a runner subnet in
+  `key_vault_network_acls_ip_rules`, a runner subnet that carries the `Microsoft.KeyVault` service endpoint, listed in
   `key_vault_network_acls_virtual_network_subnet_ids`, or public access turned on
   (`modules/wordpress-site/variables.tf:130-146`).
 - The vault uses access policies, not Azure RBAC (`modules/key-vault/main.tf:45`).
@@ -262,9 +264,11 @@ uploads container is private (`modules/storage/main.tf:91`). Microsoft states th
 anonymous access is disallowed for the account, "any future anonymous requests to that
 account fail"
 ([anonymous read access](https://learn.microsoft.com/en-us/azure/storage/blobs/anonymous-read-access-configure#allow-or-disallow-anonymous-read-access-for-a-storage-account)).
-How the storage plugin lets a browser read media under these settings is **UNKNOWN**; see
-[Architecture: Media](architecture.md#media) and the
-[storage README](../modules/storage/README.md#network-rules).
+Neither setting is an input, so no configuration of this module lets an anonymous browser
+read a blob. A browser can read media from the blob endpoint only with a SAS token in the
+URL. The Microsoft Azure Storage for WordPress plugin (4.5.2) writes unsigned URLs, so media
+does not load with it. Whether another plugin serves SAS-signed media URLs is **UNKNOWN**;
+see [Architecture: Media](architecture.md#media).
 
 ### Database network
 
@@ -380,13 +384,19 @@ resolves its references after the grant is **UNKNOWN**; see [Unknowns](#unknowns
 The module binds the custom host name on App Service but no certificate
 (`modules/wordpress-site/main.tf:942-969`). What that means depends on `cdn_provider`:
 
-- **`direct` (the default):** browsers connect to the web app on the custom domain. Microsoft:
+- **`direct` (the default), with a `custom_domain` of your own:** the module creates no
+  binding for an `*.azurewebsites.net` name (`modules/wordpress-site/main.tf:944`), so
+  there is nothing to certify there. Browsers connect to the web app on the custom domain. Microsoft:
   "Unless you configure a certificate binding for your custom domain, any HTTPS request from
   a browser to the domain receives an error or warning, depending on the browser"
   ([custom domains](https://learn.microsoft.com/en-us/azure/app-service/app-service-web-tutorial-custom-domain#validate-domain-ownership-and-complete-the-mapping)).
   The web app forces HTTPS (`modules/app-service/main.tf:165`) and sets `WP_HOME` to the
   custom domain (`modules/app-service/main.tf:74-75`). Bind a certificate yourself, outside
-  this module, before you send visitors to the site. See
+  this module, before you send visitors to the site. Use an App Service managed or imported
+  certificate
+  ([Secure a custom DNS name with a TLS/SSL binding](https://learn.microsoft.com/en-us/azure/app-service/configure-ssl-bindings)).
+  The module's binding ignores `ssl_state` and `thumbprint`
+  (`modules/wordpress-site/main.tf:964`), so Terraform does not undo it. See
   [Architecture: Request flow: direct](architecture.md#request-flow-direct).
 - **`azure_front_door`:** Front Door presents its managed certificate for the custom domain
   (`modules/front-door/main.tf:78-81`), and reaches the origin on the default host name
@@ -418,7 +428,9 @@ The module binds the custom host name on App Service but no certificate
   `modules/wordpress-site/variables.tf:345`). With `cloudflare.enable_waf = true` (default `false`,
   `modules/wordpress-site/variables.tf:344`), the module adds custom block and challenge
   rules (`modules/cloudflare/waf.tf:131-181`) and rate limits on `/wp-login.php` and
-  `/xmlrpc.php` (`modules/cloudflare/waf.tf:82-124`). It also adds skip rules in the
+  `/xmlrpc.php` (`modules/cloudflare/waf.tf:82-124`; configured, but the rules omit Cloudflare's mandatory
+  `cf.colo.id` characteristic, see
+  [WAF rules beyond what the CDN plan provides](#waf-rules-beyond-what-the-cdn-plan-provides)). It also adds skip rules in the
   managed-rules phase for admin paths and WordPress cookies
   (`modules/cloudflare/waf.tf:19-75`). It does not deploy any Cloudflare managed ruleset:
   no rule in `modules/cloudflare` uses the `execute` action.
@@ -447,7 +459,8 @@ paths are general, not an access control:
 - the Cloudflare page rules set `security_level = "high"` on both paths
   (`modules/cloudflare/page-rules.tf:29`, `:56`);
 - with `enable_waf = true`, the Cloudflare rules rate-limit login POSTs
-  (`modules/cloudflare/waf.tf:93-107`) and add skip rules for admin paths in the
+  (`modules/cloudflare/waf.tf:93-107`; configured, but the rule omits Cloudflare's mandatory `cf.colo.id`
+  characteristic, see [WAF rules beyond what the CDN plan provides](#waf-rules-beyond-what-the-cdn-plan-provides)) and add skip rules for admin paths in the
   managed-rules phase (`modules/cloudflare/waf.tf:30-44`).
 
 A pattern for adding an identity-aware proxy at the edge and a token check at the origin is
@@ -459,13 +472,20 @@ The module configures the WAF features listed under [Edge](#edge) and nothing mo
 rule sets, bot management and rate limiting depend on your CDN plan:
 
 - On Cloudflare, the rate-limit rules that `enable_waf` adds need a Business plan or higher.
-  The login rule matches on the request method (`modules/cloudflare/waf.tf:101-104`), and
+  Business is necessary but not sufficient. Both rate-limit rules set
+  `characteristics = ["ip.src"]` (`modules/cloudflare/waf.tf:96`, `:113`). Cloudflare lists
+  `cf.colo.id` as a mandatory characteristic and requires rules created through the API to
+  include it explicitly
+  ([parameters](https://developers.cloudflare.com/waf/rate-limiting-rules/parameters/),
+  [request rate](https://developers.cloudflare.com/waf/rate-limiting-rules/request-rate/)).
+  The dashboard adds it for you; Terraform does not. Until the module sets
+  `["cf.colo.id", "ip.src"]`, do not rely on `enable_waf` on any plan. The API's exact
+  response has not been reproduced here. The login rule matches on the request method (`modules/cloudflare/waf.tf:101-104`), and
   Cloudflare's availability table lists the Method field in rate-limiting expressions from
   the Business plan upward
   ([rate limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)). The
   ruleset's two rules and 60-second periods (`modules/cloudflare/waf.tf:91-123`) fit within
-  Pro's limits, but the Method field does not. The code comment that says Pro is enough
-  (`modules/wordpress-site/main.tf:150-151`) is out of date.
+  Pro's limits, but the Method field does not.
 - The module deploys no Cloudflare managed ruleset. If you deploy one yourself, check how
   it interacts with the skip rules above, which match on a cookie name that any client can
   send (`modules/cloudflare/waf.tf:51-55`).
@@ -508,8 +528,10 @@ authorization: the account key, a SAS token or a Microsoft Entra ID token.
 ### A certificate for the custom domain
 
 The module binds the custom host name on App Service without a certificate
-(`modules/wordpress-site/main.tf:942-969`). With `cdn_provider = "direct"`, visitors get a
-certificate error or warning until you bind one yourself. See [TLS settings](#tls-settings).
+(`modules/wordpress-site/main.tf:942-969`). With `cdn_provider = "direct"` and a `custom_domain` of your own
+(not `*.azurewebsites.net`, for which the module creates no binding,
+`modules/wordpress-site/main.tf:944`), visitors get a certificate error or warning until
+you bind one yourself. See [TLS settings](#tls-settings).
 
 ### Secret rotation
 
@@ -599,7 +621,8 @@ These could not be confirmed from the code or from vendor documentation:
    resource manages the whole rule list with no `ignore_changes`
    (`modules/app-service/main.tf:316-326`), and in the azurerm provider source `ip_restriction`
    is optional, not computed
-   ([`IpRestrictionSchema`](https://github.com/hashicorp/terraform-provider-azurerm/blob/main/internal/services/appservice/helpers/shared_schema.go)). So the next plan may show drift and restore the rules without
+   ([`IpRestrictionSchema`](https://github.com/hashicorp/terraform-provider-azurerm/blob/v5.6.0/internal/services/appservice/helpers/shared_schema.go#L56-L59),
+   used at [`linux_web_app_schema.go:119`](https://github.com/hashicorp/terraform-provider-azurerm/blob/v5.6.0/internal/services/appservice/helpers/linux_web_app_schema.go#L119)). So the next plan may show drift and restore the rules without
    the header, until `azapi_update_resource` (`modules/wordpress-site/main.tf:833-871`) adds it
    back on a later apply. This has not been tested.
 4. Whether Cloudflare's Full (strict) mode works end to end with the module's host-name
@@ -617,9 +640,9 @@ These could not be confirmed from the code or from vendor documentation:
    (`modules/wordpress-site/main.tf:541-544`).
 7. A tested procedure for rotating the database password, the storage key or the
    Application Insights connection string.
-8. How the storage plugin lets an anonymous browser read media, when the account disallows
-   anonymous blob access and the uploads container is private
-   (`modules/storage/main.tf:28`, `:91`).
+8. Whether any storage plugin serves SAS-signed media URLs. The account disallows anonymous
+   blob access and the uploads container is private (`modules/storage/main.tf:28`, `:91`), so
+   unsigned URLs, which the Microsoft Azure Storage for WordPress plugin 4.5.2 writes, fail.
 
 ## References
 

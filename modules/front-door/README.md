@@ -61,14 +61,15 @@ Without these exclusions, WordPress admin will be blocked.
 
 ```hcl
 module "front_door" {
-  source = "../modules/layer-2-application/front-door"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/front-door?ref=v4.1.1"
 
-  site_name           = "workout-tracker"
+  project_name        = "example"
+  site_name           = "examplewp01"
   environment         = "nonprod"
   resource_group_name = azurerm_resource_group.main.name
 
   origin_hostname = module.app_service.default_hostname
-  custom_domain   = "workout-staging.trackroutinely.com"
+  custom_domain   = "staging.example.com"
 
   waf_mode = "Detection"  # Use Prevention in production
 

@@ -20,10 +20,10 @@ inputs (it was missing `project_name`, `name_suffix` and all three `network_acls
 
 ```hcl
 module "key_vault" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/key-vault?ref=v4.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/key-vault?ref=v4.1.1"
 
-  project_name        = "trackroutinely"
-  site_name           = "workout-tracker"
+  project_name        = "example"
+  site_name           = "examplewp01"
   environment         = "nonprod"
   location            = "East US"
   resource_group_name = azurerm_resource_group.main.name
@@ -36,7 +36,7 @@ module "key_vault" {
   # below 403s. Allow-list the runner's egress IP, or a subnet carrying the
   # Microsoft.KeyVault service endpoint, or set public_network_access_enabled = true.
   network_acls_ip_rules                   = ["203.0.113.10"]
-  network_acls_virtual_network_subnet_ids = [module.networking.app_subnet_id]
+  network_acls_virtual_network_subnet_ids = [module.networking.app_subnet_id] # the app subnet serves the app's references, not Terraform
 
   secrets = {
     "db-password"      = random_password.db.result
@@ -58,9 +58,11 @@ Use versionless URIs for App Service Key Vault references:
 
 ```hcl
 app_settings = {
-  "DB_PASSWORD" = "@Microsoft.KeyVault(SecretUri=${module.key_vault.secret_versionless_uris["db-password"]})"
+  "DATABASE_PASSWORD" = "@Microsoft.KeyVault(SecretUri=${module.key_vault.secret_versionless_uris["db-password"]})"
 }
 ```
+
+The `app-service` module already sets `DATABASE_PASSWORD` this way, so you need this only for a web app you define yourself.
 
 ## Network Access
 
@@ -81,9 +83,14 @@ module, so if it cannot reach the vault the apply fails with a 403 on
 # 1. Allow-list the deploying principal's egress IP (recommended for CI)
 network_acls_ip_rules = ["203.0.113.10"]
 
-# 2. Allow-list a subnet carrying the Microsoft.KeyVault service endpoint
-#    (a self-hosted runner inside the VNet)
-network_acls_virtual_network_subnet_ids = [module.networking.app_subnet_id]
+# 2. Allow-list the runner's own subnet. It must carry the Microsoft.KeyVault service
+#    endpoint. The App Service integration subnet cannot host a runner, because Azure
+#    dedicates it to App Service. Keep that subnet in the list as well, or the app's
+#    Key Vault references fail.
+network_acls_virtual_network_subnet_ids = [
+  module.networking.app_subnet_id, # the app resolves its Key Vault references from here
+  azurerm_subnet.runners.id,       # self-hosted runner, for Terraform's secret writes
+]
 
 # 3. Re-open public access deliberately
 public_network_access_enabled = true

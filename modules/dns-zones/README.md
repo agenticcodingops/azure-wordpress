@@ -39,6 +39,7 @@ MySQL Flexible Server with VNet integration requires Private DNS zones to:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
+| project_name | Project name used in resource naming (lowercase, 2-24 chars) | string | - | yes |
 | site_name | Site name for resource naming | string | - | yes |
 | resource_group_name | Resource group name | string | - | yes |
 | vnet_id | VNet ID to link the DNS zone | string | - | yes |
@@ -56,9 +57,10 @@ MySQL Flexible Server with VNet integration requires Private DNS zones to:
 
 ```hcl
 module "dns_zones" {
-  source = "../modules/layer-1-foundation/dns-zones"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/dns-zones?ref=v4.1.1"
 
-  site_name           = "workout-tracker"
+  project_name        = "example"
+  site_name           = "examplewp01"
   resource_group_name = azurerm_resource_group.main.name
   vnet_id             = module.networking.vnet_id
 
@@ -83,6 +85,7 @@ The module enforces these validations at plan time:
 
 | Variable | Rule | Error Message |
 |----------|------|---------------|
+| `project_name` | `^[a-z][a-z0-9-]{0,22}[a-z0-9]$` | Project name must be 2-24 lowercase alphanumeric characters with optional hyphens |
 | `site_name` | `^[a-z0-9-]+$` | Site name must contain only lowercase letters, numbers, and hyphens |
 
 <!-- BEGIN_TF_DOCS -->

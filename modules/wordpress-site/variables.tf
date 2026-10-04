@@ -83,7 +83,7 @@ variable "wordpress_version" {
 # giving them an optional() default here would mean null never reaches that coalesce
 # and the environment-aware branch could never run.
 variable "database" {
-  description = "Database configuration. sku_name, backup_retention_days and geo_redundant_backup default by environment when unset - see the Environment-aware Defaults section of the README. NOTE: geo_redundant_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql_version defaults to 8.0.21; changing it on an existing server is an irreversible major-version upgrade (plan it per agenticcodingops/trackroutinely#104, WP-43). slow_query_log_enabled (default false) sets the slow_query_log and long_query_time server parameters (long_query_time defaults to 2 seconds), so the MySqlSlowLogs category of the MySQL diagnostic setting carries rows."
+  description = "Database configuration. sku_name, backup_retention_days and geo_redundant_backup default by environment when unset - see Environment-aware Defaults in the repository README. NOTE: geo_redundant_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql_version defaults to 8.0.21; changing it on an existing server is an irreversible major-version upgrade (take an on-demand backup and follow Microsoft's major version upgrade guide first). slow_query_log_enabled (default false) sets the slow_query_log and long_query_time server parameters (long_query_time defaults to 2 seconds), so the MySqlSlowLogs category of the MySQL diagnostic setting carries rows."
   type = object({
     sku_name                  = optional(string)
     storage_size_gb           = optional(number, 100)
@@ -341,7 +341,7 @@ variable "cloudflare" {
     domain                         = optional(string, "")
     subdomain                      = optional(string, "")
     proxied                        = optional(bool, true)
-    enable_waf                     = optional(bool, false) # Needs Pro or higher: rate limiting exceeds Free's 1 rule and 10 s timeout
+    enable_waf                     = optional(bool, false) # Needs Business or higher: the login rate-limit rule matches the request method
     enable_page_rules              = optional(bool, true)  # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)
     enable_cache_rules             = optional(bool, false) # Works on Free: 5 of the 10 cache rules it allows
     enable_zone_setting_overrides  = optional(bool, false) # Some settings can't be modified on Free plan

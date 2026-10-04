@@ -124,7 +124,7 @@ variable "high_availability_mode" {
 
 # Named mysql_version because "version" is reserved for module input variables.
 variable "mysql_version" {
-  description = "MySQL Flexible Server version. The default, 8.0.21, is the version every existing server was created with, so leaving it unset changes nothing. Changing it on an existing server is a major-version upgrade that cannot be undone: plan and rehearse it first (agenticcodingops/trackroutinely#104, WP-43, is where that upgrade is planned). Whether azurerm performs the change in place or forces replacement depends on the provider version, so read the provider documentation for your version and dry-run first. This input only enables the change."
+  description = "MySQL Flexible Server version. The default, 8.0.21, is the version every existing server was created with, so leaving it unset changes nothing. Changing it on an existing server is a major-version upgrade that cannot be undone: rehearse it first on a restored copy, following Microsoft's major version upgrade guide (https://learn.microsoft.com/azure/mysql/flexible-server/how-to-upgrade), then take an on-demand backup immediately before the production upgrade. Whether azurerm performs the change in place or forces replacement depends on the provider version, so read the provider documentation for your version and dry-run first. This input only enables the change."
   type        = string
   default     = "8.0.21"
   nullable    = false

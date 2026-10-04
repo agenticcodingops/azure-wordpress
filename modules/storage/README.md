@@ -49,9 +49,10 @@ Instead, we use:
 
 ```hcl
 module "storage" {
-  source = "../modules/layer-2-application/storage"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/storage?ref=v4.1.1"
 
-  site_name           = "workout-tracker"
+  project_name        = "example"
+  site_name           = "examplewp01"
   environment         = "nonprod"
   location            = "East US"
   resource_group_name = azurerm_resource_group.main.name
@@ -80,17 +81,28 @@ Blob Storage plugin rewrites media URLs to the account's own endpoint
 (`https://<account>.blob.core.windows.net/...`). Browsers therefore fetch media **directly
 from Azure, not through your CDN**, from arbitrary end-user IPs that cannot be allow-listed.
 
-Pick one before deploying:
+The firewall is only one of two gates on that read. `Allow` removes the firewall gate, but it does not make
+media load. This module sets `allow_nested_items_to_be_public = false` (`main.tf:28`) and creates the uploads
+container as `private` (`main.tf:91`); neither is an input. Azure then rejects every anonymous read, so an
+anonymous browser cannot read a blob from the endpoint even with the firewall open. Only an authorised request
+succeeds: one that carries a SAS token, one signed with the account key, or one authorised through Microsoft Entra
+ID. A browser should use a SAS URL; the account key stays on the server. See
+[Security model: Key Vault and Storage deny public access by default](../../docs/security-model.md#key-vault-and-storage-deny-public-access-by-default)
+and [Architecture: Media](../../docs/architecture.md#media).
+
+Choose the firewall setting for the traffic you actually have:
 
 | Situation | Setting |
 |---|---|
-| Blob endpoint fronted by a CDN custom domain (CNAME) | Keep `Deny`; allow-list the CDN's egress ranges via `network_rules_ip_rules` |
-| Media served straight from the blob endpoint (module default) | Set `network_rules_default_action = "Allow"` |
-| Private endpoint / VNet-only access | Keep `Deny`; add subnets via `network_rules_virtual_network_subnet_ids` |
+| Uploads and server-side reads only (the site's App Service subnet) | Keep `Deny`. The subnet is allow-listed by the composition module |
+| Browsers must reach the blob endpoint | `network_rules_default_action = "Allow"` removes the firewall gate only. Browsers still need a SAS-signed URL; unsigned URLs fail on the second gate above |
+| A CDN custom domain in front of the blob endpoint | Keep `Deny`; allow-list the CDN's egress ranges via `network_rules_ip_rules`. The CDN must itself authenticate to the account, otherwise its origin requests are anonymous and rejected |
+| VNet-only access | Keep `Deny`; add subnets that carry the `Microsoft.Storage` service endpoint via `network_rules_virtual_network_subnet_ids`. This module creates no private endpoint |
 
 The `wordpress-site` composition module always allow-lists the site's App Service subnet
 (it carries the `Microsoft.Storage` service endpoint), and when `cdn_provider = "cloudflare"`
-it also allow-lists Cloudflare's live IPv4 egress ranges, fetched at apply time via
+it also allow-lists Cloudflare's live IPv4 egress ranges (useful only if you put the blob endpoint behind a
+Cloudflare custom domain, which this module does not create), fetched at apply time via
 `data.cloudflare_ip_ranges` — the programmatic approach Cloudflare
 [recommends](https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/)
 over hardcoding, since the ranges change occasionally.

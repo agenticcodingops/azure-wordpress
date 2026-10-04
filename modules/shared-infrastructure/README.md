@@ -4,7 +4,7 @@ Creates shared infrastructure resources per environment (subscription) to optimi
 
 ## Overview
 
-This module creates a shared App Service Plan that hosts multiple WordPress sites within a single subscription/environment. Instead of creating one App Service Plan per site, all sites share a single plan, reducing costs by approximately 50%.
+This module creates a shared App Service Plan that hosts multiple WordPress sites within a single subscription/environment. Instead of creating one App Service Plan per site, all sites share a single plan, so the plan is paid once instead of once per site. The saving depends on how many sites share the plan and on their SKUs; every other site resource is still paid per site. See [Cost Savings](#cost-savings).
 
 ## Architecture
 
@@ -12,9 +12,9 @@ This module creates a shared App Service Plan that hosts multiple WordPress site
 ┌─────────────────────────────────────────────────────────────────┐
 │                 Shared Infrastructure (per env)                  │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │           rg-trackroutinely-shared-{env}                   │  │
+│  │           rg-{project_name}-shared-{env}                   │  │
 │  │  ┌─────────────────────────────────────────────────────┐  │  │
-│  │  │         asp-trackroutinely-shared-{env}              │  │  │
+│  │  │         asp-{project_name}-shared-{env}              │  │  │
 │  │  │              (Shared App Service Plan)               │  │  │
 │  │  │                                                      │  │  │
 │  │  │   ┌──────────┐  ┌──────────┐  ┌──────────┐         │  │  │
@@ -37,15 +37,16 @@ worked comparison.
 ## Usage
 
 ```hcl
-# In environment main.tf (e.g., terraform/environments/nonprod/main.tf)
+# In the root configuration for one environment (see docs/deployment-guide.md, steps 4 and 11)
 
 module "shared_infrastructure" {
-  source = "../../modules/shared-infrastructure"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.1.1"
 
+  project_name    = "example"
   environment     = "nonprod"
   location        = var.location
-  app_service_sku = var.shared_app_service_sku  # B1 for dev, P1v3 for prod
-  worker_count    = var.shared_worker_count     # Default: 1
+  app_service_sku = var.shared_app_service_sku # B1 for dev, P1v3 for prod
+  worker_count    = var.shared_worker_count    # Default: 1
 
   tags = local.common_tags
 }
@@ -53,7 +54,7 @@ module "shared_infrastructure" {
 # Pass the shared plan to WordPress sites
 module "wordpress_sites" {
   for_each = var.sites
-  source   = "../../compositions/wordpress-site"
+  source   = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.1"
 
   # ... other config ...
 
@@ -71,17 +72,18 @@ module "wordpress_sites" {
 
 | Resource | Name Pattern | Purpose |
 |----------|--------------|---------|
-| Resource Group | `rg-trackroutinely-shared-{env}` | Contains shared resources |
-| App Service Plan | `asp-trackroutinely-shared-{env}` | Hosts all WordPress web apps |
-| Auto-scale Setting | `autoscale-trackroutinely-shared-{env}` | Optional CPU/memory scaling |
+| Resource Group | `rg-{project_name}-shared-{env}` | Contains shared resources |
+| App Service Plan | `asp-{project_name}-shared-{env}` | Hosts all WordPress web apps |
+| Auto-scale Setting | `autoscale-{project_name}-shared-{env}` | Optional CPU/memory scaling |
 | Management Lock | `shared-protection-lock` | Optional (`lock`): CanNotDelete on the resource group |
 
-Where `{env}` is `np` for nonprod or `prod` for production.
+Where `{project_name}` is the `project_name` input and `{env}` is `np` for nonprod or `prod` for production.
 
 ## Variables
 
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
+| `project_name` | string | *required* | Project name used in resource naming (lowercase, 2-24 chars) |
 | `environment` | string | *required* | Environment name (`nonprod` or `production`) |
 | `location` | string | *required* | Azure region for resources |
 | `app_service_sku` | string | `"B1"` | App Service Plan SKU (B1, S1, P1v3, etc.) |
@@ -130,24 +132,28 @@ Cooldown period: 10-15 minutes between scaling actions.
 
 Azure requires App Services to be in the **same resource group** as their App Service Plan. This is why:
 
-1. The shared plan lives in `rg-trackroutinely-shared-{env}`
+1. The shared plan lives in `rg-{project_name}-shared-{env}`
 2. Web apps using the shared plan are created in this same resource group
 3. Site-specific resources (database, key vault, etc.) remain in their own resource groups
 
 ### Globally Unique Names
 
-App Service names must be globally unique across all Azure subscriptions. The naming pattern `app-trackroutinely-{site}-{env}` ensures uniqueness.
+App Service names must be globally unique across Azure (the default hostname is `<name>.azurewebsites.net`). The module names the app `app-{project_name}-{site_name}-{env}` and does not check that the name is free, so choose names nobody else holds (see [Names that must be unique](../../docs/getting-started.md#names-that-must-be-unique)).
 
 ## Migration Notes
 
-When migrating existing sites to use a shared plan:
+**Do not switch an existing site to `use_shared_plan = true`.** Azure requires a web app and its plan to share a
+resource group, so the site's web app would move to the shared resource group. That forces a new web app, and the
+staging slot is replaced with it. With a custom-domain binding, Terraform is expected to try to create the new
+app before it destroys the old one, and Azure rejects the duplicate name. Without a binding, read the plan as
+destroy, then create, which deletes the app and its `/home` content. Neither outcome has been run. This is a
+**STOP** (an Azure change); read the plan for `must be replaced` on the web app and do not apply it.
 
-1. **App Services must be recreated** - Azure doesn't support moving web apps between plans in different resource groups
-2. **Custom hostnames rebind automatically** - Terraform handles DNS verification
-3. **State cleanup required** - The CI/CD workflow includes steps to:
-   - Import existing resources
-   - Delete orphaned apps from both site-specific and shared resource groups
-   - Remove stale entries from Terraform state
+To move a site onto a shared plan, create a new site under a new `site_name` on the shared plan, copy the database
+and the app's `/home` content, switch DNS, then remove the old site. The full steps, with the code references and
+the STOP at each one, are in
+[step 11 of the deployment guide](../../docs/deployment-guide.md#step-11-host-several-sites-on-a-shared-plan).
+This repository ships no workflow that imports or cleans up resources for you.
 
 ## Resource Lock
 
@@ -164,8 +170,8 @@ put it back. See the wordpress-site module's "Resource locks" section for the fu
 
 ## See Also
 
-- [wordpress-site composition](../../compositions/wordpress-site/README.md) - Uses this module's outputs
-- [Environment configuration](../../environments/) - Example usage in nonprod/production
+- [wordpress-site composition](../wordpress-site/README.md) - Uses this module's outputs
+- [Multi-site example](../../examples/multi-site/) and [step 11 of the deployment guide](../../docs/deployment-guide.md#step-11-host-several-sites-on-a-shared-plan) - Example usage with a shared plan
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements

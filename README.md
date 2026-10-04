@@ -22,20 +22,30 @@ Deploy production-ready WordPress sites on Azure with Cloudflare CDN using Terra
 One call to `modules/wordpress-site` deploys one site:
 
 - **Edge.** `cdn_provider` chooses Cloudflare (`cloudflare`), Azure Front Door (`azure_front_door`) or no CDN
-  (`direct`, the default). Only one is created. With a CDN, the web app's main site accepts only that CDN's
-  traffic: Cloudflare's address ranges, or your own Front Door profile when `front_door.enabled` is true (the
-  default). It also allows Azure's `168.63.129.16` address, except after the Front Door patch, which drops that
-  rule. The staging slot and the SCM endpoint have looser rules; see [Network](docs/architecture.md#network).
+  (`direct`, the default). Only one is created. Cloudflare records and rules also need `cloudflare.enabled = true`.
+  With a CDN, the main site denies traffic that matches no rule. With Cloudflare it allows Cloudflare's address
+  ranges, which every Cloudflare account shares, so they admit Cloudflare and not only your zone, and Azure's
+  `168.63.129.16` address. With Front Door and `front_door.enabled` true (the default), a patch
+  that runs after Front Door is created narrows it to your own Front Door profile and drops the `168.63.129.16`
+  rule. The web app resource does not ignore that change, so a later apply is expected to restore the module's own
+  rules: any Front Door profile, with no `X-Azure-FDID` check, plus `168.63.129.16`. Nothing guarantees that the
+  patch runs again. Review the web app's plan before every apply; see
+  [Request flow: Azure Front Door](docs/architecture.md#request-flow-azure-front-door). With `azure_front_door`,
+  the staging slot is not patched: it accepts any Front Door profile and keeps the `168.63.129.16` rule. With
+  `cloudflare` or `direct`, it has the main site's rules. The SCM (Kudu) endpoints of the web app and the slot have
+  their own rules and allow all addresses by default; see [Network](docs/architecture.md#network).
 - **Web tier.** A Linux web app runs the Microsoft WordPress container, with a staging slot on S\* and P\* SKUs.
   Several sites can share one App Service plan.
 - **Database.** MySQL Flexible Server runs on a delegated subnet and is found through a private DNS zone. It has
   no public endpoint. No module in this repository creates a private endpoint.
 - **Secrets.** Key Vault holds the database password, the storage key and the Application Insights connection
   string. The web app reads them through Key Vault references, as its managed identity.
-- **Media.** Uploads go to Blob Storage through the storage plugin. The plugin points media URLs at the blob
-  endpoint, so browsers fetch media from Azure directly, not through the CDN. That works only if the storage
-  firewall and the container's access allow those requests, and the defaults do not; see
-  [Media](docs/architecture.md#media).
+- **Media.** By default WordPress writes uploads to the web app's persistent `/home` storage, not to Blob Storage.
+  They move to Blob Storage only after you install the Microsoft Azure Storage for WordPress plugin and make it
+  the default upload target. That plugin points media URLs at the blob endpoint, so browsers fetch media from Azure
+  directly, not through the CDN. The storage firewall defaults to `Deny`, and setting `Allow` is not enough on
+  its own: the account also disallows anonymous blob access and the uploads container is private, so an unsigned
+  media URL still fails. See [Media](docs/architecture.md#media).
 - **Monitoring.** The site module creates Log Analytics, Application Insights, diagnostic settings and alerts
   itself. It does not use the standalone `monitoring` module.
 
@@ -61,10 +71,10 @@ One call to `modules/wordpress-site` deploys one site:
 ```hcl
 module "wordpress_site" {
   # Pin to a release version for stability - see Releases page for latest
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.1"
 
   project_name  = "myproject"
-  site_name     = "blog" # Key Vault and storage names derive from this and must be globally unique
+  site_name     = "examplewp01" # change me: Key Vault and storage names derive from this and must be globally unique
   environment   = "nonprod"
   location      = "eastus"
   tenant_id     = data.azurerm_client_config.current.tenant_id
@@ -84,11 +94,14 @@ module "wordpress_site" {
   # the vault is reachable. On a runner with a fixed egress IP, use
   # key_vault_network_acls_ip_rules = ["<runner IP>"] instead.
   key_vault_public_network_access_enabled = true
-  # Visitors' browsers fetch media straight from the blob endpoint, so with "Deny"
-  # every image returns 403. A CDN in front of the site does not change that. Keep
-  # "Deny" only if the blob endpoint itself is behind a CDN custom domain whose
-  # egress ranges you allow-list.
-  storage_network_rules_default_action = "Allow"
+  # The storage firewall defaults to "Deny", which suits the default setup: uploads stay
+  # on the app's /home storage. Only if you serve media from the blob endpoint (after you
+  # install the storage plugin) do visitors' browsers meet the firewall and get 403, and
+  # "Allow" removes that gate. It is not enough on its own: the account disallows
+  # anonymous blob access and the uploads container is private, so an unsigned media
+  # URL still fails (docs/architecture.md#media). Test an uploaded file in a signed-out
+  # browser before you rely on it.
+  # storage_network_rules_default_action = "Allow"
 
   # Backup container for UpdraftPlus (v1.1.0+)
   storage = {
@@ -136,8 +149,9 @@ See [examples/](examples/) for complete configurations.
 
 - Your configuration calls `wordpress-site` once per site, and `shared-infrastructure` once if sites share a plan.
 - `wordpress-site` calls `networking` and `dns-zones` (Layer 1), then `database`, `storage`, `key-vault` and
-  `app-service` (Layer 2). It also calls `front-door` or `cloudflare`, as `cdn_provider` says. Front Door and the
-  Cloudflare DNS records wait for the web app.
+  `app-service` (Layer 2). It also calls `front-door` (with `cdn_provider = "azure_front_door"` and
+  `front_door.enabled`, default true) or `cloudflare` (with `cdn_provider = "cloudflare"` and
+  `cloudflare.enabled = true`; the default is false). Front Door and the Cloudflare DNS records wait for the web app.
 - `wordpress-site` creates Log Analytics, Application Insights, diagnostic settings, alerts and the action group
   itself. `monitoring` is a standalone module that it does not call.
 
@@ -147,9 +161,9 @@ The order, and the reason for it, is in [Deployment order](docs/architecture.md#
 
 | Provider | Cost | WAF | SSL | Best For |
 |----------|------|-----|-----|----------|
-| `cloudflare` | Free tier available | Free | Universal SSL | Cost-optimized deployments |
+| `cloudflare` | Free tier available (see the [cost guide](docs/cost.md), note 3) | Cloudflare's free managed rules; the module's `enable_waf` rulesets need Business or higher and, until the rate-limit rules add `cf.colo.id`, cannot be relied on ([details](docs/security-model.md#waf-rules-beyond-what-the-cdn-plan-provides)) | Universal SSL | Cost-optimized deployments |
 | `azure_front_door` | Premium monthly base fee: the module's WAF policy needs Premium (see [cost guide](docs/cost.md)) | Included (Premium) | Managed certs | Enterprise, compliance |
-| `direct` | None | None | App Service cert | Dev/testing |
+| `direct` | None | None | Platform `*.azurewebsites.net` cert on the default host name only; a custom domain gets no certificate, so bind your own ([TLS settings](docs/security-model.md#tls-settings)) | Dev/testing |
 
 ## Cost Optimization
 
@@ -159,7 +173,7 @@ Deploy multiple WordPress sites on a single App Service Plan:
 
 ```hcl
 module "shared" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.1.1"
 
   project_name       = "myproject"
   environment        = "nonprod"
@@ -168,7 +182,7 @@ module "shared" {
 }
 
 module "site1" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.1"
 
   project_name = "myproject"
   site_name    = "site1"
@@ -182,6 +196,10 @@ module "site1" {
   shared_plan_sku            = "B1"
 }
 ```
+
+For an existing site, switching to `use_shared_plan = true` replaces the web app and is expected to fail;
+migrate instead. See
+[step 11 of the deployment guide](docs/deployment-guide.md#step-11-host-several-sites-on-a-shared-plan).
 
 **Cost savings:** the plan is paid once instead of once per site. Each site still pays for its own MySQL server.
 See the [cost guide](docs/cost.md#2-estimate-a-shared-plan) for a worked comparison.
@@ -203,10 +221,12 @@ Prices for each SKU, with their date and region, are in the [cost guide](docs/co
 - **Key Vault References**: Secrets loaded at runtime
 - **Firewalls**: Key Vault and Storage deny public data-plane access by default; the App Service subnet is allowed
   through service endpoints
-- **IP Restrictions**: With `cloudflare`, the main site accepts Cloudflare's address ranges and Azure's
-  `168.63.129.16` address. With `azure_front_door` and `front_door.enabled` true (the default), it accepts only your
-  Front Door profile; the patch that sets this drops the `168.63.129.16` rule. The staging slot accepts any Front
-  Door profile. With `front_door.enabled = false`, both accept any Front Door profile, and the main site keeps the
+- **IP Restrictions**: With `cloudflare`, the main site accepts Cloudflare's address ranges, which every Cloudflare
+  account shares, and Azure's `168.63.129.16` address. With `azure_front_door` and `front_door.enabled` true (the
+  default), the patch applied after Front Door is created makes it accept only your Front Door profile and drops
+  the `168.63.129.16` rule. A later apply is expected to restore the module's own rules (any Front Door profile, plus `168.63.129.16`), and nothing
+  guarantees the patch runs again. The staging slot accepts any Front Door profile. With
+  `front_door.enabled = false`, both accept any Front Door profile, and the main site keeps the
   `168.63.129.16` rule. The SCM (Kudu) endpoint has its own rules and allows all addresses by default
 - **TLS 1.2**: Minimum version on the web app, the storage account and the Front Door custom domain. MySQL does
   not require TLS (`require_secure_transport = OFF`)
@@ -222,7 +242,7 @@ through `extra_secrets`, and surface them to WordPress as Key Vault references t
 
 ```hcl
 module "wordpress_site" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.1"
 
   # ... other configuration ...
 
@@ -418,7 +438,7 @@ The module automatically handles these -- do NOT duplicate them in `extra_app_se
 |---------|-----------------|---------------|---------|
 | `WP_HOME` | `https://{custom_domain}` | `https://app-{name}-staging.azurewebsites.net` | Yes |
 | `WP_SITEURL` | `https://{custom_domain}` | `https://app-{name}-staging.azurewebsites.net` | Yes |
-| `WP_DEBUG` | `false` | `true` | Yes |
+| `WP_DEBUG` | `true` in nonprod, `false` in production | `true` | Yes |
 | `DATABASE_*` | Key Vault reference | Same as production | No |
 | `MICROSOFT_AZURE_*` | Key Vault reference | Same as production | No |
 
@@ -491,7 +511,7 @@ Always pin module references to a specific version tag to prevent unexpected cha
 
 ```hcl
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.1"
   # ...
 }
 ```

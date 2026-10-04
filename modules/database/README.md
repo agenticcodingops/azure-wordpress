@@ -60,9 +60,10 @@ Burstable SKUs use CPU credits that deplete under sustained WordPress load:
 
 ```hcl
 module "database" {
-  source = "../modules/layer-2-application/database"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/database?ref=v4.1.1"
 
-  site_name           = "workout-tracker"
+  project_name        = "example"
+  site_name           = "examplewp01"
   environment         = "production"
   location            = "East US"
   resource_group_name = azurerm_resource_group.main.name
@@ -169,7 +170,7 @@ No modules.
 | <a name="input_high_availability_mode"></a> [high\_availability\_mode](#input\_high\_availability\_mode) | High availability mode: Disabled, SameZone, or ZoneRedundant | `string` | `"Disabled"` | no |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for resources | `string` | n/a | yes |
 | <a name="input_long_query_time"></a> [long\_query\_time](#input\_long\_query\_time) | Seconds a statement must run to be logged as slow (the long\_query\_time server parameter). Applied only when slow\_query\_log\_enabled is true. Defaults to 2, a WordPress-oriented value; the server's own default is 10. Fractions are allowed; 0 logs every statement. A change applies to new connections only. | `number` | `2` | no |
-| <a name="input_mysql_version"></a> [mysql\_version](#input\_mysql\_version) | MySQL Flexible Server version. The default, 8.0.21, is the version every existing server was created with, so leaving it unset changes nothing. Changing it on an existing server is a major-version upgrade that cannot be undone: plan and rehearse it first (agenticcodingops/trackroutinely#104, WP-43, is where that upgrade is planned). Whether azurerm performs the change in place or forces replacement depends on the provider version, so read the provider documentation for your version and dry-run first. This input only enables the change. | `string` | `"8.0.21"` | no |
+| <a name="input_mysql_version"></a> [mysql\_version](#input\_mysql\_version) | MySQL Flexible Server version. The default, 8.0.21, is the version every existing server was created with, so leaving it unset changes nothing. Changing it on an existing server is a major-version upgrade that cannot be undone: rehearse it first on a restored copy, following Microsoft's major version upgrade guide (https://learn.microsoft.com/azure/mysql/flexible-server/how-to-upgrade), then take an on-demand backup immediately before the production upgrade. Whether azurerm performs the change in place or forces replacement depends on the provider version, so read the provider documentation for your version and dry-run first. This input only enables the change. | `string` | `"8.0.21"` | no |
 | <a name="input_private_dns_zone_id"></a> [private\_dns\_zone\_id](#input\_private\_dns\_zone\_id) | ID of the MySQL private DNS zone (from dns-zones module) | `string` | n/a | yes |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |
 | <a name="input_resource_group_name"></a> [resource\_group\_name](#input\_resource\_group\_name) | Name of the resource group | `string` | n/a | yes |

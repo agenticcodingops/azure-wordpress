@@ -147,15 +147,15 @@ locals {
 
   # Cloudflare configuration
   # Note: Use try() for string fields to handle empty strings gracefully when cdn_provider != "cloudflare"
-  # Defaults are Free-plan safe. enable_waf needs Pro or higher (its rate-limit
-  # ruleset exceeds Free's 1 rule with a 10 s timeout); cache rules work on Free.
+  # Defaults are Free-plan safe. enable_waf needs Business or higher (its login
+  # rate-limit rule matches the request method, which Free and Pro lack); cache rules work on Free.
   cf_config = {
     enabled                        = var.cdn_provider == "cloudflare" && coalesce(var.cloudflare.enabled, false)
     account_id                     = try(var.cloudflare.account_id, "") != "" ? var.cloudflare.account_id : ""
     domain                         = try(var.cloudflare.domain, "") != "" ? var.cloudflare.domain : ""
     subdomain                      = try(var.cloudflare.subdomain, "") != "" ? var.cloudflare.subdomain : ""
     proxied                        = coalesce(var.cloudflare.proxied, true)
-    enable_waf                     = coalesce(var.cloudflare.enable_waf, false)                    # Needs Pro or higher (rate-limit rules)
+    enable_waf                     = coalesce(var.cloudflare.enable_waf, false)                    # Needs Business or higher (rate-limit rules)
     enable_page_rules              = coalesce(var.cloudflare.enable_page_rules, true)              # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)
     enable_cache_rules             = coalesce(var.cloudflare.enable_cache_rules, false)            # Works on Free: 5 of its 10 cache rules
     enable_zone_setting_overrides  = coalesce(var.cloudflare.enable_zone_setting_overrides, false) # Some settings not editable on Free

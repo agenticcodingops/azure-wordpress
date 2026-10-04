@@ -35,8 +35,10 @@ code nor Microsoft's documentation settles a question, the text says **UNKNOWN**
 - Key Vault and Storage deny public data-plane access by default. The App Service subnet reaches both through
   service endpoints.
 - With the storage plugin, media URLs point at the storage account's blob endpoint, so browsers fetch media from
-  Azure directly, not through the CDN. That works only if the storage firewall and the container's access allow
-  those requests, and the defaults do not. See [Media](#media).
+  Azure directly, not through the CDN. Those requests must pass the storage firewall (`Deny` by default) and carry
+  their own authorization, because the account disallows anonymous blob reads and no input changes that. The
+  Microsoft Azure Storage for WordPress plugin writes unsigned URLs, so media does not load with it. See
+  [Media](#media).
 - The composition creates Log Analytics and Application Insights itself. It never calls `modules/monitoring`.
 
 Sources: `modules/wordpress-site/variables.tf:324-333` (`cdn_provider`), `modules/app-service/main.tf:24`,
@@ -238,19 +240,25 @@ What the code sets up for this flow:
 
 - **DNS.** A `CNAME` for the subdomain (or `@` for the apex) points at the web app's default host name, proxied when
   `cloudflare.proxied` is true (the default). An apex site also gets a `www` CNAME. A TXT record `asuid.SUBDOMAIN`
-  holds the web app's domain verification ID.
+  (or `asuid` for the apex) holds the web app's domain verification ID.
 - **Hostname binding.** The composition binds the custom domain to the web app, after the 120-second wait. It binds
   no certificate: `ssl_state` and `thumbprint` are ignored.
 - **Origin lock-down.** The web app and the slot allow Cloudflare's IPv4 and IPv6 ranges and `168.63.129.16/32`, and
   deny everything else. The composition reads the ranges live from `data.cloudflare_ip_ranges` on every run. The
-  app-service module falls back to a built-in list only when it is called without them.
+  app-service module falls back to a built-in list only when it is called without them. These ranges are
+  Cloudflare's shared egress pool, used by every Cloudflare account, so the rules admit Cloudflare, not your zone. A
+  request sent through another Cloudflare account reaches the web app and the slot without passing your zone's WAF,
+  rate-limit or page rules. One example is a Worker's `fetch()` to the app's `*.azurewebsites.net` name. The module
+  adds no header check yet; see
+  [Binding the origin to one CDN account](security-model.md#binding-the-origin-to-one-cdn-account).
 - **Origin protocol.** Cloudflare connects to the origin over HTTP or HTTPS, as the zone's SSL/TLS mode says. The
   module sets that mode only when `enable_zone_setting_overrides` is true (off by default), and the three page
   rules set `ssl = "strict"` for their own paths. The web app has `https_only = true`. Which mode an unmanaged zone
   uses, and whether strict mode validates against the web app with no custom-domain certificate bound, is UNKNOWN.
 - **Edge rules.** Three page rules are on by default: bypass the cache for `wp-admin` and `wp-login.php`, and cache
   `wp-content`. Cache rules (`enable_cache_rules`), WAF rulesets (`enable_waf`, which needs the Business plan or
-  higher; see [Security model](security-model.md#waf-rules-beyond-what-the-cdn-plan-provides)) and zone setting
+  higher and, until the rate-limit rules add the mandatory `cf.colo.id` characteristic, cannot be relied on on any
+  plan; see [Security model](security-model.md#waf-rules-beyond-what-the-cdn-plan-provides)) and zone setting
   overrides are off by default.
 - **`cloudflare.proxied = false` makes the site unreachable.** The CNAME becomes DNS-only, so browsers go straight
   to the web app. The web app's restrictions depend only on `cdn_provider`, so it still admits only Cloudflare's
@@ -316,8 +324,8 @@ What the code sets up for this flow:
 - **The staging slot is not patched.** It allows the `AzureFrontDoor.Backend` service tag without an `X-Azure-FDID`
   check, so any Front Door profile can reach it.
 - **`front_door.enabled = false`** with `cdn_provider = "azure_front_door"` creates no profile and no patch. The
-  web app and the slot still allow the `AzureFrontDoor.Backend` service tag with no `X-Azure-FDID` check, and deny
-  the rest.
+  web app and the slot still allow `168.63.129.16/32` (the `AllowAzureHealthProbe` rule) and the
+  `AzureFrontDoor.Backend` service tag with no `X-Azure-FDID` check, and deny the rest.
 - **WAF.** The policy uses Microsoft's Default Rule Set 2.1 and Bot Manager 1.1, with WordPress cookie exclusions.
   Rules 942230 and 941320 are set to log only. The mode is `Prevention` in production and `Detection` in nonprod
   unless you set `front_door.waf_mode`.
@@ -337,7 +345,7 @@ What the code sets up for this flow:
 Sources: `modules/wordpress-site/main.tf:140-146`, `:501-502`, `:775-797`, `:833-871`, `:878-880`, `:942-969`;
 `modules/wordpress-site/outputs.tf:146-164`; `modules/front-door/main.tf:17-201`, `:204-289` (route `:85-104`);
 `modules/front-door/outputs.tf:14-17`; `modules/wordpress-site/variables.tf:311-321`;
-`modules/app-service/main.tf:28`, `:244-258`, `:322-325`, `:395-414`;
+`modules/app-service/main.tf:28`, `:214-219`, `:244-258`, `:322-325`, `:368-373`, `:395-414`;
 `examples/basic-site/main.tf:109`; `examples/multi-site/main.tf:107`. Microsoft:
 [Secure traffic to origins](https://learn.microsoft.com/azure/frontdoor/origin-security),
 [What is a rule set?](https://learn.microsoft.com/azure/frontdoor/front-door-rules-engine).
@@ -348,16 +356,25 @@ Sources: `modules/wordpress-site/main.tf:140-146`, `:501-502`, `:775-797`, `:833
 
 - The main site and the slot allow all traffic (`ip_restriction_default_action = "Allow"`). The
   `168.63.129.16/32` allow rule is still declared.
-- With a custom domain, the composition binds the host name but no certificate. You create the DNS records and
-  bind a certificate outside this module.
-- Media still comes from the blob endpoint. See [Media](#media).
+- With a custom domain that is not an `azurewebsites.net` name, the composition creates the hostname binding in the
+  same apply, and Azure checks domain ownership then. Create the CNAME (or the `asuid` TXT record) before the first
+  apply; see [step 10 of the deployment guide](deployment-guide.md#step-10-onboard-a-site). The module binds no
+  certificate; bind one yourself.
+- With the storage plugin, media comes from the blob endpoint. See [Media](#media).
 
 Sources: `modules/wordpress-site/variables.tf:324-333`; `modules/wordpress-site/main.tf:942-969`;
 `modules/app-service/main.tf:214-219`, `:258`, `:414`.
 
 ## Media
 
-WordPress media is stored in Blob Storage, not on an Azure Files mount. The web app has no `storage_account` block.
+Media goes to Blob Storage only after you install the Microsoft Azure Storage for WordPress plugin and turn on its
+"Use Microsoft Azure Storage for default upload" option (`MICROSOFT_AZURE_USE_FOR_DEFAULT_UPLOAD`, which defaults to
+`false`). This module does neither. Until then, WordPress writes uploads to `wp-content/uploads` on the web app's
+persistent App Service storage (`WEBSITES_ENABLE_APP_SERVICE_STORAGE = "true"`, `modules/app-service/main.tf:81`).
+The storage account's blob versioning and soft delete do not cover files stored there. The web app has no
+`storage_account` block, so there is no Azure Files mount either way.
+
+With the plugin installed and set as the default upload target:
 
 1. **Configuration.** When `app_service_storage_plugin_app_settings_enabled` is `true` (the default), the web app
    and the slot get `MICROSOFT_AZURE_ACCOUNT_NAME`, `MICROSOFT_AZURE_CONTAINER` and `MICROSOFT_AZURE_ACCOUNT_KEY`.
@@ -369,21 +386,37 @@ WordPress media is stored in Blob Storage, not on an Azure Files mount. The web 
    `https://ACCOUNT.blob.core.windows.net/...`. Browsers therefore fetch media directly from Azure, not through
    Cloudflare or Front Door.
 4. **The firewall is one gate.** `storage_network_rules_default_action` defaults to `Deny`, which returns 403 to those
-   browsers. Set it to `Allow` when media is served from the blob endpoint. Keep `Deny` only if you front the blob
-   endpoint with a CDN custom domain and allow-list that CDN's egress ranges. The container's access level is the
-   other gate; see the UNKNOWN below.
+   browsers. `Allow` removes that gate, but it is not enough on its own. The account disallows anonymous blob access
+   (`allow_nested_items_to_be_public = false`, `modules/storage/main.tf:28`, not an input), and the uploads container
+   is `private` (`container_access_type = "private"`, `modules/storage/main.tf:91`, also not an input). Microsoft
+   documents that Azure then rejects every anonymous read, whatever the container's access level
+   ([Microsoft](https://learn.microsoft.com/azure/storage/blobs/anonymous-read-access-prevent)). A browser can read a
+   blob from the endpoint only with a SAS token in the URL. A CDN custom domain in front of the blob endpoint does
+   not help unless the CDN itself authenticates to the account, for example with Front Door's managed-identity origin
+   authentication ([Microsoft](https://learn.microsoft.com/azure/frontdoor/origin-authentication-with-managed-identities)).
+   Otherwise its origin requests are anonymous too, so allow-listing its egress ranges is not enough. This module
+   creates no such CDN.
 
 With `cdn_provider = "cloudflare"`, Cloudflare's live IPv4 ranges are added to the account's allow-list. That
 covers Cloudflare origin pulls only if you put the blob endpoint behind a Cloudflare custom domain, which this
-module does not create. Cloudflare's IPv6 ranges are left out, because Azure Storage IP rules accept IPv4 only.
+module does not create. Those pulls are anonymous, so the account rejects them as well (item 4). Cloudflare's IPv6
+ranges are left out, because Azure Storage IP rules accept IPv4 only.
 
-**UNKNOWN: how anonymous browser reads are authorised.** The uploads container is `private`, and the account sets
-`allow_nested_items_to_be_public = false`. This repository does not configure how the plugin lets an anonymous
-browser read a blob under those settings. Check it with your plugin version before you go live.
+**Media from the blob endpoint does not load with the Microsoft Azure Storage for WordPress plugin.** The account
+hard-codes `allow_nested_items_to_be_public = false` (`modules/storage/main.tf:28`) and the uploads container is
+`private` (`modules/storage/main.tf:91`). Azure rejects every anonymous read on such an account. That plugin
+(version 4.5.2) writes plain URLs, the CNAME or `https://ACCOUNT.blob.core.windows.net/CONTAINER` followed by the
+file path, with no SAS token, and its settings page says a private container "cannot be used"
+(the warning is at `windows-azure-storage-settings.php:577`; the attachment URL is returned from stored metadata,
+unsigned, at `windows-azure-storage.php:410`; both at tag 4.5.2, source at
+`plugins.svn.wordpress.org/windows-azure-storage/tags/4.5.2/`). No input of this module
+changes either side. **UNKNOWN:** whether another storage plugin serves SAS-signed media URLs. Check it before you
+go live.
 
-Sources: `modules/app-service/main.tf:120-128`, `:295-297`; `modules/wordpress-site/variables.tf:172-181`,
-`:268-273`; `modules/wordpress-site/main.tf:357-366`; `modules/storage/main.tf:26-43`, `:88-92`;
-`CHANGELOG.md:136-142` (v2.0.0 notes); `modules/storage/README.md:76-89`.
+Sources: `modules/app-service/main.tf:81`, `:120-128`, `:295-297`;
+`modules/wordpress-site/variables.tf:172-181`, `:268-273`; `modules/wordpress-site/main.tf:357-366`;
+`modules/storage/main.tf:26-43`, `:88-92`; `CHANGELOG.md:136-142` (v2.0.0 notes); `modules/storage/README.md:76-89`;
+plugin source: `plugins.svn.wordpress.org/windows-azure-storage/tags/4.5.2/`.
 
 ## Secrets
 
@@ -503,7 +536,7 @@ inbound requests is the web app's access restriction list:
 
 | `cdn_provider` | Main site allows | Default action |
 | --- | --- | --- |
-| `cloudflare` | `168.63.129.16/32`, Cloudflare IPv4 and IPv6 ranges | Deny |
+| `cloudflare` | `168.63.129.16/32`, Cloudflare IPv4 and IPv6 ranges (any Cloudflare account) | Deny |
 | `azure_front_door` | `AzureFrontDoor.Backend` with the profile's `X-Azure-FDID`, after the patch | Deny |
 | `direct` | `168.63.129.16/32` | Allow |
 
@@ -632,6 +665,11 @@ What changes for that site:
 - The site creates no plan and no autoscale setting of its own.
 - `shared_plan_sku` decides whether a staging slot exists, so set it to the shared plan's real SKU.
 - The Resource Health alert leaves the shared plan out.
+
+Do not switch an existing site to `use_shared_plan = true`: its web app would change resource group, which replaces
+it, and the module is expected to fail partway (read from the code, not run). Create a new `site_name` on the shared
+plan and migrate instead; see
+[step 11 of the deployment guide](deployment-guide.md#step-11-host-several-sites-on-a-shared-plan).
 
 Sources: `modules/shared-infrastructure/main.tf:43-71`, `:160-167`; `modules/wordpress-site/main.tf:121-135`, `:459`;
 `modules/wordpress-site/monitoring.tf:390`, `:403-406`; `modules/app-service/main.tf:16-17`, `:140`, `:450`.

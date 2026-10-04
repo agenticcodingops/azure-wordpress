@@ -67,18 +67,20 @@ Default alert thresholds:
 
 ```hcl
 module "monitoring" {
-  source = "../modules/layer-2-application/monitoring"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/monitoring?ref=v4.1.1"
 
-  site_name           = "workout-tracker"
+  project_name        = "example"
+  site_name           = "examplewp01"
   environment         = "nonprod"
   location            = "East US"
   resource_group_name = azurerm_resource_group.main.name
 
   app_service_id        = module.app_service.id
+  app_service_plan_id   = module.app_service.plan_id
   mysql_server_id       = module.database.server_id
   front_door_profile_id = module.front_door.profile_id
 
-  alert_recipients = ["devops@trackroutinely.com"]
+  alert_recipients = ["alerts@example.com"]
 
   alert_rules = {
     http_5xx_threshold   = 10
