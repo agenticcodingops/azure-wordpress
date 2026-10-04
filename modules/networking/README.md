@@ -91,8 +91,9 @@ module "networking" {
   ([virtual network integration](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration#network-routing)).
   The NSG's inbound rules (HTTPS from `AzureFrontDoor.Backend` and `AppServiceManagement`,
   then deny all) therefore do not restrict visitors. App Service access restrictions in the
-  `app-service` module do that. The NSG has no outbound rules, so Azure's default outbound
-  rules apply.
+  `app-service` module filter inbound requests instead, and only when `cdn_provider` is
+  `cloudflare` or `azure_front_door`. With `direct`, the default, they admit every visitor.
+  The NSG has no outbound rules, so Azure's default outbound rules apply.
 - **Private endpoint subnet:** created, but no module in this repository places a private
   endpoint in it.
 
