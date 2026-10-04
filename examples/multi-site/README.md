@@ -29,12 +29,9 @@ Deploy multiple WordPress sites sharing a single App Service Plan for cost optim
 
 ## Cost Comparison
 
-| Deployment | Sites | App Service Plans | Est. Monthly Cost |
-|------------|-------|-------------------|-------------------|
-| Dedicated plans | 3 | 3 x B1 ($13) | $39 + $75 (MySQL) = ~$114 |
-| **Shared plan** | 3 | 1 x B1 ($13) | $13 + $75 (MySQL) = ~$88 |
-
-**Savings: ~23% with 3 sites, increases with more sites**
+A shared plan is paid once; each site still pays for its own MySQL server, storage, Key Vault and DNS zone. The
+[cost guide](../../docs/cost.md#2-estimate-a-shared-plan) compares dedicated and shared plans for three sites,
+with dated prices.
 
 ## Version Pinning
 
@@ -79,7 +76,8 @@ each one needs its `key_vault_name_suffix` bumped, or both inputs pinned to `tru
 ## Scaling
 
 - **Add sites**: Add entries to `sites` map in terraform.tfvars
-- **Remove sites**: Remove entries (7-day soft delete enabled)
+- **Remove sites**: Remove entries, after backing up and removing any locks. See
+  [step 12 of the deployment guide](../../docs/deployment-guide.md#step-12-remove-a-site)
 - **Scale up**: Change `app_service_sku` (e.g., B1 → P1v3)
 
 ## Capacity Guidelines

@@ -50,15 +50,17 @@ an existing deployment, because they force a vault replacement.
 
 ## Cost Estimate
 
-| Resource | SKU | Est. Monthly Cost |
-|----------|-----|-------------------|
-| App Service Plan | B1 | $13 |
-| MySQL | B_Standard_B2s | $25 |
-| Storage | Standard LRS | $1 |
-| Key Vault | Standard | $1 |
-| **Total** | | **~$40/month** |
+This example uses an App Service plan of SKU B1 and a MySQL server of SKU B_Standard_B2s. Their prices, with
+the date and region they were taken for, are in the [cost guide](../../docs/cost.md). Cloudflare plan fees are
+outside that table; this example's Cloudflare settings work on the Free plan.
 
-*Cloudflare CDN is free tier eligible*
+## SKU Note
+
+With a dedicated plan, the app-service module also creates an autoscale setting on the plan
+(`modules/app-service/main.tf:449-450` at v4.1.1). Microsoft documents autoscale for Standard tier and up, and whether
+Azure accepts it on a B1 plan has not been tested. If the apply fails on that setting, use `S1`, or a shared
+plan as in [`examples/multi-site`](../multi-site/). See
+[getting started](../../docs/getting-started.md#the-other-choices).
 
 ## Next Steps
 
