@@ -84,8 +84,9 @@ from Azure, not through your CDN**, from arbitrary end-user IPs that cannot be a
 The firewall is only one of two gates on that read. `Allow` removes the firewall gate, but it does not make
 media load. This module sets `allow_nested_items_to_be_public = false` (`main.tf:28`) and creates the uploads
 container as `private` (`main.tf:91`); neither is an input. Azure then rejects every anonymous read, so an
-anonymous browser cannot read a blob from the endpoint even with the firewall open. Only a request that carries
-a SAS token, or the account key, succeeds. See
+anonymous browser cannot read a blob from the endpoint even with the firewall open. Only an authorised request
+succeeds: one that carries a SAS token, one signed with the account key, or one authorised through Microsoft Entra
+ID. A browser should use a SAS URL; the account key stays on the server. See
 [Security model: Key Vault and Storage deny public access by default](../../docs/security-model.md#key-vault-and-storage-deny-public-access-by-default)
 and [Architecture: Media](../../docs/architecture.md#media).
 
