@@ -31,6 +31,11 @@ which is release v4.1.1. Every name, ID and host name below is a placeholder.
   to one.
 - **GitHub:** admin rights on the repository, to create environments and their protection rules. The steps use
   GitHub Actions. Other CI systems work the same way, with their own OIDC issuer and subject.
+- **A GitHub plan that offers environment protection rules for your repository.** On GitHub Free, Pro and Team,
+  required reviewers work only in public repositories. Deployment branch rules work in public repositories, and in
+  private ones on Pro and Team
+  ([GitHub docs](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)).
+  Without them, the production job does not wait for anyone. See step 2 for what that means.
 - **Resource providers.** The module's resources live in these namespaces: `Microsoft.Web`,
   `Microsoft.DBforMySQL`, `Microsoft.KeyVault`, `Microsoft.Storage`, `Microsoft.Network`,
   `Microsoft.OperationalInsights` and `Microsoft.Insights`, plus `Microsoft.Cdn` for Front Door. With
@@ -73,7 +78,8 @@ sequenceDiagram
 ```
 
 Only a job in the `production` environment can get a production token. The production identity trusts that one
-subject, and GitHub holds the job until a required reviewer approves it.
+subject, and GitHub holds the job until a required reviewer approves it. That pause needs a repository and plan
+where required reviewers are available (see Prerequisites).
 
 ## Steps
 
@@ -146,7 +152,7 @@ az role assignment create --assignee-object-id "$principal_id" --assignee-princi
   --role Contributor --scope /subscriptions/<nonprod-subscription-id>
 
 az role assignment create --assignee-object-id "$principal_id" --assignee-principal-type ServicePrincipal \
-  --role "Storage Blob Data Contributor" \
+  --role "Storage Blob Data Owner" \
   --scope /subscriptions/<state-subscription-id>/resourceGroups/rg-tfstate-example/providers/Microsoft.Storage/storageAccounts/sttfstateexample/blobServices/default/containers/tfstate
 ```
 
@@ -161,9 +167,9 @@ Repeat for the production identity, with the production subscription.
   `repo:ORG/REPO:environment:NAME`, not the branch. A pull-request job's subject is `repo:ORG/REPO:pull_request`.
 - **Pull-request plans run the pull request's code** with the nonprod identity. Anyone who can open a pull request
   in the repository can act as that identity during the plan. Keep it scoped to nonprod.
-- **State role.** Terraform 1.9's backend documentation asks for Storage Blob Data Owner when you use Entra ID
-  authentication. The current documentation recommends Storage Blob Data Contributor on the container. Use the
-  role your Terraform version's documentation names.
+- **State role.** The command above follows Terraform 1.9's backend documentation, which asks for Storage Blob Data
+  Owner when you use Entra ID authentication. The current documentation recommends Storage Blob Data Contributor on
+  the container. If you run a newer Terraform, use the role its documentation names.
 - **Contributor is enough to deploy** because the module creates no role assignments. It is not enough for locks
   (step 9).
 - **Key Vault.** The deploying identity writes secrets through the vault's data plane, so the vault's firewall must
@@ -174,6 +180,11 @@ In GitHub, create the environments `nonprod` and `production`. On `production`:
 - add **required reviewers**;
 - under **deployment branches and tags**, allow only `main`, so that a job from another branch cannot use the
   environment.
+
+**If your plan does not offer these rules for this repository** (for example, a private repository on GitHub
+Free), the environment pauses nothing. Any workflow that names `production`, from any branch, then gets a token
+with the production subject. Treat write access to the repository as production access, or move the repository to
+a plan that offers the rules.
 
 Store the client IDs, tenant ID and subscription IDs as repository or environment variables. They are not
 secrets.
@@ -472,8 +483,8 @@ flowchart TD
     A["Operator: choose site_name"] --> B{"Names free?"}
     B -- No --> A
     B -- Yes --> C{"cdn_provider"}
-    C -- cloudflare --> E["Operator: add the site to the nonprod map and open a pull request"]
-    C -- "azure_front_door or direct, with a custom domain" --> D["Operator: create the DNS records the custom-domain binding needs"]
+    C -- "cloudflare, with cloudflare.enabled = true" --> E["Operator: add the site to the nonprod map and open a pull request"]
+    C -- "any other, with a custom domain" --> D["Operator: create the DNS records the custom-domain binding needs"]
     C -- "direct, on *.azurewebsites.net" --> E
     D --> E
     E --> F["CI: plan nonprod"]
@@ -498,8 +509,9 @@ flowchart TD
    - With `cdn_provider = "cloudflare"` and `cloudflare.enabled = true`, the module creates the site's records and
      the `asuid` verification record in your existing zone. It waits 120 seconds, then binds the custom domain to
      the app (`modules/wordpress-site/main.tf:878-969`). Nothing to do here.
-   - With `azure_front_door` or `direct` and a custom domain that does not end in `.azurewebsites.net`, the module
-     creates no DNS records. It still creates the App Service hostname binding, in the same apply
+   - In every other case with a custom domain that does not end in `.azurewebsites.net`, the module creates no DNS
+     records. That covers `azure_front_door`, `direct`, and `cloudflare` with `cloudflare.enabled` left at its
+     default, `false` (`modules/wordpress-site/variables.tf:339`, `modules/wordpress-site/main.tf:153`). It still creates the App Service hostname binding, in the same apply
      (`modules/wordpress-site/main.tf:942-944`). App Service checks that you own the domain when the binding is
      created, from a CNAME to the app or from an `asuid.<subdomain>` TXT record
      ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/app-service/app-service-web-tutorial-custom-domain)).

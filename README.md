@@ -85,7 +85,9 @@ module "wordpress_site" {
   # key_vault_network_acls_ip_rules = ["<runner IP>"] instead.
   key_vault_public_network_access_enabled = true
   # Visitors' browsers fetch media straight from the blob endpoint, so with "Deny"
-  # every image returns 403. Keep "Deny" only behind a CDN custom domain.
+  # every image returns 403. A CDN in front of the site does not change that. Keep
+  # "Deny" only if the blob endpoint itself is behind a CDN custom domain whose
+  # egress ranges you allow-list.
   storage_network_rules_default_action = "Allow"
 
   # Backup container for UpdraftPlus (v1.1.0+)
