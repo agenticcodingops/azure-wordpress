@@ -25,10 +25,16 @@ which is release v4.1.1. Every name, ID and host name below is a placeholder.
 
 ## Prerequisites
 
-- **Azure:** Owner, or Contributor plus User Access Administrator, on the subscriptions you deploy to. You need
-  this once, to create the role assignments in steps 2 and 9.
-- **Separate subscriptions** for nonprod and production are recommended, so that each CI identity can be scoped
-  to one.
+- **Azure:** Owner, or Contributor plus User Access Administrator, on the subscriptions you deploy to and on the
+  state subscription. You need this once, to create the role assignments in steps 2 and 9.
+- **Three subscriptions:** one for nonprod, one for production, and one for the state account (step 1).
+  - **Why one per environment.** The module creates its own resource groups
+    (`modules/wordpress-site/main.tf:185-188`), so each CI identity needs Contributor on a whole subscription.
+    If nonprod and production shared one, pull-request code running as the nonprod identity could change
+    production.
+  - **Why one for state.** A role on a subscription applies to every resource group in it
+    ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/role-based-access-control/scope-overview)), so a
+    separate resource group does not keep the state account out of reach.
 - **GitHub:** admin rights on the repository, to create environments and their protection rules. The steps use
   GitHub Actions. Other CI systems work the same way, with their own OIDC issuer and subject.
 - **A GitHub plan that offers environment protection rules for your repository.** On GitHub Free, Pro and Team,
@@ -119,9 +125,10 @@ az storage container-rm create --storage-account sttfstateexample --name tfstate
 - **One container per environment.** Pull-request plans run the pull request's code as the nonprod identity
   (step 2). If both environments shared a container, that code could download production state, with its secrets.
   Step 2 gives each identity a data role on its own container only.
-- **Keep the state account out of reach of the CI identities.** Put it in a subscription or resource group where
-  neither identity holds Contributor. Contributor can turn shared-key access back on and list the account keys,
-  which would bypass the container-scoped roles.
+- **Keep the state account out of reach of the CI identities.** Put it in a subscription where neither identity
+  holds Contributor, such as the state subscription from the Prerequisites. A separate resource group inside a
+  deployment subscription is not enough, because the subscription-wide role applies to it too. Contributor can
+  turn shared-key access back on and list the account keys, which would bypass the container-scoped roles.
 
 ### Step 2: Create the CI identities
 
@@ -168,8 +175,8 @@ Repeat for the production identity, with the production subscription and the `tf
 
 | Identity | Federated subjects | Azure roles |
 |---|---|---|
-| nonprod | `repo:ORG/REPO:pull_request`, `repo:ORG/REPO:environment:nonprod` | Contributor on the nonprod subscription; a data-plane role on the `tfstate-nonprod` container only |
-| production | `repo:ORG/REPO:environment:production` | Contributor on the production subscription; a data-plane role on the `tfstate-production` container only; lock permission if you use locks (step 9) |
+| nonprod | `repo:ORG/REPO:pull_request`, `repo:ORG/REPO:environment:nonprod` | Contributor on the dedicated nonprod subscription; a data-plane role on the `tfstate-nonprod` container only |
+| production | `repo:ORG/REPO:environment:production` | Contributor on the separate production subscription; a data-plane role on the `tfstate-production` container only; lock permission if you use locks (step 9) |
 
 - **Subjects.** When a GitHub job references an environment, the token's subject is
   `repo:ORG/REPO:environment:NAME`, not the branch. A pull-request job's subject is `repo:ORG/REPO:pull_request`.
