@@ -277,14 +277,22 @@ The module stores three secrets of its own in the site's vault: `db-password`,
 Consumer secrets from `extra_secrets` are stored beside them, and cannot overwrite them
 (`modules/wordpress-site/main.tf:427`).
 
-Terraform never writes these values into the app's settings. It writes Key Vault
-references, which App Service resolves at run time:
+By default, Terraform does not write these values into the app's settings. It writes Key
+Vault references, which App Service resolves at run time:
 
 - `DATABASE_PASSWORD` (`modules/app-service/main.tf:71`);
 - `APPLICATIONINSIGHTS_CONNECTION_STRING` (`modules/app-service/main.tf:78`);
 - `MICROSOFT_AZURE_ACCOUNT_KEY`, unless `app_service_storage_plugin_app_settings_enabled`
   is `false` (`modules/app-service/main.tf:120-126`);
 - each entry of `extra_secret_app_settings` (`modules/wordpress-site/main.tf:443-446`).
+
+These are defaults, not guarantees. `app_service.extra_app_settings`
+(`modules/wordpress-site/variables.tf:285`) is merged after the module's own settings, so
+an entry with the same name replaces a reference (`modules/app-service/main.tf:287`). On the
+staging slot, `app_service.staging_app_settings_override` is merged last of all
+(`modules/app-service/main.tf:436-440`). A literal secret passed through either input sits
+in the app's configuration and in Terraform state. Use `extra_secrets` with
+`extra_secret_app_settings` instead.
 
 The app and the slot each have a system-assigned managed identity
 (`modules/app-service/main.tf:179-181`, `:349-351`). Each identity gets `Get` and `List` on
@@ -351,7 +359,7 @@ resolves its references after the grant is **UNKNOWN**; see [Unknowns](#unknowns
 | Front Door route | HTTPS to the origin, HTTP redirected to HTTPS | `modules/front-door/main.tf:93`, `:95` |
 | Front Door origin | Certificate name check on | `modules/front-door/main.tf:69` |
 | Cloudflare zone | `ssl = strict`, minimum TLS 1.2, Always Use HTTPS, **only when `cloudflare.enable_zone_setting_overrides = true`** | `modules/cloudflare/main.tf:134-158`; defaults `modules/cloudflare/variables.tf:68-72`, `:79-82`; off by default `modules/wordpress-site/variables.tf:347` |
-| Cloudflare page rules | `ssl = strict` on `/wp-admin/*`, `/wp-login.php*` and `/wp-content/*`, **on by default** whenever `cloudflare.enabled = true` (`cloudflare.enable_page_rules` defaults to `true`) | `modules/cloudflare/page-rules.tf:17-86`; default `modules/wordpress-site/variables.tf:345` |
+| Cloudflare page rules | `ssl = strict` on `/wp-admin/*`, `/wp-login.php*` and `/wp-content/*`, **on by default** whenever `cdn_provider = "cloudflare"` and `cloudflare.enabled = true` (`cloudflare.enable_page_rules` defaults to `true`) | `modules/cloudflare/page-rules.tf:17-86`; default `modules/wordpress-site/variables.tf:345`; module gate `modules/wordpress-site/main.tf:153`, `:879` |
 | MySQL | TLS **not** required: `require_secure_transport = OFF` | `modules/database/main.tf:91-96` |
 
 The custom host-name binding on App Service has no certificate
@@ -417,11 +425,14 @@ tracked in [issue #76](https://github.com/agenticcodingops/azure-wordpress/issue
 The module configures the WAF features listed under [Edge](#edge) and nothing more. Managed
 rule sets, bot management and rate limiting depend on your CDN plan:
 
-- On Cloudflare, `enable_waf` needs a Pro plan or higher
-  (`modules/wordpress-site/main.tf:150-151`). Its rate-limit ruleset has two rules with a
-  60-second period (`modules/cloudflare/waf.tf:91-123`). Cloudflare's Free plan allows one
-  rule with a 10-second period; Pro allows two, with periods up to one minute
-  ([rate limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)).
+- On Cloudflare, the rate-limit rules that `enable_waf` adds need a Business plan or higher.
+  The login rule matches on the request method (`modules/cloudflare/waf.tf:101-104`), and
+  Cloudflare's availability table lists the Method field in rate-limiting expressions from
+  the Business plan upward
+  ([rate limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)). The
+  ruleset's two rules and 60-second periods (`modules/cloudflare/waf.tf:91-123`) fit within
+  Pro's limits, but the Method field does not. The code comment that says Pro is enough
+  (`modules/wordpress-site/main.tf:150-151`) is out of date.
 - The module deploys no Cloudflare managed ruleset. If you deploy one yourself, check how
   it interacts with the skip rules above, which match on a cookie name that any client can
   send (`modules/cloudflare/waf.tf:51-55`).
@@ -485,8 +496,10 @@ For each site, state holds at least:
 - the storage account key (`modules/wordpress-site/main.tf:379`;
   `modules/storage/outputs.tf:24-34`);
 - the Application Insights connection string (`modules/wordpress-site/main.tf:380`);
-- every value you pass in `extra_secrets` (`modules/wordpress-site/variables.tf:808-813`),
-  because each becomes a Key Vault secret resource (`modules/key-vault/main.tf:105-110`);
+- every `extra_secrets` value that reaches the vault
+  (`modules/wordpress-site/variables.tf:808-813`). Each becomes a Key Vault secret resource
+  (`modules/key-vault/main.tf:105-110`). An entry named like a module-owned secret is
+  dropped by the merge (`modules/wordpress-site/main.tf:427`);
 - the publishing credentials of the app and the slot. The azurerm provider exports a
   `site_credential` block on the web app, with "the Site Credentials Password used for
   publishing"
