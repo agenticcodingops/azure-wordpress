@@ -28,13 +28,14 @@ flows and the network layout, see [Architecture](architecture.md). To deploy, st
 | --- | --- | --- |
 | Origin admits only the CDN | Off: `cdn_provider` defaults to `"direct"`, which admits everyone | Yes. Set `cdn_provider` |
 | Key Vault data plane denies public access | On | Allow-list the deploying principal |
-| Storage data plane denies public access | On | Set `Allow` if visitors load media from the blob endpoint |
+| Storage data plane denies public access | On | Yes, for media served from the blob endpoint. `Allow` alone is not enough: see [Storage](#key-vault-and-storage-deny-public-access-by-default) |
 | SCM (Kudu) restricted to an allow-list | Off: default action `Allow` | Yes. Set the SCM variables |
 | FTP | Off at the transport layer | No |
 | Basic-auth publishing credentials | On | Turn off if you can |
 | Key Vault references resolved by managed identity | On | No |
 | MySQL has no public endpoint | On | No |
 | TLS required on MySQL connections | Off | See [Not covered](#mysql-connections-do-not-require-tls) |
+| Certificate for the custom domain on App Service | Not managed by the module | Yes, with `cdn_provider = "direct"`. See [TLS settings](#tls-settings) |
 | Terraform state protected | Not managed by the module | Yes. See [Terraform state](#terraform-state-holds-generated-secrets) |
 
 ## Trust boundaries
@@ -254,9 +255,16 @@ what breaks when you turn basic auth off.
   The policy does not limit the account key itself, which the storage plugin uses
   (`modules/app-service/main.tf:124`).
 
-`Deny` breaks media for visitors when the plugin serves media straight from the blob
-endpoint. Sites that do so must set `Allow`. The
-[storage README](../modules/storage/README.md#network-rules) explains the choice.
+The firewall is only one of two gates on media that browsers fetch from the blob endpoint.
+`Deny` refuses those browsers, so that design needs `Allow`. `Allow` is not enough on its
+own: the account disallows anonymous blob access (`modules/storage/main.tf:28`) and the
+uploads container is private (`modules/storage/main.tf:91`). Microsoft states that once
+anonymous access is disallowed for the account, "any future anonymous requests to that
+account fail"
+([anonymous read access](https://learn.microsoft.com/en-us/azure/storage/blobs/anonymous-read-access-configure#allow-or-disallow-anonymous-read-access-for-a-storage-account)).
+How the storage plugin lets a browser read media under these settings is **UNKNOWN**; see
+[Architecture: Media](architecture.md#media) and the
+[storage README](../modules/storage/README.md#network-rules).
 
 ### Database network
 
@@ -367,11 +375,26 @@ resolves its references after the grant is **UNKNOWN**; see [Unknowns](#unknowns
 | Cloudflare zone | `ssl = strict`, minimum TLS 1.2, Always Use HTTPS, **only when `cloudflare.enable_zone_setting_overrides = true`** | `modules/cloudflare/main.tf:134-158`; defaults `modules/cloudflare/variables.tf:68-72`, `:79-82`; off by default `modules/wordpress-site/variables.tf:347` |
 | Cloudflare page rules | `ssl = strict` on `/wp-admin/*`, `/wp-login.php*` and `/wp-content/*`, **on by default** whenever `cdn_provider = "cloudflare"` and `cloudflare.enabled = true` (`cloudflare.enable_page_rules` defaults to `true`) | `modules/cloudflare/page-rules.tf:17-86`; default `modules/wordpress-site/variables.tf:345`; module gate `modules/wordpress-site/main.tf:153`, `:879` |
 | MySQL | TLS **not** required: `require_secure_transport = OFF` | `modules/database/main.tf:91-96` |
+| App Service custom domain | Host name bound **without a certificate** | `modules/wordpress-site/main.tf:942-969` |
 
-The custom host-name binding on App Service has no certificate
-(`modules/wordpress-site/main.tf:942-969`). Whether Full (strict) works end to end with that
-binding is **UNKNOWN**; see [Unknowns](#unknowns). With the default page rules, that question
-applies to the admin, login and content paths whatever the zone setting is.
+The module binds the custom host name on App Service but no certificate
+(`modules/wordpress-site/main.tf:942-969`). What that means depends on `cdn_provider`:
+
+- **`direct` (the default):** browsers connect to the web app on the custom domain. Microsoft:
+  "Unless you configure a certificate binding for your custom domain, any HTTPS request from
+  a browser to the domain receives an error or warning, depending on the browser"
+  ([custom domains](https://learn.microsoft.com/en-us/azure/app-service/app-service-web-tutorial-custom-domain#validate-domain-ownership-and-complete-the-mapping)).
+  The web app forces HTTPS (`modules/app-service/main.tf:165`) and sets `WP_HOME` to the
+  custom domain (`modules/app-service/main.tf:74-75`). Bind a certificate yourself, outside
+  this module, before you send visitors to the site. See
+  [Architecture: Request flow: direct](architecture.md#request-flow-direct).
+- **`azure_front_door`:** Front Door presents its managed certificate for the custom domain
+  (`modules/front-door/main.tf:78-81`), and reaches the origin on the default host name
+  (`modules/front-door/main.tf:62-65`).
+- **`cloudflare`:** Cloudflare presents the certificate to visitors. Whether Full (strict)
+  works end to end with the unbound origin is **UNKNOWN**; see [Unknowns](#unknowns). With
+  the default page rules, that question applies to the admin, login and content paths
+  whatever the zone setting is.
 
 ### Edge
 
@@ -383,9 +406,13 @@ applies to the admin, login and content paths whatever the zone setting is.
   (`modules/front-door/main.tf:127-166`). The default SKU is Premium
   (`modules/wordpress-site/main.tf:142`).
 - **Cloudflare** (`cdn_provider = "cloudflare"` and `cloudflare.enabled = true`): the
-  module manages the site's DNS records and proxies the site's CNAME records unless you set
-  `cloudflare.proxied = false` (`modules/wordpress-site/main.tf:153`;
-  `modules/wordpress-site/variables.tf:343`; `modules/cloudflare/main.tf:48-126`). Page
+  module manages the site's DNS records and proxies the site's CNAME records
+  (`modules/wordpress-site/main.tf:153`; `modules/wordpress-site/variables.tf:343`;
+  `modules/cloudflare/main.tf:48-126`). Do not set `cloudflare.proxied = false` with this
+  `cdn_provider`. The records become DNS-only (`modules/cloudflare/main.tf:55`), so visitors
+  connect straight to the web app, and the origin rules, which follow `cdn_provider` alone
+  (`modules/app-service/main.tf:222-258`), admit only Cloudflare's ranges and refuse them. See
+  [Architecture: Request flow: Cloudflare](architecture.md#request-flow-cloudflare). Page
   rules, on by default, bypass the cache and set `security_level = "high"` and
   `ssl = "strict"` on `/wp-admin/*` and `/wp-login.php*` (`modules/cloudflare/page-rules.tf:17-64`;
   `modules/wordpress-site/variables.tf:345`). With `cloudflare.enable_waf = true` (default `false`,
@@ -477,6 +504,12 @@ The blob service allows `GET`, `HEAD`, `PUT` and `OPTIONS` from any origin
 (`modules/storage/main.tf:67-73`). The code comment says "Restricted by WAF", but direct
 requests to the blob endpoint do not pass through a CDN WAF. Writes still need
 authorization: the account key, a SAS token or a Microsoft Entra ID token.
+
+### A certificate for the custom domain
+
+The module binds the custom host name on App Service without a certificate
+(`modules/wordpress-site/main.tf:942-969`). With `cdn_provider = "direct"`, visitors get a
+certificate error or warning until you bind one yourself. See [TLS settings](#tls-settings).
 
 ### Secret rotation
 
@@ -584,6 +617,9 @@ These could not be confirmed from the code or from vendor documentation:
    (`modules/wordpress-site/main.tf:541-544`).
 7. A tested procedure for rotating the database password, the storage key or the
    Application Insights connection string.
+8. How the storage plugin lets an anonymous browser read media, when the account disallows
+   anonymous blob access and the uploads container is private
+   (`modules/storage/main.tf:28`, `:91`).
 
 ## References
 
