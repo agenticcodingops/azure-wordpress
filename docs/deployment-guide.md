@@ -513,7 +513,9 @@ flowchart TD
 
      If you cannot create the record before the first apply, that apply fails at the binding. Create the record,
      then run the pipeline again.
-   - With Front Door, create the `_dnsauth` record **after** the first apply. Its value is the
+   - With Front Door, whether a first deploy applies cleanly has not been tested; see
+     [Request flow: Azure Front Door](architecture.md#request-flow-azure-front-door). Create the `_dnsauth` record
+     **after** the first apply. Its value is the
      `custom_domain_validation_token` output, which exists only once that apply has created the Front Door custom
      domain (`modules/wordpress-site/outputs.tf:161-164`, `modules/front-door/README.md:88`).
    - With `direct` and a custom domain ending in `.azurewebsites.net`, as in
@@ -635,6 +637,7 @@ After removal:
 
 ## References
 
+- [Architecture overview](architecture.md): the container view, the deployment order and the request flows
 - [Terraform `azurerm` backend (Terraform 1.9)](https://developer.hashicorp.com/terraform/language/v1.9.x/backend/azurerm)
   and [current](https://developer.hashicorp.com/terraform/language/backend/azurerm)
 - [Sensitive data in state (Terraform 1.9)](https://developer.hashicorp.com/terraform/language/v1.9.x/state/sensitive-data)

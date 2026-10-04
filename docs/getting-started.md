@@ -125,6 +125,10 @@ Neither input affects how the site itself reads secrets. The App Service subnet 
 firewalls (`modules/wordpress-site/main.tf:363-366` and `:419-422`), so Key Vault references and media uploads
 from WordPress keep working with either setting.
 
+The storage firewall is one of two gates on media. The other is the container's access level, and how the storage
+plugin lets an anonymous browser read a private container is UNKNOWN. Check it with your plugin version before you
+go live; see [Media](architecture.md#media) in the architecture overview.
+
 ### The other choices
 
 - **`cdn_provider = "direct"`** creates no CDN and no Cloudflare or Front Door resources. The Cloudflare and
@@ -321,6 +325,7 @@ So you can reuse the same names at once.
 
 ## Next steps
 
+- See how the parts fit together, with diagrams: [architecture overview](architecture.md).
 - Move to the consumer pattern, with environments and a gated production apply: [deployment guide](deployment-guide.md).
 - Estimate the bill: [cost guide](cost.md).
 - Put a CDN in front of the site: the README's "CDN Options" section and [`examples/basic-site`](../examples/basic-site/).
