@@ -103,8 +103,8 @@ output "app_service_default_hostname" {
 ```hcl
 resource_group_name  = "rg-tfstate-example"
 storage_account_name = "sttfstateexample"
-container_name       = "tfstate"
-key                  = "wordpress/nonprod.tfstate"
+container_name       = "tfstate-nonprod"
+key                  = "wordpress.tfstate"
 use_azuread_auth     = true
 ```
 

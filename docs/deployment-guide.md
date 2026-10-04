@@ -103,7 +103,10 @@ az storage account blob-service-properties update --account-name sttfstateexampl
   --resource-group rg-tfstate-example --enable-versioning true \
   --enable-delete-retention true --delete-retention-days 30
 
-az storage container-rm create --storage-account sttfstateexample --name tfstate \
+az storage container-rm create --storage-account sttfstateexample --name tfstate-nonprod \
+  --resource-group rg-tfstate-example
+
+az storage container-rm create --storage-account sttfstateexample --name tfstate-production \
   --resource-group rg-tfstate-example
 ```
 
@@ -113,7 +116,12 @@ az storage container-rm create --storage-account sttfstateexample --name tfstate
 - **Versioning and soft delete** let you recover an earlier state file after a bad write.
 - **Locking.** The `azurerm` backend locks state with Azure Blob Storage's own mechanisms, so two jobs cannot
   write the same state at once.
-- **One state key per environment,** for example `wordpress/nonprod.tfstate` and `wordpress/production.tfstate`.
+- **One container per environment.** Pull-request plans run the pull request's code as the nonprod identity
+  (step 2). If both environments shared a container, that code could download production state, with its secrets.
+  Step 2 gives each identity a data role on its own container only.
+- **Keep the state account out of reach of the CI identities.** Put it in a subscription or resource group where
+  neither identity holds Contributor. Contributor can turn shared-key access back on and list the account keys,
+  which would bypass the container-scoped roles.
 
 ### Step 2: Create the CI identities
 
@@ -153,15 +161,15 @@ az role assignment create --assignee-object-id "$principal_id" --assignee-princi
 
 az role assignment create --assignee-object-id "$principal_id" --assignee-principal-type ServicePrincipal \
   --role "Storage Blob Data Owner" \
-  --scope /subscriptions/<state-subscription-id>/resourceGroups/rg-tfstate-example/providers/Microsoft.Storage/storageAccounts/sttfstateexample/blobServices/default/containers/tfstate
+  --scope /subscriptions/<state-subscription-id>/resourceGroups/rg-tfstate-example/providers/Microsoft.Storage/storageAccounts/sttfstateexample/blobServices/default/containers/tfstate-nonprod
 ```
 
-Repeat for the production identity, with the production subscription.
+Repeat for the production identity, with the production subscription and the `tfstate-production` container.
 
 | Identity | Federated subjects | Azure roles |
 |---|---|---|
-| nonprod | `repo:ORG/REPO:pull_request`, `repo:ORG/REPO:environment:nonprod` | Contributor on the nonprod subscription; a data-plane role on the state container |
-| production | `repo:ORG/REPO:environment:production` | Contributor on the production subscription; a data-plane role on the state container; lock permission if you use locks (step 9) |
+| nonprod | `repo:ORG/REPO:pull_request`, `repo:ORG/REPO:environment:nonprod` | Contributor on the nonprod subscription; a data-plane role on the `tfstate-nonprod` container only |
+| production | `repo:ORG/REPO:environment:production` | Contributor on the production subscription; a data-plane role on the `tfstate-production` container only; lock permission if you use locks (step 9) |
 
 - **Subjects.** When a GitHub job references an environment, the token's subject is
   `repo:ORG/REPO:environment:NAME`, not the branch. A pull-request job's subject is `repo:ORG/REPO:pull_request`.
@@ -186,8 +194,13 @@ Free), the environment pauses nothing. Any workflow that names `production`, fro
 with the production subject. Treat write access to the repository as production access, or move the repository to
 a plan that offers the rules.
 
-Store the client IDs, tenant ID and subscription IDs as repository or environment variables. They are not
-secrets.
+Store the client IDs, tenant ID and subscription IDs as **repository** variables. They are not secrets.
+
+- **Not as environment variables.** GitHub makes an environment's variables available only to jobs that reference
+  that environment
+  ([GitHub docs](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)).
+- **Why that breaks the pull-request plan.** The plan job references no environment, so it could not read them.
+  Adding an environment to that job would change its token subject away from `repo:ORG/REPO:pull_request`.
 
 ### Step 3: Pin providers exactly and commit the lock file
 
@@ -241,11 +254,11 @@ git add .terraform.lock.hcl
 infra/
   nonprod/
     main.tf               # module calls with environment = "nonprod"
-    backend.hcl           # key = "wordpress/nonprod.tfstate"
+    backend.hcl           # container_name = "tfstate-nonprod"
     .terraform.lock.hcl
   production/
     main.tf               # module calls with environment = "production"
-    backend.hcl           # key = "wordpress/production.tfstate"
+    backend.hcl           # container_name = "tfstate-production"
     .terraform.lock.hcl
 ```
 
