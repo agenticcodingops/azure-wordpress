@@ -26,15 +26,17 @@ which is release v4.1.1. Every name, ID and host name below is a placeholder.
 ## Prerequisites
 
 - **Azure:** Owner, or Contributor plus User Access Administrator, on the subscriptions you deploy to and on the
-  state subscription. You need this once, to create the role assignments in steps 2 and 9.
-- **Three subscriptions:** one for nonprod, one for production, and one for the state account (step 1).
+  management subscription. You need this once, to create the role assignments in steps 2 and 9.
+- **Three subscriptions:** one for nonprod, one for production, and a management subscription for the state account
+  and the CI identities (steps 1 and 2). No CI identity holds a role on the management subscription itself.
   - **Why one per environment.** The module creates its own resource groups
     (`modules/wordpress-site/main.tf:185-188`), so each CI identity needs Contributor on a whole subscription.
     If nonprod and production shared one, pull-request code running as the nonprod identity could change
     production.
-  - **Why one for state.** A role on a subscription applies to every resource group in it
+  - **Why a management subscription.** A role on a subscription applies to every resource group in it
     ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/role-based-access-control/scope-overview)), so a
-    separate resource group does not keep the state account out of reach.
+    separate resource group inside a deployment subscription keeps neither the state account nor the identities
+    out of reach.
 - **GitHub:** admin rights on the repository, to create environments and their protection rules. The steps use
   GitHub Actions. Other CI systems work the same way, with their own OIDC issuer and subject.
 - **A GitHub plan that offers environment protection rules for your repository.** On GitHub Free, Pro and Team,
@@ -99,21 +101,23 @@ Terraform state for this module holds secrets in plain text: the generated datab
 data. Protect the state account like the secrets it holds.
 
 ```bash
-az group create --name rg-tfstate-example --location eastus
+mgmt=<management-subscription-id>
 
-az storage account create --name sttfstateexample --resource-group rg-tfstate-example \
+az group create --subscription "$mgmt" --name rg-tfstate-example --location eastus
+
+az storage account create --subscription "$mgmt" --name sttfstateexample --resource-group rg-tfstate-example \
   --location eastus --sku Standard_LRS --kind StorageV2 --min-tls-version TLS1_2 \
   --allow-blob-public-access false --allow-shared-key-access false
 
-az storage account blob-service-properties update --account-name sttfstateexample \
+az storage account blob-service-properties update --subscription "$mgmt" --account-name sttfstateexample \
   --resource-group rg-tfstate-example --enable-versioning true \
   --enable-delete-retention true --delete-retention-days 30
 
-az storage container-rm create --storage-account sttfstateexample --name tfstate-nonprod \
-  --resource-group rg-tfstate-example
+az storage container-rm create --subscription "$mgmt" --storage-account sttfstateexample \
+  --name tfstate-nonprod --resource-group rg-tfstate-example
 
-az storage container-rm create --storage-account sttfstateexample --name tfstate-production \
-  --resource-group rg-tfstate-example
+az storage container-rm create --subscription "$mgmt" --storage-account sttfstateexample \
+  --name tfstate-production --resource-group rg-tfstate-example
 ```
 
 - **Shared keys off.** Turning off shared-key access means only Microsoft Entra identities can read the state.
@@ -126,7 +130,7 @@ az storage container-rm create --storage-account sttfstateexample --name tfstate
   (step 2). If both environments shared a container, that code could download production state, with its secrets.
   Step 2 gives each identity a data role on its own container only.
 - **Keep the state account out of reach of the CI identities.** Put it in a subscription where neither identity
-  holds Contributor, such as the state subscription from the Prerequisites. A separate resource group inside a
+  holds Contributor: the management subscription from the Prerequisites. A separate resource group inside a
   deployment subscription is not enough, because the subscription-wide role applies to it too. Contributor can
   turn shared-key access back on and list the account keys, which would bypass the container-scoped roles.
 
@@ -139,20 +143,30 @@ Create one identity per environment. A user-assigned managed identity is shown h
 the same way.
 
 ```bash
-az group create --name rg-identities-example --location eastus
+mgmt=<management-subscription-id>
 
-az identity create --name id-wordpress-nonprod --resource-group rg-identities-example --location eastus
+az group create --subscription "$mgmt" --name rg-identities-example --location eastus
 
-az identity federated-credential create --name github-pull-request \
+az identity create --subscription "$mgmt" --name id-wordpress-nonprod \
+  --resource-group rg-identities-example --location eastus
+
+az identity federated-credential create --subscription "$mgmt" --name github-pull-request \
   --identity-name id-wordpress-nonprod --resource-group rg-identities-example \
   --issuer https://token.actions.githubusercontent.com \
   --subject repo:ORG/REPO:pull_request --audiences api://AzureADTokenExchange
 
-az identity federated-credential create --name github-env-nonprod \
+az identity federated-credential create --subscription "$mgmt" --name github-env-nonprod \
   --identity-name id-wordpress-nonprod --resource-group rg-identities-example \
   --issuer https://token.actions.githubusercontent.com \
   --subject repo:ORG/REPO:environment:nonprod --audiences api://AzureADTokenExchange
 ```
+
+**Keep the identities in the management subscription.** Contributor grants everything except role and
+authorization changes
+([Microsoft Learn](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/privileged#contributor)).
+That includes `Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write`. If the nonprod
+identity held Contributor over the resource group that holds `id-wordpress-production`, pull-request code could add
+its own federated credential to the production identity, sign in as it, and skip the production approval.
 
 Create `id-wordpress-production` the same way, with **one** federated credential, for
 `repo:ORG/REPO:environment:production`.
@@ -160,23 +174,23 @@ Create `id-wordpress-production` the same way, with **one** federated credential
 Then assign each identity its roles. For the nonprod identity:
 
 ```bash
-principal_id=$(az identity show --name id-wordpress-nonprod --resource-group rg-identities-example \
-  --query principalId -o tsv)
+principal_id=$(az identity show --subscription "$mgmt" --name id-wordpress-nonprod \
+  --resource-group rg-identities-example --query principalId -o tsv)
 
 az role assignment create --assignee-object-id "$principal_id" --assignee-principal-type ServicePrincipal \
   --role Contributor --scope /subscriptions/<nonprod-subscription-id>
 
 az role assignment create --assignee-object-id "$principal_id" --assignee-principal-type ServicePrincipal \
   --role "Storage Blob Data Owner" \
-  --scope /subscriptions/<state-subscription-id>/resourceGroups/rg-tfstate-example/providers/Microsoft.Storage/storageAccounts/sttfstateexample/blobServices/default/containers/tfstate-nonprod
+  --scope /subscriptions/$mgmt/resourceGroups/rg-tfstate-example/providers/Microsoft.Storage/storageAccounts/sttfstateexample/blobServices/default/containers/tfstate-nonprod
 ```
 
 Repeat for the production identity, with the production subscription and the `tfstate-production` container.
 
 | Identity | Federated subjects | Azure roles |
 |---|---|---|
-| nonprod | `repo:ORG/REPO:pull_request`, `repo:ORG/REPO:environment:nonprod` | Contributor on the dedicated nonprod subscription; a data-plane role on the `tfstate-nonprod` container only |
-| production | `repo:ORG/REPO:environment:production` | Contributor on the separate production subscription; a data-plane role on the `tfstate-production` container only; lock permission if you use locks (step 9) |
+| nonprod | `repo:ORG/REPO:pull_request`, `repo:ORG/REPO:environment:nonprod` | Contributor on the dedicated nonprod subscription; a data-plane role on the `tfstate-nonprod` container only; lock permission if nonprod uses locks (step 9) |
+| production | `repo:ORG/REPO:environment:production` | Contributor on the separate production subscription; a data-plane role on the `tfstate-production` container only; lock permission if production uses locks (step 9) |
 
 - **Subjects.** When a GitHub job references an environment, the token's subject is
   `repo:ORG/REPO:environment:NAME`, not the branch. A pull-request job's subject is `repo:ORG/REPO:pull_request`.
@@ -400,7 +414,8 @@ them:
   (`modules/wordpress-site/variables.tf:51-54`, `:62-65`).
 
   ```bash
-  az identity show --name id-wordpress-production --resource-group rg-identities-example --query principalId -o tsv
+  az identity show --subscription <management-subscription-id> --name id-wordpress-production \
+    --resource-group rg-identities-example --query principalId -o tsv
   # or, for an app registration:
   az ad sp show --id <client-id> --query id -o tsv
   ```
@@ -479,7 +494,8 @@ module "shared" {
   list operations every refresh needs.
 - **The deploying identity needs `Microsoft.Authorization/locks/*`.** Owner and User Access Administrator have it,
   Contributor does not (`modules/wordpress-site/variables.tf:836`, `modules/wordpress-site/main.tf:977-978`).
-  Grant the production identity a role that includes it, for example a custom role with only that action.
+  Grant it to each identity whose environment sets a lock, for example as a custom role with only that action,
+  scoped to that environment's subscription.
 - **A lock blocks every delete in its resource group,** including on diagnostic settings and alert rules. While it
   exists, these fail at apply:
   - removing a site;
@@ -648,7 +664,20 @@ After removal:
 
 4. **Only reviewed jobs reach production.** In the repository's settings, check that the `production` environment
    has required reviewers. In Azure, check that the production identity has only the
-   `environment:production` federated credential.
+   `environment:production` federated credential:
+
+   ```bash
+   az identity federated-credential list --subscription <management-subscription-id> \
+     --identity-name id-wordpress-production --resource-group rg-identities-example --query "[].subject" -o tsv
+   ```
+
+5. **No CI identity can reach the management subscription.** List role assignments there for each identity's
+   principal ID. Expect only the container-scoped data role:
+
+   ```bash
+   az role assignment list --subscription <management-subscription-id> --all \
+     --assignee <principal-id> --query "[].{role:roleDefinitionName, scope:scope}" -o table
+   ```
 
 ## Rollback
 
