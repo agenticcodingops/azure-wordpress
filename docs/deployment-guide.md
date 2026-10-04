@@ -181,11 +181,15 @@ the same way.
 ```bash
 mgmt=<management-subscription-id>
 
+# Stop if this repository customises its subject. The credentials below use the default format, a custom
+# template replaces that format, and none of them would then match a real token.
+[ "$(gh api repos/ORG/REPO/actions/oidc/customization/sub --jq .use_default)" = "true" ] \
+  || { echo "custom subject template: read a real token's subject first"; exit 1; }
+
 # The start of the subject that GitHub puts in this repository's tokens (see "Subjects" below).
-prefix=$(gh api repos/ORG/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix)
+prefix=$(gh api repos/ORG/REPO/actions/oidc/customization/sub --jq '.sub_claim_prefix | strings | select(length > 0)')
 echo "$prefix"   # repo:ORG/REPO, or repo:ORG@<owner-id>/REPO@<repo-id> for an immutable subject
 [ -n "$prefix" ] || { echo "no sub_claim_prefix: read a real token's subject first"; exit 1; }
-gh api repos/ORG/REPO/actions/oidc/customization/sub --jq '{use_default, sub_claim_prefix}'   # expect use_default: true
 
 az group create --subscription "$mgmt" --name rg-identities-example --location eastus
 
@@ -750,7 +754,8 @@ flowchart TD
      then run the pipeline again. In production, the re-run waits for a reviewer again.
    - With Front Door, whether a first deploy applies cleanly has not been tested; see
      [Request flow: Azure Front Door](architecture.md#request-flow-azure-front-door). Do not point `<subdomain>` at
-     the app. With `azure_front_door` the app answers HTTP 403 to everything except your Front Door profile, and the
+     the app. With `azure_front_door` the app answers HTTP 403 to everything except Front Door (only your own profile
+     when `front_door.enabled` is true, the default; with it false, any Front Door profile), and the
      name must later hold the Front Door CNAME. Before the first apply, create only the `asuid` TXT record.
      After the apply has created the Front Door custom domain, create TXT `_dnsauth.<subdomain>` = the
      `custom_domain_validation_token` output, then CNAME `<subdomain>` = the `front_door_endpoint_hostname` output

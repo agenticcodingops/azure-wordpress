@@ -49,8 +49,9 @@ Instead, we use:
 
 ```hcl
 module "storage" {
-  source = "../modules/layer-2-application/storage"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/storage?ref=v4.1.1"
 
+  project_name        = "example"
   site_name           = "examplewp01"
   environment         = "nonprod"
   location            = "East US"

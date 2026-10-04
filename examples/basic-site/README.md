@@ -41,7 +41,13 @@ an existing deployment, because they force a vault replacement.
 
 2. Edit `terraform.tfvars` with your values
 
-3. Initialize and apply:
+3. Before you apply, set `WORDPRESS_ADMIN_USER`, `WORDPRESS_ADMIN_EMAIL` and `WORDPRESS_ADMIN_PASSWORD` in
+   `app_service.extra_app_settings` in `main.tf`, as in
+   [getting started](../../docs/getting-started.md#the-administrator-account). The container then installs
+   WordPress itself on first start. Without them the installer is open from the moment the apply finishes, the app
+   is reachable on its `*.azurewebsites.net` name, and whoever completes the installer first becomes administrator.
+
+4. Initialize and apply:
    ```bash
    terraform init
    terraform plan
@@ -67,12 +73,8 @@ plan as in [`examples/multi-site`](../multi-site/). See
 
 ## Next Steps
 
-- Open the `wordpress_admin_url` output (for example `https://blog.example.com/wp-admin`)
-- Do not leave the WordPress installer open. Before you apply, set `WORDPRESS_ADMIN_USER`, `WORDPRESS_ADMIN_EMAIL`
-  and `WORDPRESS_ADMIN_PASSWORD` in `app_service.extra_app_settings`, as in
-  [getting started](../../docs/getting-started.md#the-administrator-account), so the container installs WordPress
-  itself on first start. Whoever completes the installer first becomes administrator, and the app is also reachable
-  on its `*.azurewebsites.net` name.
+- Open the `wordpress_admin_url` output (for example `https://blog.example.com/wp-admin`) and sign in with the
+  administrator you set in step 3
 - Media uploads stay on the app's `/home` storage by default. The module does not install the Azure Storage plugin,
   and that plugin's unsigned media URLs do not load from this module's storage account; see
   [Media](../../docs/architecture.md#media).

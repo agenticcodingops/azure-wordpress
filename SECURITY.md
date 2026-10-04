@@ -72,8 +72,8 @@ to you, and the code behind each control.
   for it
 - Put a CDN in front of the origin: set `cdn_provider` to `"cloudflare"` or `"azure_front_door"`, and the module
   admits only that CDN's address ranges at the origin. Cloudflare's ranges are shared by every Cloudflare account,
-  so they admit Cloudflare and not only your zone. Front Door is bound to your profile by `X-Azure-FDID` on the main
-  app only (see
+  so they admit Cloudflare and not only your zone. With `front_door.enabled` true (the default), Front Door is bound to your profile by `X-Azure-FDID` on the main
+  app only; with it false, any Front Door profile is admitted (see
   [Binding the origin to one CDN account](docs/security-model.md#binding-the-origin-to-one-cdn-account)). The default, `"direct"`, leaves the origin open to everyone. The restriction
   takes effect in the apply that sets `cdn_provider`, whether or not DNS sends visitors through the CDN yet, and App
   Service answers every other request with HTTP 403. On a live site:

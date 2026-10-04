@@ -77,17 +77,17 @@ each one needs its `key_vault_name_suffix` bumped, or both inputs pinned to `tru
    # Edit terraform.tfvars with your values
    ```
 
+   Before you apply, also set `WORDPRESS_ADMIN_USER`, `WORDPRESS_ADMIN_EMAIL` and `WORDPRESS_ADMIN_PASSWORD` in each
+   site's `app_service.extra_app_settings` in `main.tf`, as in
+   [getting started](../../docs/getting-started.md#the-administrator-account), so no site leaves the WordPress
+   installer open to whoever reaches it first.
+
 2. Deploy:
    ```bash
    terraform init
    terraform plan
    terraform apply
    ```
-
-Before you apply, set `WORDPRESS_ADMIN_USER`, `WORDPRESS_ADMIN_EMAIL` and `WORDPRESS_ADMIN_PASSWORD` in each
-site's `app_service.extra_app_settings`, as in
-[getting started](../../docs/getting-started.md#the-administrator-account), so no site leaves the WordPress
-installer open to whoever reaches it first.
 
 ## Scaling
 

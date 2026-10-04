@@ -94,13 +94,14 @@ module "wordpress_site" {
   # the vault is reachable. On a runner with a fixed egress IP, use
   # key_vault_network_acls_ip_rules = ["<runner IP>"] instead.
   key_vault_public_network_access_enabled = true
-  # The firewall defaults to "Deny". Media served from the blob endpoint (only after
-  # you install the storage plugin) is fetched by visitors' browsers, so "Deny" returns
-  # 403. "Allow" removes that gate but is not enough on its own: the account disallows
+  # The storage firewall defaults to "Deny", which suits the default setup: uploads stay
+  # on the app's /home storage. Only if you serve media from the blob endpoint (after you
+  # install the storage plugin) do visitors' browsers meet the firewall and get 403, and
+  # "Allow" removes that gate. It is not enough on its own: the account disallows
   # anonymous blob access and the uploads container is private, so an unsigned media
-  # URL still fails (docs/architecture.md#media). Leave it "Deny" unless you serve
-  # media from the blob endpoint, and test an uploaded file in a signed-out browser.
-  storage_network_rules_default_action = "Allow"
+  # URL still fails (docs/architecture.md#media). Test an uploaded file in a signed-out
+  # browser before you rely on it.
+  # storage_network_rules_default_action = "Allow"
 
   # Backup container for UpdraftPlus (v1.1.0+)
   storage = {
