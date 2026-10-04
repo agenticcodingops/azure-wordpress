@@ -64,7 +64,7 @@ variable "app_subnet_cidr" {
 }
 
 variable "db_subnet_cidr" {
-  description = "CIDR block for the database subnet (MySQL Private Endpoint)"
+  description = "CIDR block for the database subnet, delegated to MySQL Flexible Server (private access, not a private endpoint)"
   type        = string
   default     = "10.0.1.0/24"
 
@@ -75,7 +75,7 @@ variable "db_subnet_cidr" {
 }
 
 variable "private_endpoint_subnet_cidr" {
-  description = "CIDR block for private endpoints (Storage, Key Vault)"
+  description = "CIDR block for the reserved private-endpoint subnet (no module in this repository deploys into it)"
   type        = string
   default     = "10.0.2.0/24"
 

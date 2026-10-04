@@ -58,7 +58,7 @@ MySQL Flexible Server with VNet integration requires Private DNS zones to:
 module "dns_zones" {
   source = "../modules/layer-1-foundation/dns-zones"
 
-  site_name           = "workout-tracker"
+  site_name           = "examplewp01"
   resource_group_name = azurerm_resource_group.main.name
   vnet_id             = module.networking.vnet_id
 

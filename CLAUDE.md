@@ -8,7 +8,7 @@ by the configured git identity; never `--no-verify`. Run `sh .githooks/install.s
 
 ## Project Overview
 
-Reusable Terraform/OpenTofu modules for deploying WordPress on Azure. The consumer repo (trackroutinely) calls the composition module at `modules/wordpress-site`, which orchestrates 10 sub-modules in a two-layer dependency model.
+Reusable Terraform/OpenTofu modules for deploying WordPress on Azure. A consumer repository calls the composition module at `modules/wordpress-site`, which orchestrates 10 sub-modules in a two-layer dependency model.
 
 ## Commands
 
@@ -129,7 +129,7 @@ Diagnose from the result record instead:
   failed — 18 in a row across 9.6 h — until the rotation below ended the window. The first run on
   the fresh token went green in 41 s, well clear of the ~2 s expired signature.
 - Same day, same `anthropics/claude-code-action@v1`, same Claude Code v2.1.220, same
-  `claude-sonnet-5`, byte-identical workflow: `agenticcodingops/agentic-research-stack` **passed** at
+  `claude-sonnet-5`, byte-identical workflow: another repository in the organization **passed** at
   15:51 mid-window. The only difference is token age. That mid-window success also rules out an
   account-wide usage limit, which would be time-boxed and hit every repo at once.
 - The same expiry hit `auto-code-scanning` and `multi-ai-deep-research-pipeline` on 2026-07-26; both
@@ -141,9 +141,6 @@ Rotate it (the value cannot be recovered — it must be re-minted):
 claude setup-token   # interactive; prints a fresh token
 gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo agenticcodingops/azure-wordpress   # paste at the prompt
 ```
-
-`agenticcodingops/trackroutinely` still carries a token from 2026-01-24 and has never had a green
-Claude run — rotate it there too.
 
 **Do not edit `claude-code-review.yml` to test this.** The action verifies the workflow file is
 byte-identical to the copy on the default branch; any PR that touches it makes the action *skip*

@@ -129,9 +129,10 @@ Two operational preconditions:
 
 ```hcl
 module "app_service" {
-  source = "../modules/layer-2-application/app-service"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/app-service?ref=v4.1.1"
 
-  site_name           = "workout-tracker"
+  project_name        = "example"
+  site_name           = "examplewp01"
   environment         = "nonprod"
   location            = "East US"
   resource_group_name = azurerm_resource_group.main.name
@@ -149,7 +150,7 @@ module "app_service" {
   storage_container_name        = module.storage.container_name
   storage_access_key_secret_uri = module.key_vault.secret_versionless_uris["storage-key"]
 
-  custom_domain = "workout-staging.trackroutinely.com"
+  custom_domain = "staging.example.com"
 
   tags = local.tags
 }

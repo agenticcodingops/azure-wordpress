@@ -24,7 +24,7 @@ example sets two inputs explicitly that a minimal config would otherwise omit:
 | Input | Why it is set | Tighter alternative |
 |---|---|---|
 | `key_vault_public_network_access_enabled = true` | Terraform is not a trusted Azure service, so creating the vault's secrets 403s unless the deploying principal can reach it. Hosted CI runners have a rotating egress range that cannot be allow-listed. | `key_vault_network_acls_ip_rules = ["<runner IP>"]` on a self-hosted runner with a stable IP |
-| `storage_network_rules_default_action = "Allow"` | The WordPress Blob Storage plugin points media URLs at the blob endpoint, so **visitors' browsers** fetch media directly from Azure. With `Deny`, every image 403s site-wide — not just the deploy. | Keep `Deny` only if the blob endpoint is fronted by a CDN custom domain |
+| `storage_network_rules_default_action = "Allow"` | The firewall defaults to `Deny`. A storage plugin that points media URLs at the blob endpoint makes **visitors' browsers** fetch media directly from Azure, and with `Deny` those requests 403. `Allow` removes only that firewall gate: the account also disallows anonymous blob access and the uploads container is private, so an anonymous browser still cannot read a blob. See [Media](../../docs/architecture.md#media) and the [security model](../../docs/security-model.md#key-vault-and-storage-deny-public-access-by-default). | Keep `Deny`, the default, while media stays on the app's `/home` storage, which it does unless you install a storage plugin |
 
 From v3.0.0, Key Vault purge protection and soft-delete retention default by environment —
 `true`/90 in production, `false`/7 in nonprod, so a destroyed nonprod vault's name is
@@ -52,7 +52,10 @@ an existing deployment, because they force a vault replacement.
 
 This example uses an App Service plan of SKU B1 and a MySQL server of SKU B_Standard_B2s. Their prices, with
 the date and region they were taken for, are in the [cost guide](../../docs/cost.md). Cloudflare plan fees are
-outside that table; this example's Cloudflare settings work on the Free plan.
+outside that table. This example's Cloudflare settings work on the Free plan if the zone has no other page rules:
+the site creates three, which is all Free allows per zone. Before you deploy a second site or environment into the
+same zone, set `enable_page_rules = false` in its `cloudflare` block. The
+[cost guide](../../docs/cost.md#price-table) explains why (note 3).
 
 ## SKU Note
 
@@ -64,6 +67,12 @@ plan as in [`examples/multi-site`](../multi-site/). See
 
 ## Next Steps
 
-- Access WordPress admin at `https://your-domain.com/wp-admin`
-- Default credentials are set during first visit
-- Configure Azure Storage plugin for media uploads
+- Open the `wordpress_admin_url` output (for example `https://blog.example.com/wp-admin`)
+- Do not leave the WordPress installer open. Before you apply, set `WORDPRESS_ADMIN_USER`, `WORDPRESS_ADMIN_EMAIL`
+  and `WORDPRESS_ADMIN_PASSWORD` in `app_service.extra_app_settings`, as in
+  [getting started](../../docs/getting-started.md#the-administrator-account), so the container installs WordPress
+  itself on first start. Whoever completes the installer first becomes administrator, and the app is also reachable
+  on its `*.azurewebsites.net` name.
+- Media uploads stay on the app's `/home` storage by default. The module does not install the Azure Storage plugin,
+  and that plugin's unsigned media URLs do not load from this module's storage account; see
+  [Media](../../docs/architecture.md#media).

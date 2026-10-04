@@ -42,7 +42,7 @@ None. To re-price for another region or date, you need `curl` and `jq`.
 | 7 | MySQL storage | 100 GB to start (`modules/wordpress-site/variables.tf:89`); auto-grow is on (`modules/wordpress-site/variables.tf:94`), so it can grow | $0.115 per GB-month | **$11.50** at 100 GB |
 | 8 | MySQL pre-provisioned IOPS | 700 IOPS (`modules/wordpress-site/variables.tf:90`) | $0.05 per IOPS-month for additional IOPS | **UNKNOWN**, between $0.00 and $35.00 (see note 1) |
 | 9 | MySQL backup storage | 7 days nonprod, 30 days production; geo-redundant in production (`modules/wordpress-site/main.tf:101-102`) | Free up to 100% of provisioned storage, then $0.095 per GB-month; geo-redundant backup is charged at 2× | Usage |
-| 10 | Private DNS zone | One per site, for MySQL (`modules/dns-zones/main.tf:7-8`) | $0.50 per zone-month (first 25 zones) | **$0.50** |
+| 10 | Private DNS zone | One per site, for MySQL (`modules/dns-zones/main.tf:7-8`) | $0.50 per zone-month (first 25 zones), plus $0.40 per million queries | **$0.50** + usage |
 | 11 | Virtual network and App Service VNet integration | One VNet per site (`modules/wordpress-site/main.tf:221-236`) | Free ([VNet pricing](https://azure.microsoft.com/en-us/pricing/details/virtual-network/), [VNet integration](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration)) | $0.00 |
 | 12 | Blob storage, Standard LRS, Hot | One account per site (`modules/storage/variables.tf:88-102`) | $0.0208 per GB-month; writes $0.05 per 10,000; reads $0.004 per 10,000 | Usage |
 | 13 | Key Vault, Standard | One vault per site (`modules/key-vault/main.tf:39`) | $0.03 per 10,000 operations | Usage |
@@ -66,11 +66,23 @@ Notes:
    30 days in nonprod and 90 days in production (`modules/wordpress-site/main.tf:168`). So in production, the
    App Service and MySQL log tables are charged retention for the days beyond 31.
 3. **Cloudflare** plan fees are not Azure prices, so they are not in the table. The module's Cloudflare defaults
-   are chosen to work on the Free plan. `cloudflare.enable_waf` needs Business or higher: its login
-   rate limit matches on the request method, which Cloudflare offers in rate-limiting rules from Business up
-   (`modules/cloudflare/waf.tf:101-104`;
-   [rate limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)). The code comment at
-   `modules/wordpress-site/variables.tf:344` still says Pro. See [Cloudflare plans](https://www.cloudflare.com/plans/).
+   fit the Free plan for one site per zone. `cloudflare.enable_page_rules` defaults to `true`
+   (`modules/wordpress-site/variables.tf:345`), and every site creates its own three page rules. Their URLs are
+   built from the zone's domain, not the site's host name, so they match every host in the zone
+   (`modules/cloudflare/page-rules.tf:17-86`). Free allows three page rules per zone
+   ([Page Rules](https://developers.cloudflare.com/rules/page-rules/)). A second site or environment in the same
+   zone, or a page rule the zone already has, makes the apply fail because Cloudflare rejects the fourth page rule.
+   On any plan, keep `enable_page_rules = true` on one long-lived site per
+   zone, such as the production apex site, and set it to `false` on the others. The copies would repeat the same
+   three URLs and add nothing, and whether a paid zone accepts them has not been tested. If you remove the site
+   that holds the rules, every site in the zone loses them.
+
+   `cloudflare.enable_waf` needs Business or higher: its login rate limit matches on the request method, which
+   Cloudflare offers in rate-limiting rules from Business up (`modules/cloudflare/waf.tf:101-104`;
+   [rate limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)). Business is necessary but not
+   sufficient: both rate-limit rules omit the `cf.colo.id` characteristic, so do not rely on `enable_waf` on any plan
+   until the module adds it (see the [security model](security-model.md#waf-rules-beyond-what-the-cdn-plan-provides)).
+   See [Cloudflare plans](https://www.cloudflare.com/plans/).
 4. **Front Door needs Premium.** With `cdn_provider = "azure_front_door"` the module creates a **Premium** profile
    unless you set `front_door.sku_name` (`modules/wordpress-site/main.tf:142`). Do not set it to
    `Standard_AzureFrontDoor`. The module's WAF policy always carries managed rule sets
@@ -108,8 +120,10 @@ excluding row 8 and usage.
 | One shared B1 plan (no slots) | $12.41 | 3 × $61.64 | $197.33 |
 
 How many sites one plan can carry is **UNKNOWN**: it depends on traffic, plugins and PHP memory. The module
-limits PHP to 256 MB per worker because plans are shared (`modules/app-service/main.tf:87-94`). Watch the
-plan's CPU and memory metrics after each site you add.
+sets `PHP_MEMORY_LIMIT = 256M` on every site and its staging slot, on a dedicated plan as well as a shared one
+(`modules/app-service/main.tf:87-94`, `:287`, `:436`). The container's default and maximum is 512M
+([Microsoft Learn](https://learn.microsoft.com/en-us/azure/app-service/reference-app-settings#wordpress)), so 256M is
+a module choice, not a limit of the shared plan. Watch the plan's CPU and memory metrics after each site you add.
 
 ### 3. Re-price for another region or date
 
@@ -119,10 +133,12 @@ Query the Retail Prices API. For example, Linux App Service in West Europe:
 
 ```bash
 curl -sS "https://prices.azure.com/api/retail/prices?\$filter=serviceName%20eq%20'Azure%20App%20Service'%20and%20armRegionName%20eq%20'westeurope'%20and%20priceType%20eq%20'Consumption'" \
-  | jq -r '.Items[] | select(.productName | test("Linux")) | [.productName, .skuName, .unitOfMeasure, .retailPrice] | @tsv'
+  | jq -r '.Items[] | select(.productName | test("Linux")) | [.productName, .skuName, .meterName, .unitOfMeasure, .retailPrice] | @tsv'
 ```
 
-The rows above came from these meters. Use the same `serviceName` and match on `productName` and `meterName`.
+The rows above came from these meters. Use the same `serviceName` and match on `productName` and `meterName`. For
+other services, change `serviceName`, drop or change the `test("Linux")` filter, and follow `NextPageLink`, because the
+API returns at most 1,000 items per page.
 
 | Rows | `serviceName` | `productName` / `meterName` |
 |---|---|---|
@@ -130,7 +146,7 @@ The rows above came from these meters. Use the same `serviceName` and match on `
 | 5 | Azure Database for MySQL | `Azure Database for MySQL Flexible Server Burstable BS Series Compute` / `B2S` |
 | 6 | Azure Database for MySQL | `Azure Database for MySQL Flexible Server General Purpose Series Compute` / `vCore` |
 | 7-9 | Azure Database for MySQL | `Azure Database for MySQL Flexible Server Storage` / `Storage Data Stored`, `Additional IOPS`; `Azure Database for MySQL Flexible Server Backup Storage` / `Backup Storage LRS Data Stored` |
-| 10 | Azure DNS | `Azure DNS` / `Private Zone` |
+| 10 | Azure DNS | `Azure DNS` / `Private Zone`, `Private Queries` |
 | 12 | Storage | `General Block Blob v2` / `Hot LRS Data Stored`, `Hot LRS Write Operations`, `Hot Read Operations` |
 | 13 | Key Vault | `Key Vault` / `Operations` (sku `Standard`) |
 | 14 | Log Analytics | `Log Analytics` / `Analytics Logs Data Ingestion`, `Analytics Logs Data Retention` |

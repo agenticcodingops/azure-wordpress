@@ -8,7 +8,7 @@ variable "cloudflare_account_id" {
 }
 
 variable "domain" {
-  description = "Root domain name (e.g., trackroutinely.com)"
+  description = "Root domain name (e.g., example.com)"
   type        = string
 
   validation {
@@ -89,13 +89,13 @@ variable "min_tls_version" {
 
 # WordPress-specific settings
 variable "enable_wordpress_optimizations" {
-  description = "Enable WordPress-specific optimizations (disable Rocket Loader, JS minification)"
+  description = "With enable_zone_setting_overrides = true, sets Rocket Loader off (true) or on (false). No effect otherwise"
   type        = bool
   default     = true
 }
 
 variable "enable_waf" {
-  description = "Enable the WordPress WAF rulesets: managed-rule exceptions, rate limiting and custom security rules. Needs Cloudflare Pro or higher: the rate-limit ruleset has 2 rules with 600 s and 3600 s mitigation timeouts, and the Free plan allows 1 rate-limit rule with a 10 s timeout"
+  description = "Enable the WordPress WAF rulesets: managed-rule exceptions, rate limiting and custom security rules. Needs Cloudflare Business or higher: the login rate-limit rule matches on the request method (http.request.method), which rate-limiting rules allow from Business upward. Pro's other limits (2 rules, periods up to 1 min, timeouts up to 1 h) fit; Free allows 1 rule with a 10 s period and timeout"
   type        = bool
   default     = true
 }
