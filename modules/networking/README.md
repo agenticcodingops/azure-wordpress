@@ -11,7 +11,7 @@ This module creates:
 - A subnet reserved for private endpoints (`snet-pe-*`). Nothing in this repository deploys into it: Storage and
   Key Vault are reached through service endpoints on the App Service subnet, and MySQL uses the delegated
   database subnet
-- Network Security Groups (NSGs) with least-privilege rules
+- Network Security Groups (NSGs) on the App Service and database subnets (see [Security](#security))
 
 ## Architecture
 
@@ -83,12 +83,22 @@ module "networking" {
 
 ## Security
 
-- NSGs implement least-privilege access
-- The App subnet NSG has inbound rules for HTTPS from Azure Front Door and App Service management. Inbound NSG
-  rules do not apply to an App Service integration subnet, so the web app's access restrictions filter inbound
-  requests instead; see [Network](../../docs/architecture.md#network)
-- Database subnet only allows MySQL (3306) from App subnet
-- All other inbound traffic is denied
+- **Database subnet:** its NSG allows MySQL (TCP 3306) from the App Service subnet's address
+  range and denies all other inbound traffic.
+- **App Service subnet:** its NSG does **not** filter traffic to the web app. Virtual network
+  integration carries only outbound traffic from the app, and Microsoft states that
+  "inbound rules in an NSG don't apply to your app"
+  ([virtual network integration](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration#network-routing)).
+  The NSG's inbound rules (HTTPS from `AzureFrontDoor.Backend` and `AppServiceManagement`,
+  then deny all) therefore do not restrict visitors. App Service access restrictions in the
+  `app-service` module filter inbound requests instead, and only when `cdn_provider` is
+  `cloudflare` or `azure_front_door`. With `direct`, the default, they admit every visitor.
+  The NSG has no outbound rules, so Azure's default outbound rules apply.
+- **Private endpoint subnet:** created, but no module in this repository places a private
+  endpoint in it.
+
+See [Network](../../docs/architecture.md#network) for the network design, and the
+[security model](../../docs/security-model.md) for how these fit with the other controls.
 
 ## Validation Rules
 

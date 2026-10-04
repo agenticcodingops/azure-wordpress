@@ -249,8 +249,9 @@ What the code sets up for this flow:
   rules set `ssl = "strict"` for their own paths. The web app has `https_only = true`. Which mode an unmanaged zone
   uses, and whether strict mode validates against the web app with no custom-domain certificate bound, is UNKNOWN.
 - **Edge rules.** Three page rules are on by default: bypass the cache for `wp-admin` and `wp-login.php`, and cache
-  `wp-content`. Cache rules (`enable_cache_rules`), WAF rulesets (`enable_waf`, which needs the Pro plan or higher)
-  and zone setting overrides are off by default.
+  `wp-content`. Cache rules (`enable_cache_rules`), WAF rulesets (`enable_waf`, which needs the Business plan or
+  higher; see [Security model](security-model.md#waf-rules-beyond-what-the-cdn-plan-provides)) and zone setting
+  overrides are off by default.
 - **`cloudflare.proxied = false` makes the site unreachable.** The CNAME becomes DNS-only, so browsers go straight
   to the web app. The web app's restrictions depend only on `cdn_provider`, so it still admits only Cloudflare's
   ranges and denies them.
