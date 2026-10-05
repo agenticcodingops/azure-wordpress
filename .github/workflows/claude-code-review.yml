@@ -12,11 +12,15 @@ on:
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+    # Skip PRs a bot opened, such as dependency updates. The action refuses a non-human
+    # actor, so without this every such PR shows a failed check.
+    if: github.event.pull_request.user.type != 'Bot'
+    # One run per PR at a time, so a push during a review cannot start a second review before
+    # the first has posted. The later run waits, then the plugin sees the review and stops.
+    # Not cancel-in-progress: cancelling could cut a review off part-way through posting.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
 
     runs-on: ubuntu-latest
     permissions:
@@ -30,9 +34,22 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          # The review reads files in this checkout, and the job token can write to PRs, so do
+          # not persist it. This checkout version would keep it in a file under $RUNNER_TEMP
+          # that the checkout's git config includes. The action sets up its own git auth.
+          persist-credentials: false
+
+      # The summary's body file has a fixed path (see claude_args). Remove anything the PR put
+      # there, such as a symlink to .git/config, so the review always writes the file itself.
+      - name: Clear the review summary path
+        run: rm -rf -- "$GITHUB_WORKSPACE/.review-summary.md"
 
       - name: Run Claude Code Review
         id: claude-review
+        # The plugin's frontmatter grants an unbound `Bash(gh pr comment:*)`. On the CLI this
+        # version installs (2.1.281) that grant authorizes nothing in a non-interactive run, so
+        # the PR boundary rests on --allowedTools below. Re-measure it before bumping this pin:
+        # a CLI that honours the plugin's grant would let a review post on any PR in the repo.
         uses: anthropics/claude-code-action@8cf3482550831fb35a4fc3fbf7ca139cf8028b4c # v1.0.233
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -57,6 +74,11 @@ jobs:
                 "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"
               }
             }
+          # The action's own token is in GH_TOKEN while the review runs, so text in a PR could
+          # make the review disclose it (see claude_args). The action asks for contents: write by
+          # default; the review never pushes, so ask for read and a leaked token cannot push code.
+          additional_permissions: |
+            contents: read
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           # Without --comment the plugin reviews and then posts nothing, by design.
@@ -64,23 +86,41 @@ jobs:
           # `gh api` and heredoc bodies, which the allow-list denies, so nothing gets posted.
           # Measured locally on 2026-09-24 with the same CLI version: 8 denials without the
           # rules, and with them the summary goes out as an allowed `--body-file` command.
+          # A redirect such as `gh pr diff <N> > file` is denied too, because its target is
+          # checked as a file write: on one review elsewhere it was 22 of 23 denials. The agents
+          # the plugin launches read the diff, so they get that rule too.
           # Folded (>-) into one line, which is how the plugin receives arguments.
           prompt: >-
             /code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment
             POSTING RULES (follow exactly):
             get the full head commit SHA with `gh pr view ${{ github.event.pull_request.number }} --json headRefOid`, never with gh api.
             Read saved tool output with the Read tool, never with shell commands.
+            Run `gh pr diff` without redirecting its output into a file, and tell every agent you launch
+            to do the same and to read saved tool output with the Read tool.
             Post inline comments only with the mcp__github_inline_comment__create_inline_comment tool, never with gh api.
-            To post the summary comment, first write the body to a file with the Write tool,
-            then run exactly `gh pr comment ${{ github.event.pull_request.number }} --body-file <that file>`;
-            never use heredocs, pipes or command substitution in gh commands.
+            To post the summary comment, first write the body to ${{ github.workspace }}/.review-summary.md with the Write tool,
+            then run exactly `gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file ${{ github.workspace }}/.review-summary.md`,
+            with no other flags and no other file;
+            never use redirects, heredocs, pipes or command substitution in gh commands,
+            and never use --jq, -q, --template or -t with gh.
             Run every sub-agent in the foreground: if the Agent tool takes run_in_background, pass false, and never end your turn while a sub-agent is still running.
           # The plugin's own allowed-tools list plus Write (for the --body-file), so its gh and
           # inline-comment calls are not denied. `gh pr comment` is bound to this PR (by number
           # or URL), as the inline-comment tool already is, so injected PR text cannot make the
           # review post on another PR.
+          # It is also bound to one body file, with exact rules and no wildcard. The review action
+          # puts its own token in this checkout's .git/config and in GH_TOKEN, and only inline
+          # comments go through its token redaction, so a prefix rule would let injected PR text
+          # post `--body-file .git/config` or `--body-file /proc/self/environ`. The Read deny keeps
+          # the file tools out of .git. A trailing wildcard would not bind the file: gh takes the
+          # last --body-file it is given. gh's --jq filter can read environment variables, so
+          # the gh read commands may not use --jq or --template. This narrows exfiltration but
+          # does not stop it: deny rules match the command text, so a crafted command can slip
+          # past them, and read-only shell commands can still print the token. That token stays
+          # live until the job ends, which is why it is asked for with contents: read.
           claude_args: |
-            --allowedTools "Write,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment ${{ github.event.pull_request.number }}:*),Bash(gh pr comment https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*)"
+            --allowedTools "Write,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file ${{ github.workspace }}/.review-summary.md),Bash(gh pr comment ${{ github.event.pull_request.number }} --body-file ${{ github.workspace }}/.review-summary.md),Bash(gh pr comment https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }} --body-file ${{ github.workspace }}/.review-summary.md),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*)"
+            --disallowedTools "Read(./.git/**),Bash(gh * --jq*),Bash(gh * -q*),Bash(gh * --template*),Bash(gh * -t*)"
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
 
