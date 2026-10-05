@@ -89,7 +89,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run Checkov
-        uses: bridgecrewio/checkov-action@v12.3125.0
+        uses: bridgecrewio/checkov-action@v12.3128.0
         # Render variables to completion. Checkov's default stops the render loop once
         # 90% of edges repeat for 4 iterations, so results depended on graph size:
         # unrelated locals could leave the storage network rules unresolved and fail
