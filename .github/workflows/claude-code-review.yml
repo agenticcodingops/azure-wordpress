@@ -36,6 +36,27 @@ jobs:
         uses: anthropics/claude-code-action@8cf3482550831fb35a4fc3fbf7ca139cf8028b4c # v1.0.233
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The review's sub-agents must run in the foreground. On this action and CLI
+          # (2.1.281) the plugin's sub-agents can start in the background, either with no
+          # `run_in_background` argument or by asking for it. The main agent then ends its
+          # turn to wait for them, which ends the run: no review, nothing posted, and the
+          # check still green. It comes and goes: measured on the same pinned action, four
+          # of six runs failed this way, and the two that posted ran every sub-agent in the
+          # foreground. This variable turns off background tasks for the whole run,
+          # "including the `run_in_background` parameter on Bash and subagent tools,
+          # auto-backgrounding" (https://code.claude.com/docs/en/env-vars).
+          # It goes through `settings`, not the step's `env:`. At the pinned commit the
+          # action's run step lists the variables it passes, and its own env block shadows
+          # the caller's (action.yml, "this step's env: block shadows ..."). Its
+          # docs/configuration.md, "Custom Environment Variables", names `settings` `env`.
+          # The action merges this into ~/.claude/settings.json before it installs the
+          # plugin. The POSTING RULES ask for the foreground too, as a second layer.
+          settings: |
+            {
+              "env": {
+                "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"
+              }
+            }
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           # Without --comment the plugin reviews and then posts nothing, by design.
@@ -53,6 +74,7 @@ jobs:
             To post the summary comment, first write the body to a file with the Write tool,
             then run exactly `gh pr comment ${{ github.event.pull_request.number }} --body-file <that file>`;
             never use heredocs, pipes or command substitution in gh commands.
+            Run every sub-agent in the foreground: if the Agent tool takes run_in_background, pass false, and never end your turn while a sub-agent is still running.
           # The plugin's own allowed-tools list plus Write (for the --body-file), so its gh and
           # inline-comment calls are not denied. `gh pr comment` is bound to this PR (by number
           # or URL), as the inline-comment tool already is, so injected PR text cannot make the

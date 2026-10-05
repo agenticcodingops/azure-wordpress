@@ -181,6 +181,23 @@ non-interactive run: with our allow-list omitting `gh pr comment`, both local ru
 it before bumping the action pin, because a CLI that honours command frontmatter in print mode
 would widen it to every PR in the repo.
 
+**The review's sub-agents must run in the foreground (2026-10-05).** On this pinned action (CLI
+2.1.281) the plugin's sub-agents can start in the background, either with no `run_in_background`
+argument or by asking for it. The main agent then ends its turn to wait for them, which ends the
+run: nothing is posted, and the check stays green. It comes and goes. Measured on the same pinned
+action, four of six runs failed this way, and the two that posted ran every sub-agent in the
+foreground. The review step now sets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, which turns off
+background tasks, the sub-agent tool's `run_in_background` included, through the action's
+`settings` input (`env`), the action's documented route for custom variables. A step-level `env:`
+would not reach the CLI, because the action's run step passes only the variables it lists. The
+POSTING RULES ask for the foreground too. On the same pinned action, the first full review after
+the change started seven sub-agents with the argument unset, the case that had run in the
+background, and none did: all seven completed, and the review posted. **Here the evidence is
+hidden:** with `show_full_output` off, the job log does not print the result record's
+`subagent_stats` (`started_in_background`, `completed`, `spawned`), and a PR that edits the
+workflow cannot review itself. A posted review alone proves nothing, because the failure comes and
+goes.
+
 `validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
 
 ## Commit Metadata Guard (.github/workflows/commit-hygiene.yml)
