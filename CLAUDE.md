@@ -161,9 +161,13 @@ SHAs because the job holds a write token and the OAuth secret. Two consequences 
   not on every push. It also skips PRs it judges automated or trivial.
 - A green check with no comment can still mean "skipped" (see above) — check the PR for the
   review comment before treating it as a clean review.
-- `gh pr comment` is allowed only for the triggering PR, by number or by URL, so injected PR text
-  cannot post on another PR. If a clean PR gets no "no issues found" summary, look for a
-  permission denial in the job log: the review used some other `gh pr comment` form.
+- `gh pr comment` is allowed only for the triggering PR, by number or by URL, and only with one
+  body file, `$GITHUB_WORKSPACE/.review-summary.md`, as exact rules with no wildcard. Injected PR
+  text cannot post on another PR, or post a file such as `.git/config`. If a clean PR gets no
+  "no issues found" summary, look for a permission denial in the job log: the review used some
+  other `gh pr comment` form. Loosen it only by adding another exact rule.
+- PRs a bot opened are skipped (job-level `if`), so dependency-update PRs show the job as skipped,
+  not failed.
 
 **`--comment` and the allow-list were still not enough (#49 posted nothing, 5 and 25 denials).**
 Reproduced locally with the same CLI version, `--plugin-dir` pointing at the plugin, and
@@ -199,6 +203,25 @@ hidden:** with `show_full_output` off, the job log does not print the result rec
 `subagent_stats` (`started_in_background`, `completed`, `spawned`), and a PR that edits the
 workflow cannot review itself. A posted review alone proves nothing, because the failure comes and
 goes.
+
+**Hardening ported from auto-code-scanning (2026-10-05).** The review job holds a token that can
+write to PRs, and the action puts its own token in `GH_TOKEN` and the checkout's `.git/config`, so
+text in a PR could try to make the review disclose one. The workflow now:
+
+- runs one review per PR at a time (a per-PR `concurrency` group, not cancel-in-progress, so a
+  push during a review cannot start a second one that posts first);
+- checks out with `persist-credentials: false` (the pinned checkout v7.0.1 would otherwise keep the
+  job token in a file under `$RUNNER_TEMP` that the checkout's git config includes), and deletes
+  whatever the PR put at the summary's path before the review runs;
+- asks for the action's token with `contents: read` (`additional_permissions`), so a leaked token
+  cannot push code;
+- denies the file tools `.git/**`, and `--jq`, `-q`, `--template` and `-t` on `gh`, which can read
+  environment variables;
+- tells the review, and every agent it launches, to run `gh pr diff` without redirecting it into a
+  file: the CLI checks a redirect's target as a file write, which the allow-list denies.
+
+This narrows token disclosure but does not stop it: deny rules match command text, and read-only
+shell commands can still print the token, which stays live until the job ends.
 
 `validate.yml` triggers **only on pushes and PRs targeting `main`**. A stacked PR (base = another feature branch) runs none of Format/Validate/Checkov/Documentation — only Semgrep and the reusable scan. Verify stacked work locally (below) and retarget to `main` before relying on CI.
 
