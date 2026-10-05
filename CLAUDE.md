@@ -74,8 +74,8 @@ Never use a `>-` folded scalar — a multi-line skip list is not reassembled the
 
 > **Corrected 2026-08-02.** This file previously claimed the action's entrypoint uses an
 > unquoted `$INPUT_SKIP_CHECK` and word-splits. That is **not true of the pinned image**:
-> `checkov 3.3.9`'s `github_action_resources/entrypoint.sh` (byte-identical in 3.3.19, the image
-> CI pins today) builds `declare -a CKV_ARGS` via
+> `checkov 3.3.9`'s `github_action_resources/entrypoint.sh` (byte-identical in 3.3.19 and in 3.3.22,
+> the image the Checkov job pins today) builds `declare -a CKV_ARGS` via
 > an `add_csv` helper with every expansion quoted, splitting on comma only, and it even trims
 > one leading/trailing space per token. Keep the no-spaces convention (it is harmless and
 > portable), but do not reach for word splitting to explain a skip-list bug — it is not the
@@ -108,6 +108,8 @@ Update the `?ref=` references in README.md and examples/ to the version being re
 ## CI Pipeline (.github/workflows/validate.yml)
 
 Four jobs: Format Check (`terraform fmt`), Validate (11 modules), Checkov, Documentation (terraform-docs). Format Check and Validate run **Terraform 1.9.8**, the version the consumer's CI runs, installed by `hashicorp/setup-terraform` pinned to a commit SHA with `terraform_wrapper: false`. The version lives once, in the workflow-level `TERRAFORM_VERSION`, and each job's `Terraform Version` step fails if the installed CLI does not print exactly that version. Until 2026-09 they ran OpenTofu 1.6.0; `fmt -recursive -check` was clean on both CLIs at the switch. All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
+
+**That workflow's Checkov is not the Checkov job's.** `terraform-scan.yml` calls auto-code-scanning's reusable scan, pinned by SHA (v2.2.0). It runs the Checkov that release pins (3.3.19, against the Checkov job's 3.3.22), with `soft_fail`, and it reads auto-code-scanning's own `configs/azure/.checkov.yaml`, whose skip list is empty. It never sees `validate.yml`'s skip list or its render setting, so a skipped check that fails here comes back as a finding, and so do CKV_AZURE_35/36, from the partial render (see Static Analysis Constraints). Those findings raise code-scanning alerts, and the aggregate counts them as MEDIUM, so they do not fail the gate. Do not "fix" them with inline skips: that would make a third skip-list source. auto-code-scanning #13 adds consumer inputs for the skip list and the render setting.
 
 **`claude-review` was failing on every PR — an expired `CLAUDE_CODE_OAUTH_TOKEN`, not the workflow.
 Resolved 2026-08-02 by rotating the secret; it has been green since.** If you are reading a red
@@ -606,17 +608,17 @@ rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl
 for m in modules/*/; do (cd "$m" && terraform init -backend=false >/dev/null && terraform validate); done
 rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl   # leave none behind (see terraform-docs)
 
-# Checkov — CI runs 3.3.19, from `runs.image` in the action.yml of the
-# bridgecrewio/checkov-action tag validate.yml pins (v12.3125.0 today). Tags can move and the
+# Checkov — the Checkov job runs 3.3.22, from `runs.image` in the action.yml of the
+# bridgecrewio/checkov-action tag validate.yml pins (v12.3128.0 today). Tags can move and the
 # dependency-update bot bumps this one: re-read action.yml rather than trusting this number.
 #   gh api 'repos/bridgecrewio/checkov-action/contents/action.yml?ref=<tag-from-validate.yml>' \
 #     --jq '.content' | base64 -d | grep image:
 # Install SUFFIXED so plain `checkov` stays off PATH — see the hook warning below.
-pipx install --suffix=@3319 checkov==3.3.19
+pipx install --suffix=@3322 checkov==3.3.22
 # The skip list is read from validate.yml, so it cannot drift from what CI skips;
 # inline #checkov:skip comments on a resource apply on their own.
 # The render setting mirrors validate.yml's env (see Static Analysis Constraints).
-RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3319 -d . --framework terraform -o json \
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform -o json \
   --skip-check "$(sed -n 's/^ *skip_check: *\([^[:space:]]*\).*/\1/p' .github/workflows/validate.yml)"
 # Drop --quiet when comparing before/after: it hides PASSED and UNKNOWN, which is
 # exactly the signal you need (see Static Analysis Constraints).
