@@ -35,7 +35,7 @@ Layer 2 (Application): modules/database, modules/storage, modules/key-vault → 
   - Sets **environment-aware defaults** for `prod` (production) and `np` (non-production).
 - **Sub-modules (`modules/<name>`)**:
   - 10 focused sub-modules: `app-service`, `cloudflare`, `database`, `dns-zones`, `front-door`, `key-vault`, `monitoring`, `networking`, `shared-infrastructure`, `storage`.
-  - Sub-modules must remain reusable and must not hardcode environment policies.
+  - Sub-modules must not hardcode environment defaults (which are resolved by the composition module), but they may enforce production safety invariants (such as the database module's `enforce_production_sku` check).
 - **Dependency Flow & Circular Dependency Handling**:
   - Application Insights is provisioned between layers so its connection string is written to Key Vault before App Service is provisioned.
   - Front Door uses `azapi_update_resource` to inject the Front Door ID into App Service IP restrictions post-creation.
@@ -57,8 +57,9 @@ Gemini Code Assist must evaluate pull requests against the following criteria:
    - Use Managed Identities (System-Assigned or User-Assigned) for App Service and staging slots.
    - Enforce least-privilege RBAC role assignments.
 4. **Network Isolation & Transport Security**:
-   - Storage accounts must enforce `min_tls_version = "TLS1_2"` and `enable_https_traffic_only = true`. Public access should be restricted via virtual network rules or private endpoints.
-   - MySQL Flexible Server must mandate SSL (`require_secure_transport = "ON"`).
+   - Storage accounts must enforce `min_tls_version = "TLS1_2"` and `https_traffic_only_enabled = true`. Public access should be restricted via virtual network rules or private endpoints.
+   - Linux web apps must enforce `https_only = true` and `site_config.minimum_tls_version = "1.2"`.
+   - MySQL Flexible Server explicitly sets `require_secure_transport = "OFF"` (`modules/database/main.tf:91-96`) because the official WordPress container does not configure client-side MySQL TLS certificates by default, relying instead on network-layer encryption over the delegated subnet. Do not flag this parameter as a vulnerability in isolation.
 
 ### B. Terraform Expression Safety & Null / Undefined Safety
 1. **Environment-Aware Defaults Pattern**:

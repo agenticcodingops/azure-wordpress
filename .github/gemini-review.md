@@ -35,7 +35,7 @@ for Gemini Code Assist on pull requests in the `azure-wordpress` repository.
 - **Key Vault Integration**: Passwords must be generated dynamically (`random_password`) and stored in Azure Key Vault. App Service must reference secrets via `@Microsoft.KeyVault(...)`.
 - **Network Boundaries**: Ensure MySQL Flexible Server, Storage Accounts, and Key Vault restrict public network access. Validate that firewall rules and VNet service endpoints/private endpoints are correctly wired.
 - **Least Privilege**: Managed Identities (System-Assigned or User-Assigned) must be used for service-to-service authentication with minimal necessary RBAC roles.
-- **Transport Security**: Verify `min_tls_version = "TLS1_2"` and `enable_https_traffic_only = true` on storage and web tiers.
+- **Transport Security**: Verify `min_tls_version = "TLS1_2"` and `https_traffic_only_enabled = true` on storage accounts. Verify `https_only = true` and `site_config.minimum_tls_version = "1.2"` on Linux web apps. Note that MySQL Flexible Server sets `require_secure_transport = "OFF"` (`modules/database/main.tf:91-96`) by design because the WordPress container lacks client-side TLS certificates and relies on delegated subnet private network security.
 
 ### Edge Cases, Null Safety & Error Handling
 - **Environment-Aware Defaults in Composition Module**:

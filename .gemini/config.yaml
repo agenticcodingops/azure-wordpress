@@ -25,11 +25,10 @@ ignore_patterns:
   - "*.tfstate"
   - "*.tfstate.*"
   - "*.tfplan"
-  # Exclude documentation and release changelogs
-  - "docs/**"
+  # Exclude generated changelogs and license text
   - "CHANGELOG.md"
   - "LICENSE"
 
 memory_config:
-  # Enable project memory for enhanced context retention across review cycles
+  # Retain group-level memory settings (set to true to opt out of group memory)
   disabled: false
