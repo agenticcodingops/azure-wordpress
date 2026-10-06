@@ -141,7 +141,8 @@ module "wordpress" {
   }
 
   tags = {
-    Owner = "DevOps"
+    Owner       = "DevOps"
+    Environment = var.environment
   }
 }
 
