@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -112,8 +113,9 @@ def call_gemini_api(api_key: str, model: str, system_prompt: str, user_prompt: s
             if e.code == 402:
                 print("::error::Prepayment credits are depleted in this AI Studio project. Top up credits at https://aistudio.google.com/projects or create an API key in a Free Tier project.", file=sys.stderr)
                 sys.exit(1)
-            if e.code in (404, 400) and current_model != models_to_try[-1]:
-                print(f"Retrying with next fallback model...")
+            if current_model != models_to_try[-1]:
+                print(f"Retrying with next fallback model after HTTP {e.code}...")
+                time.sleep(2)
                 continue
             raise
         except Exception as e:
