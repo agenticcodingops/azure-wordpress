@@ -15,8 +15,8 @@ import urllib.error
 import urllib.request
 
 COMMENT_MARKER = "<!-- automated-gemini-code-review -->"
-DEFAULT_MODEL = "gemini-2.5-flash"
-FALLBACK_MODELS = ["gemini-1.5-flash", "gemini-2.5-pro"]
+DEFAULT_MODEL = "gemini-3.8-flash"
+FALLBACK_MODELS = ["gemini-3.8-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash"]
 MAX_DIFF_CHARS = 80000
 
 
