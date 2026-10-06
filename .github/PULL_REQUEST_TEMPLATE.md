@@ -43,6 +43,7 @@ Fixes #
 - [ ] I have run `tofu validate` and there are no errors
 - [ ] I have run `trivy config` and addressed any findings
 - [ ] I have run `checkov` and addressed any findings
+- [ ] Automated review: reviewed and addressed automated reviewer bot feedback in PR comments
 
 ### Documentation
 - [ ] I have updated the README if this changes module inputs/outputs
