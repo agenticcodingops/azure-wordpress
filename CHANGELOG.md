@@ -73,39 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * **wordpress-site:** nonprod deployments that leave both new inputs unset get a Key Vault destroy-and-recreate. Azure permits enabling purge protection but never disabling it, and soft_delete_retention_days cannot be updated after creation, so Terraform can only reach the new values by replacing the vault. The apply fails unless key_vault_name_suffix is bumped in the same change, because the soft-deleted vault still holds the name and the provider recovers it rather than creating a new one. Set key_vault_purge_protection_enabled = true and key_vault_soft_delete_retention_days = 90 to keep the previous behaviour. Production consumers are unaffected.
 
-### 🚑 Upgrade path — read before applying
-
-**Production consumers who set neither new variable are unaffected** — the resolved values
-are still `true` and `90`, exactly what the module hardcoded before. Verified as an empty
-plan diff. Nothing to do.
-
-**Nonprod deployments that leave both new inputs unset will replace their Key Vault, and
-the apply fails if you do nothing.** Terraform destroys before it creates; the old vault
-soft-deletes still holding its name, and because azurerm's `recover_soft_deleted_key_vaults`
-defaults to `true`, the create step then *recovers that old vault* — with purge protection
-still on, which the new configuration tries to disable. Azure refuses.
-
-Pick one before upgrading:
-
-```hcl
-# A. Keep pre-v3.0.0 behaviour exactly. No replacement, no plan diff.
-key_vault_purge_protection_enabled   = true
-key_vault_soft_delete_retention_days = 90
-
-# B. Adopt the new nonprod defaults, and give the new vault a free name in the same apply.
-key_vault_name_suffix = "12"   # any value not already soft-deleted
-```
-
-Under option B no secret value is lost: `random_password.db` has no `keepers`, so the
-database password is preserved and re-written into the new vault (**it is not rotated**);
-`storage-key` and `appinsights-connection` are re-read from the untouched live resources;
-`extra_secrets` are re-uploaded from your own configuration. Mind the 24-character vault
-name limit, `kv-{site≤14}-{env}{suffix}`.
-
-Note the asymmetry: only *disabling* purge protection forces replacement. Turning it back
-**on** for a nonprod vault later is a free in-place update.
-
-Full detail in [`modules/wordpress-site/README.md`](modules/wordpress-site/README.md#️-upgrading-to-v300--read-before-you-apply).
+Upgrade notes: [v2 to v3](docs/upgrading/v2-to-v3.md).
 
 ### Features
 
@@ -120,45 +88,7 @@ Full detail in [`modules/wordpress-site/README.md`](modules/wordpress-site/READM
 * Key Vault and Storage now deny public data-plane access by default.
 * **wordpress-site:** six object attributes no longer carry a default, so consumers that leave them unset now get environment-selected values instead of the old fixed ones.
 
-### 🚑 Upgrade path — read before applying
-
-Four new defaults will take a working site down if adopted blind. All are opt-out; none
-require a code change. Full detail in [`modules/wordpress-site/README.md`](modules/wordpress-site/README.md#-upgrading-to-v200--read-before-you-apply).
-
-**1. Key Vault denies public access → your pipeline gets 403.** Terraform is not a trusted
-Azure service, so its data-plane calls that create secrets are refused. GitHub-hosted runners
-have a rotating egress range that cannot practically be allow-listed.
-
-```hcl
-key_vault_public_network_access_enabled = true   # deploying from hosted CI
-```
-
-**2. Storage denies public access → media 403s for every visitor.** The WordPress Blob
-Storage plugin rewrites media URLs to the storage account's own blob endpoint, so **end
-users** fetch media directly from Azure, from arbitrary IPs that can never be allow-listed.
-This breaks images site-wide, not just deployment.
-
-```hcl
-storage_network_rules_default_action = "Allow"   # unless the blob endpoint is behind a CDN custom domain
-```
-
-**3. `database.geo_redundant_backup` now resolves `true` in production.** Previously always
-`false`. Three ways this bites: some regions have **no geo-backup target at all** (Sweden
-Central reports `supportedGeoBackupRegions: []`) and the apply fails; it is **unsupported on
-the Burstable tier**; and it is **`ForceNew`**, so changing it on an existing server plans a
-**destroy and recreate** with `prevent_destroy = false`.
-
-```hcl
-database = { geo_redundant_backup = false }      # keep pre-v2.0.0 behaviour
-```
-
-**4. `database.sku_name` now resolves `B_Standard_B2s` in nonprod** instead of
-`GP_Standard_D2ds_v4` — a downgrade-on-upgrade that forces replacement. Pin it if you relied
-on the old behaviour.
-
-Also environment-aware, all online and non-destructive: `backup_retention_days` (production
-7 → 30), `monitoring.retention_days` (production 30 → 90), `app_service.health_check_path`
-(`/` → `/wp-includes/images/blank.gif`).
+Upgrade notes: [v1 to v2](docs/upgrading/v1-to-v2.md).
 
 ### Features
 

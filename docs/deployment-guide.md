@@ -594,7 +594,7 @@ Terraform defers every data source inside a module that has `depends_on` until a
 - **The Key Vault access policy.** The deployer read becomes unknown, and the plan replaces the Terraform access
   policy on every site. That replacement fails at apply, and a retry plans it again
   (`modules/wordpress-site/main.tf:56-66`; see "Upgrading to v4.0.2" in
-  [`modules/wordpress-site/README.md`](../modules/wordpress-site/README.md#upgrading-to-v402)).
+  [the upgrade guide](upgrading/v4.0-to-v4.1.md#upgrading-to-v402)).
 - **Cloudflare rulesets.** With `cdn_provider = "cloudflare"`, the zone lookup becomes unknown, and `zone_id`
   forces replacement on `cloudflare_ruleset` (`modules/wordpress-site/main.tf:907-912`).
 
@@ -1092,7 +1092,7 @@ After removal:
       that already exist until you import them.
   - **Import anything you recover under its old name before the revert applies.** Otherwise azurerm refuses to
     create it ("already exists ... needs to be imported").
-- **A module upgrade:** read the upgrade notes first. Then decide per environment, because nonprod applies before
+- **A module upgrade:** read the [upgrade guide](upgrading/README.md) first. Then decide per environment, because nonprod applies before
   production:
   - **No apply has run there with the upgrade's providers:** set the previous `?ref=`, the previous provider pins
     and the previous lock file, and plan. Restoring the lock file alone fails `terraform init` while the root still

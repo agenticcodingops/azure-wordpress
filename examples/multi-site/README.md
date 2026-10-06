@@ -43,7 +43,7 @@ site removes the rules for all three. See note 3 of the [cost guide](../../docs/
 
 ## Version Pinning
 
-This example pins module sources to a specific release tag (`?ref=v4.1.0`). To use a different version:
+This example pins module sources to a specific release tag (`?ref=v4.1.1`). To use a different version:
 
 1. Check available versions on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page
 2. Update the `?ref=` tag for **both** `shared-infrastructure` and `wordpress-site` modules in `main.tf`

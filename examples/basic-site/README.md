@@ -10,7 +10,7 @@ Deploy a single WordPress site with Cloudflare CDN on Azure.
 
 ## Version Pinning
 
-This example pins module sources to a specific release tag (`?ref=v4.1.0`). To use a different version:
+This example pins module sources to a specific release tag (`?ref=v4.1.1`). To use a different version:
 
 1. Check available versions on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page
 2. Update the `?ref=` tag in `main.tf`
@@ -29,7 +29,7 @@ example sets two inputs explicitly that a minimal config would otherwise omit:
 From v3.0.0, Key Vault purge protection and soft-delete retention default by environment —
 `true`/90 in production, `false`/7 in nonprod, so a destroyed nonprod vault's name is
 immediately reusable. Both are commented in `main.tf` if you need the old behaviour; see
-[the module upgrade notes](../../modules/wordpress-site/README.md) before changing them on
+[the v2 to v3 notes](../../docs/upgrading/v2-to-v3.md) before changing them on
 an existing deployment, because they force a vault replacement.
 
 ## Quick Start

@@ -368,7 +368,7 @@ Set any of these explicitly and your value is used; leave it unset and the value
 > `key_vault_name_suffix` is bumped in the same change — the soft-deleted vault still holds
 > the name, and the provider would recover it rather than create a new one. Set both to
 > `true`/`90` to keep the old behaviour. See
-> [`modules/wordpress-site/README.md`](modules/wordpress-site/README.md#️-upgrading-to-v300--read-before-you-apply).
+> [v2 to v3](docs/upgrading/v2-to-v3.md).
 
 ### Blob Storage Protection
 
@@ -518,19 +518,9 @@ module "wordpress" {
 
 Available versions are listed on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page.
 
-### Upgrading from v3 to v4
+### Upgrading
 
-v4.0.0 moves every module onto azurerm `~> 5.6`. The root module must require that same constraint, or `terraform init` cannot resolve a provider. No module inputs change. Run `terraform plan` before the first apply. Key Vault purge protection, soft-delete retention, and MySQL geo-redundant backup are unchanged by this release, and each of them is costly to change after the resource exists.
-
-The provider no longer registers resource providers unless asked: `resource_provider_registrations` defaults to `none`, and `skip_provider_registration` is removed. Set `resource_provider_registrations = "legacy"` to keep the previous automatic set. Plan-time location and resource-provider checks also default off. Set `features.enhanced_validation.locations` and `features.enhanced_validation.resource_providers` to `true` to keep catching those at plan time. The examples set all three.
-
-### Upgrading Versions
-
-1. Check the [CHANGELOG](CHANGELOG.md) for the target version
-2. Look for **BREAKING CHANGES** — these require configuration updates
-3. Update the `?ref=` tag in all module source URLs
-4. Run `terraform init -upgrade` to fetch the new version
-5. Run `terraform plan` to review changes before applying
+See the [upgrade guide](docs/upgrading/README.md).
 
 ### Version Guarantees
 
@@ -540,11 +530,7 @@ The provider no longer registers resource providers unless asked: `resource_prov
 | **MINOR** (v1.0.0 → v1.1.0) | New features with backward compatibility. Existing configs work unchanged. |
 | **MAJOR** (v1.0.0 → v2.0.0) | Breaking changes. Review CHANGELOG and update your configuration. |
 
-**One exception, in v4.1.0:** the container image default changes from `"8.4"` to the floating `"8.3"`, so a
-configuration that never set the image tag plans an in-place `docker_image_name` update on the app (and, on S*/P*
-plans, the staging slot). `"8.4"` does not exist on the registry as a floating tag (measured 2026-09-27; the 8.4 series is
-published only as dated tags), so the old default cannot survive a restart. Set `wordpress_version` (or `docker_image_tag` on the app-service module) explicitly to keep your
-current value. See the site module's "Upgrading to v4.1.0".
+The v4.1.0 image-default exception is in [4.0 to 4.1](docs/upgrading/v4.0-to-v4.1.md).
 
 ## Contributing
 
