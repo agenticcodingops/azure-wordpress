@@ -104,8 +104,11 @@ def call_gemini_api(api_key: str, model: str, system_prompt: str, user_prompt: s
                 candidates = resp_data.get("candidates", [])
                 if candidates:
                     parts = candidates[0].get("content", {}).get("parts", [])
+                    text_parts = [p.get("text", "") for p in parts if not p.get("thought") and "text" in p]
+                    if text_parts:
+                        return "".join(text_parts).strip()
                     if parts and "text" in parts[0]:
-                        return parts[0]["text"]
+                        return parts[0]["text"].strip()
                 print(f"::warning::No text in candidate response from {current_model}")
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8", errors="replace")
@@ -171,10 +174,14 @@ def post_or_update_comment(repo: str, pr_number: str, token: str, body_text: str
     if comment_id:
         print(f"Updating existing review comment ID: {comment_id}")
         patch_path = f"/repos/{repo}/issues/comments/{comment_id}"
-        github_api_request("PATCH", patch_path, token, {"body": full_body})
+        res = github_api_request("PATCH", patch_path, token, {"body": full_body})
+        if res is None:
+            raise RuntimeError(f"Failed to update review comment {comment_id} on PR #{pr_number}")
     else:
         print(f"Creating new review comment on PR #{pr_number}")
-        github_api_request("POST", comments_path, token, {"body": full_body})
+        res = github_api_request("POST", comments_path, token, {"body": full_body})
+        if res is None:
+            raise RuntimeError(f"Failed to post review comment on PR #{pr_number}")
 
 
 def main():
@@ -215,16 +222,17 @@ def main():
         f"--- REPOSITORY STYLEGUIDE ---\n{styleguide}\n\n"
         f"--- DOMAIN GUIDELINES ---\n{guidelines}\n\n"
         "Instructions for your review:\n"
-        "1. Focus on architectural integrity, AzureRM ~> 5.6 compatibility, security best practices, and code cleanliness.\n"
-        "2. Structure your review into clear sections:\n"
+        "1. Start directly with '## 🤖 Automated Code Review' without any conversational preamble or meta commentary.\n"
+        "2. Focus on architectural integrity, AzureRM ~> 5.6 compatibility, security best practices, and code cleanliness.\n"
+        "3. Structure your review into clear sections:\n"
         "   - **Summary of Changes**: 1-2 sentence overview of what the PR modifies.\n"
         "   - **Key Findings**:\n"
         "     - 🚨 **Critical / High Severity**: Breaking changes, security risks (e.g. unencrypted transport, exposed credentials, missing TLS minimums).\n"
         "     - ⚠️ **Medium Severity**: Deviations from repository conventions, deprecated attributes, non-standard naming.\n"
         "     - 💡 **Low / Suggestions**: Minor improvements, clarity, or style suggestions.\n"
         "   - **Recommendation**: Explicitly state 'LGTM / Approved' if no medium/high issues exist, or list specific required changes.\n"
-        "3. If everything conforms to the standards and no issues are found, state clearly that the PR meets repository standards.\n"
-        "4. Be constructive, concise, and reference specific file paths and line numbers wherever relevant."
+        "4. If everything conforms to the standards and no issues are found, state clearly that the PR meets repository standards.\n"
+        "5. Be constructive, concise, and reference specific file paths and line numbers wherever relevant."
     )
 
     user_prompt = (
