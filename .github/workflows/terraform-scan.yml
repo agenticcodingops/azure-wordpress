@@ -19,10 +19,82 @@ permissions:
 
 jobs:
   terraform-scan:
-    # PIN to the IMMUTABLE commit SHA. Bump deliberately.
-    uses: agenticcodingops/auto-code-scanning/.github/workflows/reusable-scan.yml@a83e29f2d948059d3d59f3498f302ff001c56b43 # v2.2.0
+    # PIN to the IMMUTABLE commit SHA. Bump deliberately, and move scanning-repo-ref with it.
+    uses: agenticcodingops/auto-code-scanning/.github/workflows/reusable-scan.yml@b993fed321e8a01b781abcfd894f02c8d3c2cffa # v2.3.0
+    needs: checkov-settings
     with:
       terraform-directory: "."
       cloud-provider: "azure"
       severity: "CRITICAL,HIGH"
-      scanning-repo-ref: "a83e29f2d948059d3d59f3498f302ff001c56b43" # v2.2.0
+      scanning-repo-ref: "b993fed321e8a01b781abcfd894f02c8d3c2cffa" # v2.3.0
+      checkov-skip-checks: ${{ needs.checkov-settings.outputs.skip-checks }}
+      checkov-render-iter-count: ${{ needs.checkov-settings.outputs.render-iter-count }}
+
+  # The Checkov skip list and the render setting are written once, in validate.yml's Checkov
+  # step. This job reads them from there and hands them to the shared scan, so the two cannot
+  # drift. It fails on a missing or malformed value instead of scanning with a silently short list.
+  checkov-settings:
+    name: Read the Checkov settings
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      skip-checks: ${{ steps.read.outputs.skip-checks }}
+      render-iter-count: ${{ steps.read.outputs.render-iter-count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/workflows/validate.yml
+          sparse-checkout-cone-mode: false
+
+      - name: Install YAML reader
+        run: python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+
+      - name: Read the Checkov step in validate.yml
+        id: read
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          import yaml
+
+          # The shared scan accepts only these IDs, comma-separated with no spaces, and a positive integer.
+          CHECK_ID = re.compile(r"CKV2?_[A-Z0-9]+_[0-9]+", re.ASCII)
+
+          def fail(message):
+              print(f"::error file=.github/workflows/validate.yml::{message}")
+              sys.exit(1)
+
+          with open(".github/workflows/validate.yml", encoding="utf-8") as stream:
+              workflow = yaml.safe_load(stream)
+          steps = [
+              step
+              for step in (workflow.get("jobs", {}).get("checkov", {}).get("steps") or [])
+              if str(step.get("uses", "")).startswith("bridgecrewio/checkov-action@")
+          ]
+          if len(steps) != 1:
+              fail(f"expected exactly one bridgecrewio/checkov-action step in the checkov job, found {len(steps)}")
+          step = steps[0]
+
+          raw = (step.get("with") or {}).get("skip_check")
+          if isinstance(raw, list):
+              raw = ",".join(str(entry) for entry in raw)
+          if not isinstance(raw, str) or not raw.strip():
+              fail("the Checkov step has no skip_check; not scanning with a silently empty list")
+          ids = list(dict.fromkeys(entry.strip() for entry in raw.strip().split(",")))
+          bad = [entry for entry in ids if not CHECK_ID.fullmatch(entry)]
+          if bad:
+              fail(f"skip_check entries the shared scan cannot take: {bad}")
+
+          render = str((step.get("env") or {}).get("RENDER_EDGES_DUPLICATE_ITER_COUNT", ""))
+          if not re.fullmatch(r"[0-9]+", render) or not render.strip("0"):
+              fail(f"RENDER_EDGES_DUPLICATE_ITER_COUNT must be a positive integer on the Checkov step, got {render!r}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write("skip-checks=" + ",".join(ids) + "\n")
+              out.write("render-iter-count=" + render + "\n")
+          print("skip_check from validate.yml:", ",".join(ids))
+          print("RENDER_EDGES_DUPLICATE_ITER_COUNT from validate.yml:", render)
+          PY
