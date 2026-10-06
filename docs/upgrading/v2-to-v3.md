@@ -8,29 +8,31 @@ The v3.0.0 breaking change, in both [`CHANGELOG.md`](../../CHANGELOG.md) and the
 
 The changelog upgrade path, which the release notes do not include, adds:
 
-- Production, with neither new variable set: "Verified as an empty plan diff." Nothing to do. Nothing is replaced or destroyed.
+- Production, with neither new variable set: "Verified as an empty plan diff. Nothing to do."
 - Option A (`true` and `90`): "No replacement, no plan diff."
 - Option B sets a new `key_vault_name_suffix` in the same apply. The breaking change says that bump is what lets the replacement finish. The upgrade path says no secret value is lost and the database password is not rotated.
-- "only *disabling* purge protection forces replacement." Turning it back on "is a free in-place update."
+- "only *disabling* purge protection forces replacement." Turning it back on "is a free in-place update." That sentence is about purge protection only: a `soft_delete_retention_days` change also forces replacement, as above.
 
 The release notes contain the breaking-change bullet and the purge-protection feature line. They do not contain the upgrade-path section, and they do not contain the `app_service_principal_id` line that the changelog has. They do not add a plan diff.
 
 ## Key Vault lifecycle
 
-The diagram uses the v3.0.0 statements above and in the copied changelog entry. Purge protection can be turned on. Soft-delete retention is fixed at creation. Replacing the vault needs a new name suffix in that same apply.
+The diagram uses the v3.0.0 statements above and in the copied changelog entry. Purge protection can be turned on. Soft-delete retention is fixed at creation. Replacing a vault that has purge protection on needs a new name suffix in that same apply. With purge protection off, the provider's `purge_soft_delete_on_destroy` purges the old vault on destroy and frees the name (the moved note's "Why the default changed").
 
 ```mermaid
 stateDiagram-v2
   [*] --> Vault
   Vault --> Vault: turn purge protection on
-  Vault --> SameName: disable purge protection, or change soft-delete retention, without a new suffix
+  Vault --> SameName: purge protection on, then disable it or change soft-delete retention, same name
   Vault --> NewName: that same change, with key_vault_name_suffix set to a free suffix
+  Vault --> Purged: purge protection off, change soft-delete retention
+  Purged --> Replaced: the destroy purges the old vault, so the name is free
   SameName --> ApplyFails: the soft-deleted vault keeps the name and the provider recovers it
 ```
 
 ## Changelog entry
 
-Copied unchanged from [`CHANGELOG.md`](../../CHANGELOG.md). This change replaced that upgrade-path section, in the changelog, with a link to this page. The copy below is the section as it stood. Its link to the site-module README still names the old heading. That section is under [Moved from the site module](#moved-from-the-site-module).
+Copied unchanged from [`CHANGELOG.md`](../../CHANGELOG.md). This change replaced that upgrade-path section, in the changelog, with a link to this page. The copy below is the section as it stood, with one edit: its link to the site-module README pointed at a heading this change moved, so it now points to [Moved from the site module](#moved-from-the-site-module).
 
 ## [3.0.0](https://github.com/agenticcodingops/azure-wordpress/compare/v2.0.0...v3.0.0) (2026-08-02)
 
@@ -71,7 +73,7 @@ name limit, `kv-{site≤14}-{env}{suffix}`.
 Note the asymmetry: only *disabling* purge protection forces replacement. Turning it back
 **on** for a nonprod vault later is a free in-place update.
 
-Full detail in [`modules/wordpress-site/README.md`](modules/wordpress-site/README.md#️-upgrading-to-v300--read-before-you-apply).
+Full detail in [`modules/wordpress-site/README.md`](#moved-from-the-site-module).
 
 ### Features
 

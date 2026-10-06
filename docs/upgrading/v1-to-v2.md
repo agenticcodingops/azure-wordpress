@@ -11,18 +11,19 @@ Both [`CHANGELOG.md`](../../CHANGELOG.md) and the [v2.0.0 release notes](https:/
 
 The changelog upgrade path, copied below, states these plan effects:
 
-- `database.geo_redundant_backup` resolving `true` in production is `ForceNew`. The changelog says changing it on an existing server plans a **destroy and recreate**, and `modules/database` sets `prevent_destroy = false`.
+- `database.geo_redundant_backup` now resolves `true` in production, and the attribute is `ForceNew`. The changelog says changing it on an existing server plans a **destroy and recreate**, and `modules/database` sets `prevent_destroy = false`.
 - `database.sku_name` resolving `B_Standard_B2s` in nonprod is, in the changelog, "a downgrade-on-upgrade that forces replacement."
 - `backup_retention_days` (production 7 to 30), `monitoring.retention_days` (production 30 to 90), and `app_service.health_check_path` (`/` to `/wp-includes/images/blank.gif`) are, in the changelog, "online and non-destructive."
 - The Key Vault and Storage default of denying public access is described as 403s. The changelog does not say whether that plan replaces or destroys those resources. **UNKNOWN.**
+- Item 2 of the copied upgrade path offers `storage_network_rules_default_action = "Allow"` as the media fix. The moved site-module note qualifies it: `Allow` removes the firewall gate only. The uploads container stays private and the storage plugin writes unsigned URLs, so anonymous browsers still cannot read media. See [Moved from the site module](#moved-from-the-site-module).
 
 The release notes repeat the Key Vault and Storage bullet, list commit `27443d7` on the same bugfix subject as `#19`, and do not include the upgrade-path section. They do not state a further plan diff.
 
-The module note moved below calls the nonprod SKU change "a compute tier change that forces a restart." The changelog calls it replacement. Which of those the plan shows is **UNKNOWN**.
+The module note moved below calls the nonprod SKU change "a compute tier change that forces a restart." The changelog calls it replacement. The note is right: the provider documents `sku_name` on `azurerm_mysql_flexible_server` without "forces a new resource" ([azurerm provider docs](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/mysql_flexible_server)), so a tier change is an in-place update with a restart, not a replacement.
 
 ## Changelog entry
 
-Copied unchanged from [`CHANGELOG.md`](../../CHANGELOG.md). This change replaced that upgrade-path section, in the changelog, with a link to this page. The copy below is the section as it stood. Its link to the site-module README still names the old heading. That section is under [Moved from the site module](#moved-from-the-site-module).
+Copied unchanged from [`CHANGELOG.md`](../../CHANGELOG.md). This change replaced that upgrade-path section, in the changelog, with a link to this page. The copy below is the section as it stood, with one edit: its link to the site-module README pointed at a heading this change moved, so it now points to [Moved from the site module](#moved-from-the-site-module).
 
 ## [2.0.0](https://github.com/agenticcodingops/azure-wordpress/compare/v1.3.2...v2.0.0) (2026-08-02)
 
@@ -35,7 +36,7 @@ Copied unchanged from [`CHANGELOG.md`](../../CHANGELOG.md). This change replaced
 ### 🚑 Upgrade path — read before applying
 
 Four new defaults will take a working site down if adopted blind. All are opt-out; none
-require a code change. Full detail in [`modules/wordpress-site/README.md`](modules/wordpress-site/README.md#-upgrading-to-v200--read-before-you-apply).
+require a code change. Full detail in [`modules/wordpress-site/README.md`](#moved-from-the-site-module).
 
 **1. Key Vault denies public access → your pipeline gets 403.** Terraform is not a trusted
 Azure service, so its data-plane calls that create secrets are refused. GitHub-hosted runners
