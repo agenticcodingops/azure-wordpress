@@ -27,8 +27,15 @@ $totalLow = 0
 foreach ($dir in $scanDirs) {
     if (-not (Test-Path $dir -PathType Container)) { continue }
 
-    # Check for config file
+    # Dispatcher directory first, then the repo-root file a plain tflint run loads.
+    # A relative --config is resolved against --chdir, so pass an absolute path.
     $configFile = Resolve-ScanConfig -Filename '.tflint.hcl'
+    if (-not $configFile -and (Test-Path -LiteralPath '.tflint.hcl')) {
+        $configFile = '.tflint.hcl'
+    }
+    if ($configFile) {
+        $configFile = (Resolve-Path -LiteralPath $configFile).Path
+    }
 
     # Initialize tflint plugins
     $initArgs = @('--chdir', $dir, '--init')

@@ -35,9 +35,15 @@ for dir in "${scan_dirs[@]}"; do
     # Build tflint command as array — safe for paths with spaces/special chars
     tflint_cmd=(tflint --chdir="${dir}" --format json)
 
-    # Check for config file
+    # Dispatcher directory first, then the repo-root file a plain tflint run loads.
+    # A relative --config is resolved against --chdir, so pass an absolute path.
     config_file="$(resolve_config '.tflint.hcl' 2>/dev/null || true)"
+    if [[ -z "${config_file}" && -f .tflint.hcl ]]; then
+        config_file=".tflint.hcl"
+    fi
     if [[ -n "${config_file}" ]]; then
+        config_dir="$(cd "$(dirname "${config_file}")" && pwd)"
+        config_file="${config_dir}/$(basename "${config_file}")"
         tflint_cmd+=(--config "${config_file}")
     fi
 
