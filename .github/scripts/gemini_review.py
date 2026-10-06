@@ -109,6 +109,9 @@ def call_gemini_api(api_key: str, model: str, system_prompt: str, user_prompt: s
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8", errors="replace")
             print(f"::warning::Gemini API error ({current_model}): HTTP {e.code} - {err_body}", file=sys.stderr)
+            if e.code == 402:
+                print("::error::Prepayment credits are depleted in this AI Studio project. Top up credits at https://aistudio.google.com/projects or create an API key in a Free Tier project.", file=sys.stderr)
+                sys.exit(1)
             if e.code in (404, 400) and current_model != models_to_try[-1]:
                 print(f"Retrying with next fallback model...")
                 continue
