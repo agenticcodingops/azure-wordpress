@@ -65,8 +65,51 @@ def load_file(path: str) -> str:
     return ""
 
 
-def call_gemini_api(api_key: str, model: str, system_prompt: str, user_prompt: str) -> str:
-    models_to_try = [model] + [m for m in FALLBACK_MODELS if m != model]
+def get_available_models(api_key: str) -> list[str]:
+    url = "https://generativelanguage.googleapis.com/v1beta/models"
+    req = urllib.request.Request(
+        url,
+        headers={"x-goog-api-key": api_key},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            models = []
+            for m in data.get("models", []):
+                methods = m.get("supportedGenerationMethods", [])
+                name = m.get("name", "")
+                if "generateContent" in methods and name.startswith("models/"):
+                    models.append(name.replace("models/", ""))
+            print(f"Discovered {len(models)} available model(s) for API key.")
+            return models
+    except Exception as e:
+        print(f"::warning::Failed to query available model list: {e}", file=sys.stderr)
+        return []
+
+
+def call_gemini_api(api_key: str, preferred_model: str, system_prompt: str, user_prompt: str) -> str:
+    available = get_available_models(api_key)
+
+    models_to_try = []
+    if preferred_model in available:
+        models_to_try.append(preferred_model)
+    elif preferred_model:
+        models_to_try.append(preferred_model)
+
+    for m in available:
+        if m not in models_to_try:
+            models_to_try.append(m)
+
+    # Prioritize flash models first, then pro models
+    flash_models = [m for m in models_to_try if "flash" in m]
+    other_models = [m for m in models_to_try if "flash" not in m]
+    models_to_try = flash_models + other_models
+
+    if not models_to_try:
+        models_to_try = [DEFAULT_MODEL]
+
+    print(f"Target model evaluation order: {models_to_try[:5]}")
 
     for current_model in models_to_try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}:generateContent"
@@ -97,37 +140,41 @@ def call_gemini_api(api_key: str, model: str, system_prompt: str, user_prompt: s
             method="POST",
         )
 
-        try:
-            print(f"Calling Gemini API with model: {current_model}...")
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
-                candidates = resp_data.get("candidates", [])
-                if candidates:
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    text_parts = [p.get("text", "") for p in parts if not p.get("thought") and "text" in p]
-                    if text_parts:
-                        return "".join(text_parts).strip()
-                    if parts and "text" in parts[0]:
-                        return parts[0]["text"].strip()
-                print(f"::warning::No text in candidate response from {current_model}")
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="replace")
-            print(f"::warning::Gemini API error ({current_model}): HTTP {e.code} - {err_body}", file=sys.stderr)
-            if e.code == 402:
-                print("::error::Prepayment credits are depleted in this AI Studio project. Top up credits at https://aistudio.google.com/projects or create an API key in a Free Tier project.", file=sys.stderr)
-                sys.exit(1)
-            if current_model != models_to_try[-1]:
-                print(f"Retrying with next fallback model after HTTP {e.code}...")
-                time.sleep(2)
-                continue
-            raise
-        except Exception as e:
-            print(f"::warning::Unexpected error calling Gemini API ({current_model}): {e}", file=sys.stderr)
-            if current_model != models_to_try[-1]:
-                continue
-            raise
+        for attempt in range(1, 4):
+            try:
+                print(f"Calling Gemini API with model: {current_model} (attempt {attempt}/3)...")
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    candidates = resp_data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        text_parts = [p.get("text", "") for p in parts if not p.get("thought") and "text" in p]
+                        if text_parts:
+                            return "".join(text_parts).strip()
+                        if parts and "text" in parts[0]:
+                            return parts[0]["text"].strip()
+                    print(f"::warning::No text in candidate response from {current_model}")
+                    break
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode("utf-8", errors="replace")
+                print(f"::warning::Gemini API error ({current_model}): HTTP {e.code} - {err_body}", file=sys.stderr)
+                if e.code == 402:
+                    print("::error::Prepayment credits are depleted in this AI Studio project. Top up credits at https://aistudio.google.com/projects or create an API key in a Free Tier project.", file=sys.stderr)
+                    sys.exit(1)
+                if e.code in (503, 429) and attempt < 3:
+                    wait_sec = attempt * 3
+                    print(f"Transient HTTP {e.code} on {current_model}; waiting {wait_sec}s before retry...")
+                    time.sleep(wait_sec)
+                    continue
+                break
+            except Exception as e:
+                print(f"::warning::Unexpected error calling Gemini API ({current_model}): {e}", file=sys.stderr)
+                if attempt < 3:
+                    time.sleep(2)
+                    continue
+                break
 
-    return ""
+    raise RuntimeError("Failed to generate review from any available model.")
 
 
 def github_api_request(method: str, path: str, token: str, data: dict = None) -> dict | list | None:
