@@ -1,0 +1,35 @@
+# ==============================================================================
+# Gemini Code Assist for GitHub - Repository Configuration
+# Reference: https://cloud.google.com/gemini/docs/codeassist/github/customize-behavior
+# ==============================================================================
+
+code_review:
+  # Minimum severity for which Gemini Code Assist posts comments.
+  # Options: LOW, MEDIUM, HIGH.
+  # MEDIUM focuses on security concerns, architectural violations, and logic bugs,
+  # filtering out subjective stylistic noise.
+  comment_severity_threshold: MEDIUM
+
+ignore_patterns:
+  # Exclude GitHub Actions workflows (protected directory)
+  - ".github/workflows/**"
+  # Exclude internal scanning scripts and hooks
+  - ".githooks/**"
+  - ".scanning/**"
+  # Exclude local IDE configurations
+  - ".idea/**"
+  - ".vscode/**"
+  # Exclude Terraform state, plan files, and local plugins
+  - "**/.terraform/**"
+  - "**/.terraform.lock.hcl"
+  - "*.tfstate"
+  - "*.tfstate.*"
+  - "*.tfplan"
+  # Exclude documentation and release changelogs
+  - "docs/**"
+  - "CHANGELOG.md"
+  - "LICENSE"
+
+memory_config:
+  # Enable project memory for enhanced context retention across review cycles
+  disabled: false
