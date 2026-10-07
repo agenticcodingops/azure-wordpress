@@ -20,13 +20,13 @@ permissions:
 jobs:
   terraform-scan:
     # PIN to the IMMUTABLE commit SHA. Bump deliberately, and move scanning-repo-ref with it.
-    uses: agenticcodingops/auto-code-scanning/.github/workflows/reusable-scan.yml@b993fed321e8a01b781abcfd894f02c8d3c2cffa # v2.3.0
+    uses: agenticcodingops/auto-code-scanning/.github/workflows/reusable-scan.yml@0a4e8b331728396aad748953ccf5620ac17de8d8 # v2.3.2
     needs: checkov-settings
     with:
       terraform-directory: "."
       cloud-provider: "azure"
       severity: "CRITICAL,HIGH"
-      scanning-repo-ref: "b993fed321e8a01b781abcfd894f02c8d3c2cffa" # v2.3.0
+      scanning-repo-ref: "0a4e8b331728396aad748953ccf5620ac17de8d8" # v2.3.2
       checkov-skip-checks: ${{ needs.checkov-settings.outputs.skip-checks }}
       checkov-render-iter-count: ${{ needs.checkov-settings.outputs.render-iter-count }}
 
