@@ -20,7 +20,9 @@ jobs:
     env:
       SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
     container:
-      image: semgrep/semgrep
+      # Pinned by digest: neither `semgrep/semgrep` nor a version tag is immutable. The dependency-update bot does not
+      # update a workflow's container image, so renew the digest deliberately. semgrep 1.178.0, resolved 2026-10-07.
+      image: semgrep/semgrep@sha256:32e459968daabe7ab86968184a29109b9564aa00392401156f9788452b42786b
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - run: semgrep ci
