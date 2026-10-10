@@ -1,77 +1,42 @@
 ## Description
 
-<!-- Describe your changes in detail -->
+<!-- Describe the change and why it is needed. -->
 
-## Type of Change
+## Type of change
 
-<!-- Mark the relevant option with an 'x' -->
-
-- [ ] Bug fix (non-breaking change that fixes an issue)
-- [ ] New feature (non-breaking change that adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to change)
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change
 - [ ] Documentation update
-- [ ] Refactoring (no functional changes)
+- [ ] Refactoring with no functional change
 
-## Related Issues
+## Related issues
 
-<!-- Link any related issues using #issue_number -->
+<!-- Link related issues, for example: Fixes #123. -->
 
-Fixes #
+## Modules affected
 
-## Modules Affected
+<!-- List the affected modules, or write "none". -->
 
-<!-- List the modules affected by this change -->
+## Verification
 
-- [ ] wordpress-site
-- [ ] shared-infrastructure
-- [ ] app-service
-- [ ] database
-- [ ] storage
-- [ ] key-vault
-- [ ] networking
-- [ ] dns-zones
-- [ ] cloudflare
-- [ ] front-door
-- [ ] monitoring
+- [ ] `terraform fmt -recursive -check -diff`
+- [ ] Each affected module passes `terraform init -backend=false` and `terraform validate`
+- [ ] The pinned Checkov scan passes with the workflow's render setting and skip list
+- [ ] Generated module documentation is current
+- [ ] Applicable offline console or mock-provider tests pass
+- [ ] No sensitive information is included
 
-## Checklist
+<!-- Describe any checks that were not applicable or could not be run. -->
 
-<!-- Ensure all items are checked before requesting review -->
+## Documentation
 
-### Code Quality
-- [ ] I have run `tofu fmt -recursive` and code is properly formatted
-- [ ] I have run `tofu validate` and there are no errors
-- [ ] I have run `trivy config` and addressed any findings
-- [ ] I have run `checkov` and addressed any findings
-- [ ] Automated review: reviewed and addressed automated reviewer bot feedback in PR comments
+<!-- List every document changed, or write "no docs impact" and explain why. -->
 
-### Documentation
-- [ ] I have updated the README if this changes module inputs/outputs
-- [ ] I have updated CHANGELOG.md with my changes
-- [ ] I have added/updated comments for complex logic
-
-### Testing
-- [ ] I have tested this change in an Azure environment
-- [ ] I have verified the plan output is as expected
-- [ ] I have tested both apply and destroy operations
-
-### General
-- [ ] My commit messages follow conventional commits format
-- [ ] I have not included sensitive information (keys, passwords, etc.)
-- [ ] My changes do not introduce breaking changes (or they are documented)
-
-## Test Configuration
-
-<!-- Share relevant test configuration (remove sensitive values) -->
-
-```hcl
-# Example configuration used for testing
-```
-
-## Screenshots / Plan Output
-
-<!-- If applicable, add screenshots or relevant plan output -->
-
-## Additional Notes
-
-<!-- Any additional information reviewers should know -->
+## Worker report
+- Status: done | blocked | needs-human
+- What changed:
+- Commands run, with exit codes (or "not run here; CI verifies"):
+- CI run URL:
+- Open questions:
+- Risk: low | high, and why. High: a change to module behaviour or defaults that alters plans for existing users, a workflow, release or security setting, anything irreversible, or low confidence.
