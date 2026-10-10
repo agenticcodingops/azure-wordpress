@@ -6,17 +6,29 @@ on:
   pull_request_review_comment:
     types: [created]
   issues:
-    types: [opened, assigned]
+    # Not `assigned`: re-assigning an issue whose body still holds an old mention would
+    # start a new run with no new instruction. Runs are started by a mention.
+    types: [opened]
   pull_request_review:
     types: [submitted]
 
 jobs:
   claude:
+    # Public repository: run only on issues and PRs the maintainer opened. The action adds the
+    # issue or PR body to the run's context without checking its author, so the comment
+    # filter below cannot keep a stranger's body out; this condition does. It names the
+    # account rather than trusting an author association: MEMBER or COLLABORATOR does not
+    # imply write access. The event's actor must be that account too, so another user's
+    # comment on the maintainer's thread starts nothing. Add any other trusted account to
+    # both lists.
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      contains(fromJSON('["vibecoddingops"]'), github.actor) &&
+      contains(fromJSON('["vibecoddingops"]'), github.event.issue.user.login || github.event.pull_request.user.login) && (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,6 +47,14 @@ jobs:
         uses: anthropics/claude-code-action@8cf3482550831fb35a4fc3fbf7ca139cf8028b4c # v1.0.233
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Anyone can comment here, so only these accounts' comments reach the run's context:
+          # the maintainer, the review bots and code scanning. Bot names take the "[bot]" form
+          # the action matches against (the review assistant's reviews arrive as
+          # copilot-pull-request-reviewer). github-actions[bot] is left out on purpose: other
+          # workflows post model output built from PR content under that shared identity. Add
+          # any other account that dispatches or steers runs here first.
+          include_comments_by_actor: "vibecoddingops,coderabbitai[bot],chatgpt-codex-connector[bot],claude[bot],greptile-apps[bot],copilot-pull-request-reviewer[bot],github-advanced-security[bot]"
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
