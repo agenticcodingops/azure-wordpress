@@ -36,6 +36,12 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
+          # This repository is public, so anyone can comment. Only these accounts' comments
+          # reach the run's context: the maintainer, the review bots and workflow output. A
+          # stranger's comment on an issue or PR therefore cannot steer a run. Add any other
+          # account that dispatches or steers runs here first.
+          include_comments_by_actor: "vibecoddingops,coderabbitai[bot],chatgpt-codex-connector[bot],claude[bot],greptile-apps[bot],Copilot,github-actions[bot],github-advanced-security[bot]"
+
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
             actions: read
