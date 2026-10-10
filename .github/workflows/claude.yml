@@ -12,11 +12,16 @@ on:
 
 jobs:
   claude:
+    # Public repository: run only on issues and PRs a maintainer opened. The action adds the
+    # issue or PR body to the run's context without checking its author, so the comment
+    # filter below cannot keep a stranger's body out; this condition does.
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association || github.event.pull_request.author_association) && (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,11 +41,13 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-          # This repository is public, so anyone can comment. Only these accounts' comments
-          # reach the run's context: the maintainer, the review bots and workflow output. A
-          # stranger's comment on an issue or PR therefore cannot steer a run. Add any other
-          # account that dispatches or steers runs here first.
-          include_comments_by_actor: "vibecoddingops,coderabbitai[bot],chatgpt-codex-connector[bot],claude[bot],greptile-apps[bot],Copilot,github-actions[bot],github-advanced-security[bot]"
+          # Anyone can comment here, so only these accounts' comments reach the run's context:
+          # the maintainer, the review bots and code scanning. Bot names take the "[bot]" form
+          # the action matches against (the review assistant's reviews arrive as
+          # copilot-pull-request-reviewer). github-actions[bot] is left out on purpose: other
+          # workflows post model output built from PR content under that shared identity. Add
+          # any other account that dispatches or steers runs here first.
+          include_comments_by_actor: "vibecoddingops,coderabbitai[bot],chatgpt-codex-connector[bot],claude[bot],greptile-apps[bot],copilot-pull-request-reviewer[bot],github-advanced-security[bot]"
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
