@@ -16,8 +16,11 @@ jobs:
     # issue or PR body to the run's context without checking its author, so the comment
     # filter below cannot keep a stranger's body out; this condition does. It names the
     # account rather than trusting an author association: MEMBER or COLLABORATOR does not
-    # imply write access. Add any other account that opens issues or PRs for runs here.
+    # imply write access. The event's actor must be that account too, so another user's
+    # comment on the maintainer's thread starts nothing. Add any other trusted account to
+    # both lists.
     if: |
+      contains(fromJSON('["vibecoddingops"]'), github.actor) &&
       contains(fromJSON('["vibecoddingops"]'), github.event.issue.user.login || github.event.pull_request.user.login) && (
         (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
         (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
