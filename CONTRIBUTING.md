@@ -19,8 +19,9 @@ pull request.
    sh .githooks/install.sh
    ```
 
-   Do not install another hook manager over these hooks. The hooks enforce the
-   commit-metadata policy and dispatch the configured local scanners.
+   Do not install another hook manager over these hooks. Read the commit-metadata
+   policy in [AGENTS.md](AGENTS.md) before creating branches, commits, or pull requests.
+   The hooks enforce that policy and dispatch the configured local scanners.
 
 Create a short-lived branch with a descriptive prefix such as `feature/`, `fix/`,
 `docs/`, `refactor/`, or `test/`.
@@ -35,7 +36,7 @@ terraform version
 terraform fmt -recursive -check -diff
 
 for module in modules/*/; do
-  (cd "$module" && terraform init -backend=false && terraform validate)
+  (cd "$module" && terraform init -backend=false && terraform validate) || exit 1
 done
 ```
 
@@ -58,8 +59,10 @@ Review the resulting diff and ensure a second run is idempotent.
 
 ## Run the compliance scan
 
-CI pins Checkov 3.3.22. Install it with a suffix so the repository's optional local
-hook does not accidentally pick up a differently configured executable:
+CI pins Checkov 3.3.22. Install it with a suffix so a plain `checkov` never lands on
+PATH. The local pre-push hook arms as soon as any binary named `checkov` is on PATH,
+regardless of its configuration, and then runs with no skip list. Keep any binary named
+`checkov` off PATH:
 
 ```bash
 pipx install --suffix=@3322 checkov==3.3.22
@@ -97,8 +100,35 @@ terraform -chdir=modules/wordpress-site console -var-file=<temporary-inputs-file
 Wrap expressions in `jsonencode()` when checking null values, because a bare null prints
 as a blank line.
 
-For changes that need a plan-level assertion, add a temporary `.tftest.hcl` fixture with
-a `mock_provider` block and run:
+For changes that need a plan-level assertion, add a temporary `.tftest.hcl` fixture.
+Set `command = plan`, because a `terraform test` run applies by default. Every provider
+used by the tested configuration needs its own `mock_provider` block: this can include
+`azurerm`, `azapi`, `random`, `time`, `null`, and `cloudflare` when
+`cdn_provider = "cloudflare"`. A minimal plan-only fixture for the direct CDN path is:
+
+```hcl
+mock_provider "azurerm" {}
+mock_provider "azapi" {}
+mock_provider "random" {}
+mock_provider "time" {}
+mock_provider "null" {}
+
+run "direct_cdn_plan" {
+  command = plan
+
+  variables {
+    project_name  = "example"
+    site_name     = "example"
+    environment   = "nonprod"
+    location      = "eastus"
+    tenant_id     = "00000000-0000-0000-0000-000000000000"
+    custom_domain = "example.com"
+    cdn_provider  = "direct"
+  }
+}
+```
+
+Then run:
 
 ```bash
 terraform -chdir=modules/wordpress-site test -verbose
@@ -146,9 +176,10 @@ Do not edit the changelog or create tags by hand.
 
 ```mermaid
 flowchart LR
-    A[Conventional commit merged to main] --> B[Release pull request]
+    A[Release-triggering commit: fix, feat, or breaking change] --> B[Release pull request]
     B -->|Maintainer merges| C[Version tag]
     C --> D[GitHub Release]
+    E[docs or chore commit] --> F[No release pull request]
 ```
 
 ## Review guidance

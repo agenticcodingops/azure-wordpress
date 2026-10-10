@@ -39,4 +39,4 @@
 - Commands run, with exit codes (or "not run here; CI verifies"):
 - CI run URL:
 - Open questions:
-- Risk: low | high, and why (see the repo's merge rules)
+- Risk: low | high, and why. High: a change to module behaviour or defaults that alters plans for existing users, a workflow, release or security setting, anything irreversible, or low confidence.
