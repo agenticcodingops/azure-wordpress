@@ -1,208 +1,160 @@
-# Contributing to azure-wordpress
+# Contributing
 
-Thank you for your interest in contributing to azure-wordpress! This document provides guidelines and instructions for contributing.
+Thank you for contributing. Check existing issues before opening a new one, keep each
+change focused, and never include credentials or other sensitive values in an issue or
+pull request.
 
-## Code of Conduct
+## Set up a local checkout
 
-This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
+1. Fork the repository and clone your fork.
+2. Add the canonical repository as the `upstream` remote.
+3. Install the required tools:
+   - Terraform 1.9.8 (the version used by CI)
+   - terraform-docs 0.20.0
+   - Checkov 3.3.22
+   - Trivy
+4. Install the repository hooks once per clone:
 
-## How to Contribute
-
-### Reporting Issues
-
-- Check existing issues to avoid duplicates
-- Use the appropriate issue template (bug report or feature request)
-- Provide as much detail as possible
-
-### Fork and Clone Workflow
-
-1. Fork the repository on GitHub
-2. Clone your fork locally:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/azure-wordpress.git
-   cd azure-wordpress
-   ```
-3. Add the upstream remote:
-   ```bash
-   git remote add upstream https://github.com/agenticcodingops/azure-wordpress.git
-   ```
-4. Keep your fork up to date:
-   ```bash
-   git fetch upstream
-   git checkout main
-   git merge upstream/main
-   ```
-
-### Branch Naming Convention
-
-Use the following prefixes for your branches:
-
-- `feature/*` - New features or enhancements
-- `fix/*` - Bug fixes
-- `docs/*` - Documentation changes
-- `refactor/*` - Code refactoring
-- `test/*` - Test additions or modifications
-
-Examples:
-```bash
-git checkout -b feature/add-redis-cache
-git checkout -b fix/mysql-connection-timeout
-git checkout -b docs/update-readme
-```
-
-### Development Setup
-
-1. Install required tools:
-   - [OpenTofu](https://opentofu.org/) >= 1.6.0 or [Terraform](https://www.terraform.io/) >= 1.6.0
-   - [Trivy](https://github.com/aquasecurity/trivy) (IaC config scanning; tfsec successor)
-   - [checkov](https://www.checkov.io/)
-   - [terraform-docs](https://terraform-docs.io/)
-
-2. Configure local hooks (required, once per clone):
    ```bash
    sh .githooks/install.sh
    ```
-   This points `core.hooksPath` at `.githooks/`, which enforces the commit-metadata
-   policy in [AGENTS.md](AGENTS.md) and then runs the lefthook scanners configured in
-   `lefthook.yml` (dispatched through `hooks/dispatcher.sh`). Do not also run
-   `lefthook install`. To skip the scanners for a single command, use
-   `LEFTHOOK=0 git commit ...`; to disable them entirely, set
-   `global.local_hooks_enabled: false` in `scan-config.yaml`. Neither switch disables
-   the commit-metadata guard.
 
-### Terraform Formatting Requirements
+   Do not install another hook manager over these hooks. The hooks enforce the
+   commit-metadata policy and dispatch the configured local scanners.
 
-All Terraform code must be properly formatted:
+Create a short-lived branch with a descriptive prefix such as `feature/`, `fix/`,
+`docs/`, `refactor/`, or `test/`.
 
-```bash
-# Format all files
-tofu fmt -recursive
+## Format and validate Terraform
 
-# Check formatting without making changes
-tofu fmt -recursive -check
-```
-
-### Testing Requirements
-
-Before submitting a PR, ensure all checks pass:
+Confirm that the selected binary is the same version as CI, then run the CI commands
+from the repository root:
 
 ```bash
-# Validate Terraform configuration
-tofu init -backend=false
-tofu validate
+terraform version
+terraform fmt -recursive -check -diff
 
-# Run security scans
-trivy config .
-checkov -d .
-
-# Generate documentation (if module outputs changed)
-terraform-docs markdown table --output-file README.md ./modules/YOUR_MODULE
+for module in modules/*/; do
+  (cd "$module" && terraform init -backend=false && terraform validate)
+done
 ```
 
-### Commit Message Format
+CI starts without module lock files. If local initialization created `.terraform/`
+directories or module lock files, remove them before checking generated documentation.
 
-This project follows [Conventional Commits](https://www.conventionalcommits.org/). Each commit message should be structured as:
+## Generate module documentation
 
-```
-<type>(<scope>): <description>
+After changing a module input, output, or resource, regenerate that module's README
+with terraform-docs 0.20.0. This is the inject operation enforced by CI:
 
-[optional body]
-
-[optional footer(s)]
-```
-
-**Types:**
-- `feat` - New feature
-- `fix` - Bug fix
-- `docs` - Documentation only changes
-- `style` - Formatting, missing semicolons, etc.
-- `refactor` - Code change that neither fixes a bug nor adds a feature
-- `test` - Adding or updating tests
-- `chore` - Maintenance tasks
-
-**Examples:**
-```
-feat(cloudflare): add support for custom page rules
-
-fix(database): correct private endpoint subnet association
-
-docs(readme): update architecture diagram
-
-refactor(app-service): simplify identity configuration
+```bash
+terraform-docs markdown table --indent 2 --output-mode inject --output-file README.md \
+  --output-template '<!-- BEGIN_TF_DOCS -->
+{{ .Content }}
+<!-- END_TF_DOCS -->' modules/<module>
 ```
 
-### Versioning
+Review the resulting diff and ensure a second run is idempotent.
 
-This project uses [Semantic Versioning](https://semver.org/) (`vMAJOR.MINOR.PATCH`) with automated releases via [release-please](https://github.com/googleapis/release-please).
+## Run the compliance scan
 
-**How conventional commits map to version bumps:**
+CI pins Checkov 3.3.22. Install it with a suffix so the repository's optional local
+hook does not accidentally pick up a differently configured executable:
 
-| Commit Prefix | Version Bump | Terraform Examples |
-|---|---|---|
-| `fix:` | **PATCH** (1.0.0 → 1.0.1) | Fix variable defaults, correct validation rules, documentation updates |
-| `feat:` | **MINOR** (1.0.0 → 1.1.0) | Add variables with defaults, add new outputs, add optional resources |
-| `feat!:` or `BREAKING CHANGE:` footer | **MAJOR** (1.0.0 → 2.0.0) | Remove/rename variables or outputs, change variable types, remove resources |
-
-**Release process:**
-
-1. Merge PRs to `main` using conventional commit messages
-2. Release-please automatically creates/updates a Release PR with the bumped version and updated CHANGELOG
-3. A maintainer reviews and merges the Release PR when ready to cut a release
-4. Release-please creates the git tag (e.g., `v3.0.0`) and GitHub Release automatically
-5. Consumers pin to the new version: `source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.1"`
-
-**Breaking change examples:**
-
-```
-feat!: remove deprecated cdn_enabled variable
-
-BREAKING CHANGE: The cdn_enabled variable has been removed.
-Use the cloudflare.enabled field instead.
+```bash
+pipx install --suffix=@3322 checkov==3.3.22
 ```
 
+Run it with the same render setting and skip list that the validation workflow uses:
+
+```bash
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform --quiet \
+  --skip-check "$(sed -n 's/^ *skip_check: *\([^[:space:]]*\).*/\1/p' .github/workflows/validate.yml)"
 ```
-refactor!: rename database_name output to mysql_database_name
+
+The skip list must remain sourced from the workflow rather than copied into another
+configuration file. The local hook also runs Trivy at its configured severity:
+
+```bash
+trivy config . --severity CRITICAL --skip-dirs .terraform
 ```
 
-### Pull Request Process
+## Verify changes without cloud credentials
 
-1. **Create a PR** against the `main` branch
-2. **Fill out the PR template** completely
-3. **Ensure all checks pass:**
-   - `tofu fmt` - Code is formatted
-   - `tofu validate` - Configuration is valid
-   - `trivy config` - No security issues
-   - `checkov` - Compliance checks pass
-4. **Update documentation** if you changed module inputs/outputs
-5. **Request review** from maintainers
+Provider-backed plans require credentials, but expression behavior and plan structure
+can be checked offline.
 
-### PR Review Guidelines
+Use `terraform console` against the real module to inspect variables and locals. Keep
+plugin data outside the checkout and supply required inputs through a temporary variable
+file that is not committed:
 
-Reviewers will check for:
+```bash
+export TF_DATA_DIR="$(mktemp -d)"
+terraform -chdir=modules/wordpress-site init -backend=false
+terraform -chdir=modules/wordpress-site console -var-file=<temporary-inputs-file>
+```
 
-- Code quality and readability
-- Adherence to Terraform best practices
-- Proper variable naming and descriptions
-- Complete documentation for new features
-- Test coverage for new functionality
-- No hardcoded values (use variables)
-- Proper use of data sources vs resources
+Wrap expressions in `jsonencode()` when checking null values, because a bare null prints
+as a blank line.
 
-### Style Guide
+For changes that need a plan-level assertion, add a temporary `.tftest.hcl` fixture with
+a `mock_provider` block and run:
 
-- Use descriptive variable names with clear descriptions
-- Group related resources together
-- Use `locals` for computed values
-- Prefer `for_each` over `count` when possible
-- Add validation blocks for variables where appropriate
-- Use consistent naming: `snake_case` for resources, `kebab-case` for Azure resource names
+```bash
+terraform -chdir=modules/wordpress-site test -verbose
+```
 
-## Getting Help
+Mock-provider tests verify planned configuration without contacting the provider. Check
+the command's exit code and assert specific resources and attributes so two identical
+failures cannot be mistaken for a successful before-and-after comparison. Do not commit
+temporary fixtures or generated initialization files unless they are part of the change.
 
-- Open a [Discussion](https://github.com/agenticcodingops/azure-wordpress/discussions) for questions
-- Join our community chat (if available)
-- Review existing issues and PRs for context
+## Commits and pull requests
 
-## Recognition
+Use Conventional Commits, for example:
 
-Contributors will be recognized in the project's release notes. Thank you for helping improve azure-wordpress!
+```text
+feat(storage): add an optional setting
+fix(database): correct input validation
+docs(readme): clarify an example
+```
+
+Open the pull request directly against `main`. **Do not stack pull requests.** A pull
+request based on another feature branch does not run the complete validation workflow,
+and squash-merging its base can leave later changes disconnected from `main`. Wait for
+the current pull request to land, update from `main`, and then open the next one.
+
+Before requesting review:
+
+1. Run the format, validation, compliance, and documentation commands above.
+2. Complete every applicable part of the pull request template, including documentation
+   impact and offline verification.
+3. Confirm that all required checks pass.
+4. Request an independent review of diagrams and technical claims against the code.
+
+## Releases
+
+Releases are automated. A conventional commit merged to `main` causes the release
+automation to open or update a release pull request. Merging that release pull request
+updates the changelog and manifest, creates the version tag, and publishes the release.
+Do not edit the changelog or create tags by hand.
+
+- `fix:` produces a patch release.
+- `feat:` produces a minor release.
+- `feat!:` or a `BREAKING CHANGE:` footer produces a major release.
+- `docs:` and `chore:` do not produce a release.
+
+```mermaid
+flowchart LR
+    A[Conventional commit merged to main] --> B[Release pull request]
+    B -->|Maintainer merges| C[Version tag]
+    C --> D[GitHub Release]
+```
+
+## Review guidance
+
+Reviewers check readability, Terraform conventions, validation and test evidence,
+documentation completeness, safe handling of sensitive values, and whether the change
+introduces a documented compatibility impact. Prefer descriptive names, `for_each` when
+resource identity matters, locals for derived values, and validation blocks for input
+constraints.
