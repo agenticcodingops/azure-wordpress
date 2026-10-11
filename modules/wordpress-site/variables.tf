@@ -189,7 +189,7 @@ variable "mysql_entra_stage_drop_password_enabled" {
 }
 
 variable "mysql_entra_stage_aad_only_enabled" {
-  description = "Stage 4, off by default; requires mysql_entra_stage_drop_password_enabled. Sets the aad_auth_only server parameter to ON, so only Microsoft Entra logins work and the password administrator can no longer connect. Fails at plan while a staging slot exists, because the slot still logs in with a password: set app_service.staging_slot_enabled = false first (the slot is then destroyed). Turn it off first when rolling back; that deletes the parameter's configuration resource, which resets it to OFF."
+  description = "Stage 4, off by default; requires mysql_entra_stage_drop_password_enabled. Sets the aad_auth_only server parameter to ON, so only Microsoft Entra logins work and the password administrator can no longer connect. It is applied after the app update, so enabling stages 2 to 4 in one apply switches the app first. Fails at plan while a staging slot exists, because the slot still logs in with a password: set app_service.staging_slot_enabled = false first (the slot is then destroyed). Turn it off first when rolling back; that deletes the parameter's configuration resource, which resets it to OFF."
   type        = bool
   default     = false
   nullable    = false

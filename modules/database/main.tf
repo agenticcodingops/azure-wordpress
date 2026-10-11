@@ -137,36 +137,23 @@ resource "azurerm_mysql_flexible_server_active_directory_administrator" "main" {
 # first apply the identity can still be propagating when the administrator is created, and the
 # API then fails transiently; the AVM MySQL module has active_directory_administrator_wait_seconds
 # for the same reason. Exists only with the administrator, and only when the wait is above 0.
-# It has no triggers, so it runs once, when it is created, and never delays a later plan.
+# Its one trigger is the server identity's ID: the delay runs when the sleep is created and
+# again when the identity is swapped for another, and never delays a plan that changes neither.
 resource "time_sleep" "entra_admin_identity" {
   count = var.entra_admin_enabled && var.entra_admin_wait_seconds > 0 ? 1 : 0
 
   create_duration = "${var.entra_admin_wait_seconds}s"
 
+  triggers = {
+    identity_id = try(var.entra_server_identity.id, "")
+  }
+
   depends_on = [azurerm_mysql_flexible_server.main]
 }
 
-# Stage 4: password logins stop working. Created only when the flag is true; deleting the
-# resource resets the parameter to its server default (OFF), which is the way back. It waits
-# for the administrator, because Entra-only authentication with no Entra administrator
-# would leave nobody able to log in.
-resource "azurerm_mysql_flexible_server_configuration" "aad_auth_only" {
-  count = var.aad_auth_only_enabled ? 1 : 0
-
-  name                = "aad_auth_only"
-  resource_group_name = var.resource_group_name
-  server_name         = azurerm_mysql_flexible_server.main.name
-  value               = "ON"
-
-  lifecycle {
-    precondition {
-      condition     = var.entra_admin_enabled
-      error_message = "aad_auth_only_enabled requires entra_admin_enabled: the server needs an Entra administrator before password logins are switched off."
-    }
-  }
-
-  depends_on = [azurerm_mysql_flexible_server_active_directory_administrator.main]
-}
+# The aad_auth_only parameter (stage 4) is deliberately NOT here. It lives in the composition,
+# which orders it after the app update: this module is applied before module.app_service, so a
+# resource here would switch password logins off before the app had its token login.
 
 # MySQL Server Parameters: slow query log (opt-in).
 # Both parameters are dynamic, so no restart. Deleting a configuration resource resets

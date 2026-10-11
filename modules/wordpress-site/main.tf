@@ -422,13 +422,13 @@ module "database" {
   slow_query_log_enabled    = var.database.slow_query_log_enabled
   long_query_time           = var.database.long_query_time
 
-  # Passwordless access: the Entra administrator and the server identity (stage 1), the
-  # aad_auth_only parameter (stage 4) and the TLS requirement. All off by default.
+  # Passwordless access: the Entra administrator and the server identity (stage 1) and the TLS
+  # requirement. All off by default. The aad_auth_only parameter (stage 4) is the resource below
+  # module.app_service, so it is applied after the app switch.
   entra_admin_enabled      = var.mysql_entra_stage_identity_enabled
   entra_server_identity    = var.mysql_entra_server_identity
   entra_admin              = var.mysql_entra_admin
   entra_admin_wait_seconds = var.mysql_entra_admin_wait_seconds
-  aad_auth_only_enabled    = var.mysql_entra_stage_aad_only_enabled
   require_secure_transport = var.mysql_require_secure_transport
 
   # Allow burstable SKUs for cost optimization (user choice)
@@ -723,6 +723,25 @@ resource "azurerm_key_vault_access_policy" "staging_slot" {
     module.key_vault,
     module.app_service
   ]
+}
+
+# Stage 4 of the passwordless database path: password logins stop working. Created only when the
+# flag is true; deleting it resets the parameter to the server default (OFF), which is the way
+# back. It lives here, not in modules/database, so that it can wait for module.app_service:
+# module.app_service depends on module.database, and a resource inside the database module would
+# be applied first, turning password logins off before the app had its token login when stages
+# 2 to 4 are enabled in one apply. The administrator it relies on is in module.database, which
+# module.app_service already waits for. Stage ordering and the slot are checked by the
+# preconditions on azurerm_resource_group.main.
+resource "azurerm_mysql_flexible_server_configuration" "aad_auth_only" {
+  count = var.mysql_entra_stage_aad_only_enabled ? 1 : 0
+
+  name                = "aad_auth_only"
+  resource_group_name = azurerm_resource_group.main.name
+  server_name         = module.database.server_name
+  value               = "ON"
+
+  depends_on = [module.app_service]
 }
 
 # ============================================================================

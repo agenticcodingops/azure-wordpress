@@ -428,6 +428,18 @@ resource "azurerm_linux_web_app" "main" {
       error_message = "mysql_managed_identity_enabled is true, so mysql_managed_identity_client_id, mysql_managed_identity_database_user and user_assigned_identity_ids must all be set."
     }
 
+    # extra_app_settings is merged last, so it would win over the settings these switches own.
+    # Rejected here as well as in the composition, so a standalone caller cannot bypass them.
+    precondition {
+      condition     = var.database_password_app_setting_enabled || !contains(keys(var.extra_app_settings), "DATABASE_PASSWORD")
+      error_message = "database_password_app_setting_enabled = false removes DATABASE_PASSWORD from the production app, and extra_app_settings would put it back. Remove: DATABASE_PASSWORD."
+    }
+
+    precondition {
+      condition     = !var.mysql_managed_identity_enabled || length([for name in keys(var.extra_app_settings) : name if contains(["ENABLE_MYSQL_MANAGED_IDENTITY", "ENTRA_CLIENT_ID", "DATABASE_USERNAME"], name)]) == 0
+      error_message = "mysql_managed_identity_enabled = true sets ENABLE_MYSQL_MANAGED_IDENTITY, ENTRA_CLIENT_ID and DATABASE_USERNAME itself, and extra_app_settings would override the managed-identity value. Remove: ${join(", ", [for name in keys(var.extra_app_settings) : name if contains(["ENABLE_MYSQL_MANAGED_IDENTITY", "ENTRA_CLIENT_ID", "DATABASE_USERNAME"], name)])}."
+    }
+
     # Leaving the password off with the token login still off would leave the app with no
     # way to reach the database.
     precondition {

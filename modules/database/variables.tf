@@ -228,7 +228,7 @@ variable "entra_admin" {
 }
 
 variable "entra_admin_wait_seconds" {
-  description = "Seconds to wait after the server and its identity exist and before the Entra administrator is created, because a freshly attached identity can still be propagating and the API then fails transiently. Used only while entra_admin_enabled is true; 0 skips the wait. The pause happens once, when it is first created."
+  description = "Seconds to wait after the server and its identity exist and before the Entra administrator is created, because a freshly attached identity can still be propagating and the API then fails transiently. Used only while entra_admin_enabled is true; 0 skips the wait. The pause happens when the sleep is first created and again whenever entra_server_identity.id changes."
   type        = number
   default     = 30
   nullable    = false
@@ -237,13 +237,6 @@ variable "entra_admin_wait_seconds" {
     condition     = var.entra_admin_wait_seconds >= 0 && var.entra_admin_wait_seconds <= 300 && floor(var.entra_admin_wait_seconds) == var.entra_admin_wait_seconds
     error_message = "entra_admin_wait_seconds must be a whole number from 0 to 300."
   }
-}
-
-variable "aad_auth_only_enabled" {
-  description = "Set the aad_auth_only server parameter to ON, so only Microsoft Entra logins work and the password administrator can no longer connect. Off by default, which leaves the parameter unmanaged. Requires entra_admin_enabled. Turning it off again deletes the configuration resource, which resets the parameter to its server default (OFF)."
-  type        = bool
-  default     = false
-  nullable    = false
 }
 
 variable "require_secure_transport" {
