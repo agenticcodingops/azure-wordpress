@@ -373,6 +373,15 @@ Set any of these explicitly and your value is used; leave it unset and the value
 > `true`/`90` to keep the old behaviour. See
 > [v2 to v3](docs/upgrading/v2-to-v3.md).
 
+### App Service Custom Backups
+
+`app_service_backup_enabled` (default `false`) schedules a custom App Service backup of the production app
+(never the staging slot) to a private container in the site's storage account, with a module-generated,
+rotated SAS that is never an output. Custom backups are capped at 10 GB, include no database (MySQL keeps
+point-in-time restore above), and restore to a new app or slot. The container must be declared in
+`storage.additional_containers`; the schedule, retention and SAS lifetimes are in `app_service_backup`. See
+the composition module's [Backup & Recovery](modules/wordpress-site/README.md#backup--recovery) section.
+
 ### Blob Storage Protection
 
 Configure via the `storage` variable:

@@ -120,6 +120,18 @@ output "storage_additional_container_names" {
   value       = module.storage.additional_container_names
 }
 
+# App Service backup outputs. The SAS itself is never an output; these two dates let a
+# scheduled plan-only run warn before a rotation is due.
+output "app_service_backup_sas_rotation_rfc3339" {
+  description = "When the backup container SAS is next re-issued: the first plan after this time replaces it, which is the date to act on. Null when app_service_backup_enabled is false."
+  value       = one(time_rotating.backup_sas[*].rotation_rfc3339)
+}
+
+output "app_service_backup_sas_expiry_rfc3339" {
+  description = "When the current backup container SAS expires. The backup fails after this if no plan has been applied since the rotation date. Null when app_service_backup_enabled is false."
+  value       = one(time_offset.backup_sas_expiry[*].rfc3339)
+}
+
 # Monitoring outputs
 output "app_insights_id" {
   description = "Application Insights ID"

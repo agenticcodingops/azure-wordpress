@@ -207,6 +207,15 @@ resource "azurerm_resource_group" "main" {
       condition     = local.new_alerts_enabled ? local.has_alert_route : true
       error_message = "An opt-in alert is enabled (availability_tests, or monitoring.alerts.mysql, http_5xx_rate, health_check or resource_health), but nothing would receive it. Set alert_recipients or extra_action_group_ids."
     }
+
+    # The backup target must be a private container this module creates, so the SAS
+    # scope and the container agree. Checked here, not on the SAS data source in
+    # backup.tf: a custom condition on a data source defers its read to apply time
+    # whenever anything it depends on has a pending change.
+    precondition {
+      condition     = var.app_service_backup_enabled ? try(var.storage.additional_containers[var.app_service_backup.container_name].access_type == "private", false) : true
+      error_message = "app_service_backup.container_name must be a private container declared in storage.additional_containers, for example storage = { additional_containers = { \"wp-backups\" = {} } }."
+    }
   }
 }
 
@@ -350,6 +359,15 @@ module "storage" {
   lifecycle_version_delete_days   = var.storage.lifecycle_version_delete_days
   lifecycle_snapshot_delete_days  = var.storage.lifecycle_snapshot_delete_days
   lifecycle_prefix_match          = var.storage.lifecycle_prefix_match
+
+  # With blob versioning on, a backup App Service deletes at the end of its retention
+  # survives as a previous version; this second lifecycle rule expires those versions
+  # (and snapshots) after the same number of days. Nothing when the backup is off or
+  # retention is indefinite.
+  backup_container_lifecycle = var.app_service_backup_enabled && var.app_service_backup.retention_period_days > 0 ? {
+    container_name = var.app_service_backup.container_name
+    retention_days = var.app_service_backup.retention_period_days
+  } : null
 
   # Data-plane network rules.
   # The App Service subnet is always allow-listed (it carries the Microsoft.Storage
@@ -523,6 +541,16 @@ module "app_service" {
   ftp_publish_basic_authentication_enabled       = var.app_service_ftp_publish_basic_authentication_enabled
   webdeploy_publish_basic_authentication_enabled = var.app_service_webdeploy_publish_basic_authentication_enabled
   storage_plugin_app_settings_enabled            = var.app_service_storage_plugin_app_settings_enabled
+
+  # Scheduled custom backup of the production app. The SAS URL is built in backup.tf,
+  # outside this module's depends_on, so it is read at plan time once the account exists.
+  backup_enabled                  = var.app_service_backup_enabled
+  backup_storage_account_url      = local.app_service_backup_storage_account_url
+  backup_frequency_interval       = var.app_service_backup.frequency_interval
+  backup_frequency_unit           = var.app_service_backup.frequency_unit
+  backup_retention_period_days    = var.app_service_backup.retention_period_days
+  backup_keep_at_least_one_backup = var.app_service_backup.keep_at_least_one_backup
+  backup_start_time               = var.app_service_backup.start_time
 
   tags = local.common_tags
 

@@ -263,6 +263,128 @@ identity, so the slot's principal ID changes.
 The `staging_slot_enabled` output says, at plan time, whether the slot exists. `staging_slot_hostname` and
 `staging_slot_principal_id` are `null` when it does not; do not drive a `count` from either of them.
 
+## Backup & Recovery
+
+Three mechanisms cover a site, and only the first covers the database:
+
+- **MySQL point-in-time restore.** The Flexible Server keeps its own backups (`database.backup_retention_days`,
+  `database.geo_redundant_backup`; see the repository README). No App Service backup includes the database:
+  custom backups cannot link a Flexible Server, and this module does not try. Restore the database with
+  point-in-time restore, to the same moment as the file restore.
+- **App Service automatic backups** exist on every Basic, Standard and Premium app with no configuration:
+  hourly, kept 30 days on the platform, up to 30 GB, restorable from the app's Backups page. They cannot be
+  downloaded or filtered, and they live in the app's own datacenter.
+- **App Service custom backups**, which `app_service_backup_enabled` schedules. Each is a complete copy of the
+  app's `/home` (WordPress core, themes, plugins and `wp-content/uploads`) and its configuration, written as a
+  zip plus an xml manifest to a private container in the site's storage account, on your schedule, with your
+  retention, downloadable as blobs. A custom backup is capped at **10 GB** and fails above it.
+
+### Scheduling a custom backup
+
+```hcl
+module "wordpress" {
+  # ... existing configuration ...
+
+  storage = {
+    additional_containers = { "wp-backups" = {} } # private, the default access_type
+  }
+
+  app_service_backup_enabled = true
+  app_service_backup = {
+    container_name           = "wp-backups" # the default
+    frequency_interval       = 1
+    frequency_unit           = "Day" # or "Hour", with an interval of at least 2
+    retention_period_days    = 30    # 0 to 30; 0 keeps backups indefinitely
+    keep_at_least_one_backup = true
+    # start_time = "2026-11-01T02:00:00Z" # RFC 3339; unset, the schedule starts when it is configured
+  }
+}
+```
+
+The backup is configured on the production app only; the staging slot is never backed up (on a Basic plan
+Azure backs up the production slot only in any case). The target container must be declared in
+`storage.additional_containers` with `access_type = "private"` (the default): the module checks this at plan
+time and does not create the container itself, so turning the backup off later leaves the backups in place.
+Retention is 0 to 30 days (0 keeps backups indefinitely); App Service accepts nothing longer, so the module
+rejects it at plan time rather than at apply. For longer retention, keep `0` and let the
+[lifecycle rule](#scheduling-a-custom-backup) stay off, or copy backups elsewhere.
+App Service allows one custom backup every 2 hours at most (12 a day), so `frequency_unit = "Hour"` needs
+`frequency_interval >= 2`; the module rejects a smaller interval at plan time. Enabling the backup on an
+existing site is an in-place update of the web app and its slot: the `backup` block and
+`virtual_network_backup_restore_enabled` are added, nothing is replaced.
+
+With the backup on, the module sets `virtual_network_backup_restore_enabled` on the app and, when one exists,
+on the staging slot (Azure sets it per slot, and a restore into the slot needs it; the slot still has no backup
+schedule), so backups and restores travel over the VNet integration. The storage account already allow-lists
+the App Service subnet, so `storage_network_rules_default_action` can stay `"Deny"`. Enable the backup, confirm
+the first one succeeded, then switch the account to `Deny` if it is not there already.
+
+While `retention_period_days` is finite, the module also adds a second rule to the storage account's lifecycle
+management policy, scoped to the backup container: with blob versioning on (`storage.versioning_enabled`, the
+default), a backup App Service deletes at the end of its retention survives as a previous version that nothing
+would otherwise reclaim, so the rule deletes previous versions and snapshots in that container after the same
+number of days. Base blobs are left to App Service. The uploads rule is unchanged, and the policy exists while
+this rule is wanted even with `storage.lifecycle_policy_enabled = false`.
+
+### The 10 GB limit and `_backup.filter`
+
+A custom backup fails above 10 GB, so measure what `/home` holds before scheduling one (the Kudu console at
+`https://<app>.scm.azurewebsites.net` shows it). To exclude paths, put a `_backup.filter` file in
+`/home/site/wwwroot`, one path per line relative to `/home` (Microsoft's example is `\site\wwwroot\Images\2014`).
+Microsoft documents the file with Windows-style paths only; excluding paths on a Linux app is unproven here, so
+test it on a nonprod site and confirm from the backup's xml manifest. `_backup.filter` also changes restores:
+content it lists is left in place instead of being deleted. Logs and caches are the usual exclusions.
+
+### Restoring
+
+Restores go to a **new app or a new slot**, or overwrite an existing one, from the app's Backups page or with
+`az webapp config backup restore`; the target is stopped while it runs, so restore to a new slot and swap to
+minimise downtime. A restore carries the files and, optionally, the app settings, but not VNet integration,
+managed identities, TLS bindings or the backup configuration (custom domains listed in the backup's manifest
+are bound only where DNS allows). Two consequences:
+
+- Under `storage_network_rules_default_action = "Deny"`, a new app restoring from the account needs its own
+  route to it: allow-list its subnet with `storage_network_rules_virtual_network_subnet_ids`, add an IP rule, or
+  set `"Allow"` for the duration of the restore.
+- A new app has a new managed identity, so its Key Vault references do not resolve until that identity has an
+  access policy on the vault. Restoring into this module's own app, or into its staging slot, keeps everything
+  the module manages.
+
+### The SAS: source, rotation and trade-off
+
+App Service authorises a custom backup with a SAS URL only; managed identity is not supported for backup and
+restore. The module generates the SAS rather than taking one as input, so no secret crosses the module boundary
+and rotation is Terraform's job, not an operator's. `data.azurerm_storage_account_blob_container_sas` signs a
+service SAS for the one container with the account key from the storage module's connection string, over
+HTTPS only, with read, write, delete and list permissions: the set Microsoft's own backup sample grants, so
+check the first backup, which is what proves them. The SAS sits in the app's backup configuration and in
+state, both sensitive, and never in an output.
+
+Its validity window comes from `time` resources, never from `timestamp()`, so the SAS is stable between
+rotations: a `time_rotating` rotation timestamp, a start 15 minutes before it (`time_offset`, as Microsoft's
+SAS guidance asks, so clock skew cannot make a fresh SAS invalid) and an expiry `sas_validity_days` after it
+(`time_offset`). By default it is valid for `sas_validity_days = 365` and re-issued by the first plan after
+`sas_rotation_days = 180`; validity must be at least twice the rotation interval, so the SAS a rotation
+replaces keeps working for at least one more interval while the rotation waits to be applied. A rotation shows
+in a plan as a replacement of `time_rotating.backup_sas[0]`, `time_offset.backup_sas_start[0]` and
+`time_offset.backup_sas_expiry[0]` and an in-place update of the web app's backup block. `app_service_backup_sas_rotation_rfc3339` and `app_service_backup_sas_expiry_rfc3339` are
+outputs, because the dates are not secret, so a scheduled plan-only run can warn well before the SAS expires.
+
+The trade-offs of this source: the SAS is derived from the account key, so rotating the key invalidates it
+until the next apply re-issues it (the plan shows the change); the storage account's 7-day `sas_policy` logs
+the longer SAS but does not reject it; and anyone who can read state can read the SAS, as with every other
+secret there.
+
+**Where the read happens.** The data source lives in this module's root, in `backup.tf`, with no
+`depends_on`, like the deployer read in `main.tf`: a data source inside the storage or app-service module
+would be deferred to apply time whenever any of that module's `depends_on` targets had a pending change. Here
+Terraform reads it at plan time whenever its arguments are known: after the first apply, every plan reads it
+unless the storage account itself is being created or replaced, or the SAS is rotating. On the very first plan
+the account does not exist yet, so the read waits for apply and the app's `storage_account_url` is known after
+apply, that once. A deferred read is noise, not damage: the URL feeds no identity or ForceNew argument, so the
+app plans an in-place update, never a replacement. A `depends_on` on the caller's own call to this module
+defers the read on every plan, which is one more reason not to add one.
+
 ## Diagnostic settings
 
 The app service and MySQL diagnostic settings are unconditional. Three more targets are opt-in, each through a
@@ -436,8 +558,12 @@ the shared plan, fail in the same way.
 | [azurerm_monitor_scheduled_query_rules_alert_v2.http_5xx_rate](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_scheduled_query_rules_alert_v2) | resource |
 | [azurerm_resource_group.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/resource_group) | resource |
 | [random_password.db](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/password) | resource |
+| [time_offset.backup_sas_expiry](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/offset) | resource |
+| [time_offset.backup_sas_start](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/offset) | resource |
+| [time_rotating.backup_sas](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/rotating) | resource |
 | [time_sleep.dns_propagation](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 | [azurerm_client_config.current](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config) | data source |
+| [azurerm_storage_account_blob_container_sas.backup](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/storage_account_blob_container_sas) | data source |
 | [cloudflare_ip_ranges.current](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/data-sources/ip_ranges) | data source |
 
 ## Inputs
@@ -446,6 +572,8 @@ the shared plan, fail in the same way.
 |------|-------------|------|---------|:--------:|
 | <a name="input_alert_recipients"></a> [alert\_recipients](#input\_alert\_recipients) | Email addresses for alert notifications | `list(string)` | `[]` | no |
 | <a name="input_app_service"></a> [app\_service](#input\_app\_service) | App Service configuration. staging\_slot\_enabled (default true) creates the staging slot on S* and P* SKUs; false creates none, and on an existing deployment destroys the slot, its Key Vault access policy and any staging\_slot\_diagnostic\_settings entry. | <pre>object({<br/>    plan_id                        = optional(string, null)<br/>    use_shared_plan                = optional(bool, false)<br/>    sku_name                       = optional(string, "P1v3")<br/>    always_on                      = optional(bool, true)<br/>    health_check_path              = optional(string)<br/>    worker_count                   = optional(number, 1)<br/>    extra_app_settings             = optional(map(string), {})<br/>    extra_sticky_app_setting_names = optional(list(string), [])<br/>    sticky_connection_string_names = optional(list(string), [])<br/>    staging_app_settings_override  = optional(map(string), {})<br/>    staging_always_on              = optional(bool, false)<br/>    staging_slot_enabled           = optional(bool, true)<br/>    cdn_origin_header_name         = optional(string)<br/>  })</pre> | `{}` | no |
+| <a name="input_app_service_backup"></a> [app\_service\_backup](#input\_app\_service\_backup) | Settings of the scheduled App Service backup that app\_service\_backup\_enabled turns on. container\_name (default wp-backups) is the target, which must be a private entry of storage.additional\_containers; while retention\_period\_days is finite, the account's lifecycle policy also expires that container's previous versions and snapshots after the same number of days. frequency\_interval and frequency\_unit (Day, or Hour with an interval of at least 2: App Service allows one custom backup every 2 hours at most), retention\_period\_days (0 to 30; 0 keeps backups indefinitely, and App Service accepts nothing above 30), keep\_at\_least\_one\_backup and start\_time (RFC 3339; null starts the schedule when it is configured) map to the web app's backup block. sas\_validity\_days and sas\_rotation\_days shape the container SAS the module generates: it starts 15 minutes before the rotation timestamp, is valid for sas\_validity\_days from that timestamp, and is re-issued by the first plan after sas\_rotation\_days, so validity must be at least twice the rotation interval (the defaults are a year and six months). | <pre>object({<br/>    container_name           = optional(string, "wp-backups")<br/>    frequency_interval       = optional(number, 1)<br/>    frequency_unit           = optional(string, "Day")<br/>    retention_period_days    = optional(number, 30)<br/>    keep_at_least_one_backup = optional(bool, true)<br/>    start_time               = optional(string)<br/>    sas_validity_days        = optional(number, 365)<br/>    sas_rotation_days        = optional(number, 180)<br/>  })</pre> | `{}` | no |
+| <a name="input_app_service_backup_enabled"></a> [app\_service\_backup\_enabled](#input\_app\_service\_backup\_enabled) | Schedule a custom App Service backup of the production app, never the staging slot, to a private container in the site's storage account. Off by default. The module generates the container SAS itself and rotates it on the cadence app\_service\_backup sets; the SAS is never an output. Also sets virtual\_network\_backup\_restore\_enabled on the app, so the backup travels over the VNet integration and the account can keep storage\_network\_rules\_default\_action = "Deny". The target container must be declared in storage.additional\_containers with access\_type "private". See the README's Backup & Recovery section: the 10 GB limit, restores, and that the database is not included. | `bool` | `false` | no |
 | <a name="input_app_service_ftp_publish_basic_authentication_enabled"></a> [app\_service\_ftp\_publish\_basic\_authentication\_enabled](#input\_app\_service\_ftp\_publish\_basic\_authentication\_enabled) | Enable basic authentication for FTP publishing on the site and its staging slot. Defaults to true, matching the azurerm provider default. FTP is already closed at the transport layer (ftps\_state is Disabled). | `bool` | `true` | no |
 | <a name="input_app_service_ip_security_audit_logs_enabled"></a> [app\_service\_ip\_security\_audit\_logs\_enabled](#input\_app\_service\_ip\_security\_audit\_logs\_enabled) | Send AppServiceIPSecAuditLogs to the site's Log Analytics workspace. Off by default. | `bool` | `false` | no |
 | <a name="input_app_service_scm_ip_restriction_default_action"></a> [app\_service\_scm\_ip\_restriction\_default\_action](#input\_app\_service\_scm\_ip\_restriction\_default\_action) | Default action for SCM/Kudu traffic matching no app\_service\_scm\_ip\_restrictions entry. Defaults to 'Allow', matching the azurerm provider default. Set to 'Deny' to close Kudu to everything not allow-listed. | `string` | `"Allow"` | no |
@@ -500,6 +628,8 @@ the shared plan, fail in the same way.
 | <a name="output_action_group_id"></a> [action\_group\_id](#output\_action\_group\_id) | ID of the site action group, for routing your own alerts to the same recipients. Null when alert\_recipients is empty (no group is created). |
 | <a name="output_app_insights_id"></a> [app\_insights\_id](#output\_app\_insights\_id) | Application Insights ID |
 | <a name="output_app_insights_name"></a> [app\_insights\_name](#output\_app\_insights\_name) | Application Insights name |
+| <a name="output_app_service_backup_sas_expiry_rfc3339"></a> [app\_service\_backup\_sas\_expiry\_rfc3339](#output\_app\_service\_backup\_sas\_expiry\_rfc3339) | When the current backup container SAS expires. The backup fails after this if no plan has been applied since the rotation date. Null when app\_service\_backup\_enabled is false. |
+| <a name="output_app_service_backup_sas_rotation_rfc3339"></a> [app\_service\_backup\_sas\_rotation\_rfc3339](#output\_app\_service\_backup\_sas\_rotation\_rfc3339) | When the backup container SAS is next re-issued: the first plan after this time replaces it, which is the date to act on. Null when app\_service\_backup\_enabled is false. |
 | <a name="output_app_service_default_hostname"></a> [app\_service\_default\_hostname](#output\_app\_service\_default\_hostname) | Web App default hostname |
 | <a name="output_app_service_id"></a> [app\_service\_id](#output\_app\_service\_id) | Web App ID |
 | <a name="output_app_service_name"></a> [app\_service\_name](#output\_app\_service\_name) | Web App name |

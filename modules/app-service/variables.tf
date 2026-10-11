@@ -308,6 +308,82 @@ variable "staging_slot_enabled" {
   nullable    = false
 }
 
+# Scheduled custom backup of the production app, never the slot. Off by default.
+#
+# A custom App Service backup authorises with a container SAS only: managed identity is
+# not supported for backup and restore. The caller supplies the SAS URL; the
+# wordpress-site composition generates one from the site's storage account with a
+# stable, rotated validity window (see its backup.tf). The URL is sensitive and this
+# module never outputs it.
+
+variable "backup_enabled" {
+  description = "Schedule a custom App Service backup of the production app to backup_storage_account_url. Off by default. The staging slot is never backed up. Also sets virtual_network_backup_restore_enabled, so the backup and any restore travel over the app's VNet integration and the target account can keep denying public access. Basic, Standard and Premium SKUs support it. See the README's Backup section."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "backup_storage_account_url" {
+  description = "SAS URL of the private blob container that receives the backups, https://<account>.blob.core.windows.net/<container>?<sas>, with read, write, delete and list permissions. Required when backup_enabled is true. Sensitive, and never written to an output."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "backup_frequency_interval" {
+  description = "How often the backup runs, in backup_frequency_unit units: 1 with Day is daily, 7 with Day is weekly. With Hour it must be at least 2: App Service allows one custom backup every 2 hours at most, 12 a day."
+  type        = number
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.backup_frequency_interval >= 1 && var.backup_frequency_interval <= 1000 && floor(var.backup_frequency_interval) == var.backup_frequency_interval
+    error_message = "backup_frequency_interval must be a whole number from 1 to 1000."
+  }
+}
+
+variable "backup_frequency_unit" {
+  description = "Unit of backup_frequency_interval: Day or Hour."
+  type        = string
+  default     = "Day"
+  nullable    = false
+
+  validation {
+    condition     = contains(["Day", "Hour"], var.backup_frequency_unit)
+    error_message = "backup_frequency_unit must be \"Day\" or \"Hour\"."
+  }
+}
+
+variable "backup_retention_period_days" {
+  description = "Days after which a backup is deleted, 0 to 30: App Service custom backups allow no longer retention. 0 keeps backups indefinitely."
+  type        = number
+  default     = 30
+  nullable    = false
+
+  validation {
+    condition     = var.backup_retention_period_days >= 0 && var.backup_retention_period_days <= 30 && floor(var.backup_retention_period_days) == var.backup_retention_period_days
+    error_message = "backup_retention_period_days must be a whole number from 0 to 30 (0 keeps backups indefinitely): App Service custom backups allow no longer retention."
+  }
+}
+
+variable "backup_keep_at_least_one_backup" {
+  description = "Keep the most recent backup even once it is older than backup_retention_period_days."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "backup_start_time" {
+  description = "When the schedule starts, in RFC 3339 (for example 2026-11-01T02:00:00Z). null (the default) starts it when the backup is configured."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.backup_start_time == null ? true : can(formatdate("YYYY", var.backup_start_time))
+    error_message = "backup_start_time must be null or an RFC 3339 timestamp such as 2026-11-01T02:00:00Z."
+  }
+}
+
 variable "cloudflare_ipv4_cidr_blocks" {
   description = "Cloudflare IPv4 CIDR blocks for origin IP restrictions. When null, uses the built-in fallback list. Pass data.cloudflare_ip_ranges.current[0].ipv4_cidrs for live updates."
   type        = list(string)

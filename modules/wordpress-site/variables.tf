@@ -312,6 +312,78 @@ variable "app_service" {
   }
 }
 
+# Scheduled App Service backup, added in 4.3.0. Off by default. The switch is a flat
+# top-level variable, like the other security-relevant switches above. The schedule and
+# the SAS lifetimes carry constant optional() defaults in one object, like database and
+# monitoring.alerts: none is environment-aware and no static-analysis check reads them.
+variable "app_service_backup_enabled" {
+  description = "Schedule a custom App Service backup of the production app, never the staging slot, to a private container in the site's storage account. Off by default. The module generates the container SAS itself and rotates it on the cadence app_service_backup sets; the SAS is never an output. Also sets virtual_network_backup_restore_enabled on the app, so the backup travels over the VNet integration and the account can keep storage_network_rules_default_action = \"Deny\". The target container must be declared in storage.additional_containers with access_type \"private\". See the README's Backup & Recovery section: the 10 GB limit, restores, and that the database is not included."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "app_service_backup" {
+  description = "Settings of the scheduled App Service backup that app_service_backup_enabled turns on. container_name (default wp-backups) is the target, which must be a private entry of storage.additional_containers; while retention_period_days is finite, the account's lifecycle policy also expires that container's previous versions and snapshots after the same number of days. frequency_interval and frequency_unit (Day, or Hour with an interval of at least 2: App Service allows one custom backup every 2 hours at most), retention_period_days (0 to 30; 0 keeps backups indefinitely, and App Service accepts nothing above 30), keep_at_least_one_backup and start_time (RFC 3339; null starts the schedule when it is configured) map to the web app's backup block. sas_validity_days and sas_rotation_days shape the container SAS the module generates: it starts 15 minutes before the rotation timestamp, is valid for sas_validity_days from that timestamp, and is re-issued by the first plan after sas_rotation_days, so validity must be at least twice the rotation interval (the defaults are a year and six months)."
+  type = object({
+    container_name           = optional(string, "wp-backups")
+    frequency_interval       = optional(number, 1)
+    frequency_unit           = optional(string, "Day")
+    retention_period_days    = optional(number, 30)
+    keep_at_least_one_backup = optional(bool, true)
+    start_time               = optional(string)
+    sas_validity_days        = optional(number, 365)
+    sas_rotation_days        = optional(number, 180)
+  })
+  default  = {}
+  nullable = false
+
+  # Azure's container naming rules, the same rule the storage module applies to
+  # additional_containers keys.
+  validation {
+    condition     = length(var.app_service_backup.container_name) >= 3 && length(var.app_service_backup.container_name) <= 63 && can(regex("^[a-z0-9]([a-z0-9]|-[a-z0-9])*$", var.app_service_backup.container_name))
+    error_message = "app_service_backup.container_name must be a valid container name: 3-63 lowercase letters, digits and hyphens, starting and ending with a letter or digit, with no consecutive hyphens."
+  }
+
+  validation {
+    condition     = var.app_service_backup.frequency_interval >= 1 && var.app_service_backup.frequency_interval <= 1000 && floor(var.app_service_backup.frequency_interval) == var.app_service_backup.frequency_interval
+    error_message = "app_service_backup.frequency_interval must be a whole number from 1 to 1000."
+  }
+
+  validation {
+    condition     = contains(["Day", "Hour"], var.app_service_backup.frequency_unit)
+    error_message = "app_service_backup.frequency_unit must be \"Day\" or \"Hour\"."
+  }
+
+  # App Service allows one custom backup every 2 hours at most (12 a day).
+  validation {
+    condition     = var.app_service_backup.frequency_unit == "Hour" ? var.app_service_backup.frequency_interval >= 2 : true
+    error_message = "app_service_backup.frequency_interval must be at least 2 when frequency_unit is \"Hour\": App Service allows one custom backup every 2 hours at most."
+  }
+
+  validation {
+    condition     = var.app_service_backup.retention_period_days >= 0 && var.app_service_backup.retention_period_days <= 30 && floor(var.app_service_backup.retention_period_days) == var.app_service_backup.retention_period_days
+    error_message = "app_service_backup.retention_period_days must be a whole number from 0 to 30 (0 keeps backups indefinitely): App Service custom backups allow no longer retention."
+  }
+
+  validation {
+    condition     = var.app_service_backup.start_time == null ? true : can(formatdate("YYYY", var.app_service_backup.start_time))
+    error_message = "app_service_backup.start_time must be null or an RFC 3339 timestamp such as 2026-11-01T02:00:00Z."
+  }
+
+  # The SAS a rotation replaces must stay valid for at least one more interval, so a
+  # plan-only run that notices the rotation leaves time for the apply.
+  validation {
+    condition = (
+      var.app_service_backup.sas_rotation_days >= 1 &&
+      floor(var.app_service_backup.sas_rotation_days) == var.app_service_backup.sas_rotation_days &&
+      floor(var.app_service_backup.sas_validity_days) == var.app_service_backup.sas_validity_days &&
+      var.app_service_backup.sas_validity_days >= 2 * var.app_service_backup.sas_rotation_days
+    )
+    error_message = "app_service_backup: sas_rotation_days must be a whole number of at least 1, and sas_validity_days a whole number at least twice it, so the SAS is replaced long before it expires."
+  }
+}
+
 # Shared resource group for App Service (required when use_shared_plan = true)
 # Azure requires App Service and its Plan to be in the same resource group
 variable "shared_resource_group_name" {
