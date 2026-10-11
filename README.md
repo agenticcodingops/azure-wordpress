@@ -239,7 +239,8 @@ See [Network](docs/architecture.md#network) for the detail.
 ## Custom Secrets
 
 The composition module stores three secrets of its own in the site's Key Vault
-(`db-password`, `storage-key`, `appinsights-connection`). Consumers can add their own
+(`db-password`, `storage-key`, `appinsights-connection`; `storage-key` can be switched off, see
+[below](#retiring-the-storage-key-secret)). Consumers can add their own
 through `extra_secrets`, and surface them to WordPress as Key Vault references through
 `extra_secret_app_settings`:
 
@@ -271,6 +272,24 @@ input, which Terraform rejects as a self-referential cycle. The
 
 Module-owned secret names always win on collision, so `extra_secrets` cannot clobber the
 database password. Keys must be known at plan time.
+
+### Retiring the `storage-key` secret
+
+`storage-key` holds the storage account's primary access key. Its only reader in this module is the
+`MICROSOFT_AZURE_ACCOUNT_KEY` app setting, which exists so an operator can install a Blob offload plugin;
+the image installs none. If you do not use one, set both switches to stop writing the secret and to take the
+key out of the app's environment:
+
+```hcl
+  app_service_storage_plugin_app_settings_enabled = false
+  storage_key_secret_enabled                      = false
+```
+
+`storage_key_secret_enabled` defaults to `true`, so an upgrade plans no change. Setting it to `false` while
+`app_service_storage_plugin_app_settings_enabled` is still `true` fails at plan, because that setting is a Key
+Vault reference to the secret. On an existing site, `false` deletes the secret from the vault (a soft-delete;
+lift a `CanNotDelete` lock first). The account's shared-key access is unchanged, and the scheduled backup SAS is
+derived from the account key directly, not from this secret.
 
 ## Outbound Email (SMTP relay)
 
