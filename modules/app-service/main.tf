@@ -1,6 +1,6 @@
 # App Service Module - Layer 2 Application
 # Creates Linux Web App for WordPress with VNet integration
-# CRITICAL: NO storage_account block - media via Blob Storage plugin
+# CRITICAL: NO storage_account block - media stays on /home (see the app settings below)
 
 locals {
   # Short environment suffix for naming
@@ -336,7 +336,7 @@ resource "azurerm_linux_web_app" "main" {
   }
 
   # NOTE: NO storage_account block
-  # Media uploads handled via Azure Blob Storage plugin
+  # Media stays on /home; the MICROSOFT_AZURE_* app settings above only configure an optional plugin
   # This avoids the 2-3 second latency from Azure Files mounts
 
   # Logging configuration (CKV_AZURE_63, CKV_AZURE_65, CKV_AZURE_66)

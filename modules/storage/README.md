@@ -1,6 +1,8 @@
 # Storage Module
 
-Layer 2 Application module for Blob Storage (WordPress media uploads).
+Layer 2 Application module for the site's Storage Account: a private uploads container, the
+target of the scheduled App Service backup, and any additional private containers. Media stays on the
+app's `/home` storage by default; this module installs no WordPress plugin.
 
 ## Overview
 
@@ -11,7 +13,7 @@ This module creates:
 
 ## IMPORTANT: No Azure Files Mount
 
-This module creates Blob Storage for WordPress media uploads via plugin.
+This module creates the storage account the site's backups and any optional Blob offload plugin use.
 **DO NOT use Azure Files mounts** for `/var/www/html` - this causes:
 - 2-3 second page load latency
 - Poor IOPS for PHP file operations
@@ -19,8 +21,9 @@ This module creates Blob Storage for WordPress media uploads via plugin.
 
 Instead, we use:
 - Immutable container (WordPress baked into image)
-- Azure Blob Storage for media uploads
-- Microsoft Azure Storage plugin for WordPress
+- Media on the app's persistent `/home` storage, backed up on a schedule to a private container
+  in this account (the composition module's `app_service_backup_enabled`)
+- Optionally, a Blob offload plugin that you install and configure yourself
 
 ## Inputs
 
@@ -63,10 +66,12 @@ module "storage" {
 
 ## WordPress Configuration
 
-Configure the Microsoft Azure Storage plugin:
+Nothing here is required for the default setup: media stays on `/home`. If you install a Blob offload
+plugin yourself, for example Microsoft Azure Storage for WordPress, configure it with:
 - Account Name: `module.storage.account_name`
 - Container: `module.storage.container_name`
-- Access Key: Store in Key Vault
+- Access Key: Store in Key Vault (the composition module writes it as the `storage-key` secret unless
+  `storage_key_secret_enabled = false`)
 
 ## Network Rules
 
@@ -76,10 +81,12 @@ satisfying AZU-0012 / CKV_AZURE_36). `bypass = ["AzureServices"]` is retained.
 Container management is unaffected — `azurerm_storage_container` uses the ARM control
 plane, which network rules do not gate — so Terraform applies cleanly either way.
 
-**What Deny does break: media for site visitors.** The Microsoft WordPress container's
-Blob Storage plugin rewrites media URLs to the account's own endpoint
-(`https://<account>.blob.core.windows.net/...`). Browsers therefore fetch media **directly
-from Azure, not through your CDN**, from arbitrary end-user IPs that cannot be allow-listed.
+**What Deny breaks: browsers that read the blob endpoint.** By default no browser does: media stays
+on the app's `/home` storage and the scheduled App Service backup reaches the account over the app
+subnet, so `Deny` is viable. If you install a Blob offload plugin that rewrites media URLs to the
+account's own endpoint (`https://<account>.blob.core.windows.net/...`), browsers fetch media **directly
+from Azure, not through your CDN**, from arbitrary end-user IPs that cannot be allow-listed, and meet the
+firewall.
 
 The firewall is only one of two gates on that read. `Allow` removes the firewall gate, but it does not make
 media load. This module sets `allow_nested_items_to_be_public = false` (`main.tf:28`) and creates the uploads
@@ -181,7 +188,7 @@ No modules.
 | <a name="input_lifecycle_version_delete_days"></a> [lifecycle\_version\_delete\_days](#input\_lifecycle\_version\_delete\_days) | Days since creation before deleting old blob versions | `number` | `90` | no |
 | <a name="input_location"></a> [location](#input\_location) | Azure region for resources | `string` | n/a | yes |
 | <a name="input_network_rules_bypass"></a> [network\_rules\_bypass](#input\_network\_rules\_bypass) | Traffic permitted to bypass the network rules. Valid values: AzureServices, Logging, Metrics, None. | `set(string)` | <pre>[<br/>  "AzureServices"<br/>]</pre> | no |
-| <a name="input_network_rules_default_action"></a> [network\_rules\_default\_action](#input\_network\_rules\_default\_action) | Default action for storage account network rules. 'Deny' is secure-by-default but blocks direct browser access to media; see the module README before changing. | `string` | `"Deny"` | no |
+| <a name="input_network_rules_default_action"></a> [network\_rules\_default\_action](#input\_network\_rules\_default\_action) | Default action for storage account network rules. 'Deny' is secure-by-default but blocks direct browser access to the blob endpoint (for example media from a Blob offload plugin, if you install one); see the module README before changing. | `string` | `"Deny"` | no |
 | <a name="input_network_rules_ip_rules"></a> [network\_rules\_ip\_rules](#input\_network\_rules\_ip\_rules) | Public IPv4 addresses or CIDRs permitted to reach the storage data plane. Azure Storage does not accept IPv6 CIDRs, nor /31 and /32 prefixes (use a bare IP instead). | `list(string)` | `[]` | no |
 | <a name="input_network_rules_virtual_network_subnet_ids"></a> [network\_rules\_virtual\_network\_subnet\_ids](#input\_network\_rules\_virtual\_network\_subnet\_ids) | Subnet IDs permitted to reach the storage data plane. The subnets must carry the Microsoft.Storage service endpoint. | `list(string)` | `[]` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |

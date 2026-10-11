@@ -65,10 +65,12 @@ module "wordpress" {
   #   key_vault_network_acls_ip_rules = ["203.0.113.10"]
   key_vault_public_network_access_enabled = true
 
-  # The WordPress Blob Storage plugin rewrites media URLs to the account's own
-  # blob endpoint, so visitors fetch media straight from Azure, from arbitrary
-  # IPs. With the default "Deny" every image 403s for end users. Keep "Deny" only
-  # if the blob endpoint is fronted by a CDN custom domain.
+  # Media stays on the app's /home storage by default, so the default "Deny" would also
+  # work here. "Allow" is set so that a Blob offload plugin you install later works: such a
+  # plugin rewrites media URLs to the account's own blob endpoint, so visitors fetch media
+  # straight from Azure, from arbitrary IPs, and with "Deny" every image 403s. Keep
+  # "Deny" if you install no such plugin, or if the blob endpoint is fronted by a CDN
+  # custom domain.
   storage_network_rules_default_action = "Allow"
 
   # Key Vault lifecycle (v3.0.0). Unset, these default by environment:

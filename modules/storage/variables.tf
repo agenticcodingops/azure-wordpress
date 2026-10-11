@@ -1,5 +1,5 @@
 # Storage Module Variables
-# Layer 2 Application - Blob Storage for Media Uploads
+# Layer 2 Application - Storage Account (private uploads container, backup target)
 
 variable "project_name" {
   description = "Project name used in resource naming (lowercase, 2-24 chars)"
@@ -44,10 +44,10 @@ variable "resource_group_name" {
 # Network rules for the storage account data plane (AZU-0012 / CKV_AZURE_36)
 #
 # IMPORTANT - read before setting this to Deny.
-# The WordPress Blob Storage plugin rewrites media URLs to the account's own
-# endpoint (https://<account>.blob.core.windows.net/...), so visitors' browsers
-# fetch media DIRECTLY from Azure, not through the CDN. Denying by default
-# therefore breaks media for end users unless one of these is true:
+# Media stays on /home by default and the scheduled backup uses the app subnet, so Deny is
+# viable when no browser reads the blob endpoint. A Blob offload plugin that rewrites media
+# URLs to https://<account>.blob.core.windows.net/... makes browsers fetch media DIRECTLY from
+# Azure, not through the CDN, so Deny then breaks media for end users unless one is true:
 #
 #   - the blob endpoint is fronted by a CDN custom domain (CNAME) so origin
 #     pulls come from the CDN's published egress ranges, which you allow-list
@@ -57,7 +57,7 @@ variable "resource_group_name" {
 # Azure Storage IP rules accept IPv4 only - IPv6 CIDRs are rejected - so a
 # CDN's IPv6 egress ranges cannot be expressed here.
 variable "network_rules_default_action" {
-  description = "Default action for storage account network rules. 'Deny' is secure-by-default but blocks direct browser access to media; see the module README before changing."
+  description = "Default action for storage account network rules. 'Deny' is secure-by-default but blocks direct browser access to the blob endpoint (for example media from a Blob offload plugin, if you install one); see the module README before changing."
   type        = string
   default     = "Deny"
 

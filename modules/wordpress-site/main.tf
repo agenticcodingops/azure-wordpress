@@ -216,6 +216,15 @@ resource "azurerm_resource_group" "main" {
       condition     = var.app_service_backup_enabled ? try(var.storage.additional_containers[var.app_service_backup.container_name].access_type == "private", false) : true
       error_message = "app_service_backup.container_name must be a private container declared in storage.additional_containers, for example storage = { additional_containers = { \"wp-backups\" = {} } }."
     }
+
+    # The MICROSOFT_AZURE_ACCOUNT_KEY app setting is a Key Vault reference to the
+    # storage-key secret, so the secret cannot go while those settings are on. A
+    # precondition for the same reason as above (Terraform 1.9 is needed to validate
+    # one variable against another).
+    precondition {
+      condition     = var.storage_key_secret_enabled || !var.app_service_storage_plugin_app_settings_enabled
+      error_message = "storage_key_secret_enabled = false requires app_service_storage_plugin_app_settings_enabled = false: while the MICROSOFT_AZURE_* app settings are on, MICROSOFT_AZURE_ACCOUNT_KEY is a Key Vault reference to the storage-key secret. Set both to false to stop writing the secret and remove the storage account key from the app's environment."
+    }
   }
 }
 
@@ -371,7 +380,7 @@ module "storage" {
 
   # Data-plane network rules.
   # The App Service subnet is always allow-listed (it carries the Microsoft.Storage
-  # service endpoint), so the WordPress plugin can read and write media.
+  # service endpoint), so the app can reach the account (the backup, an optional offload plugin).
   # When Cloudflare is the CDN we also allow-list its live IPv4 egress ranges, which
   # covers origin pulls if the blob endpoint is fronted by a Cloudflare custom domain.
   # Cloudflare's IPv6 ranges are intentionally omitted: Azure Storage IP rules are
@@ -397,10 +406,17 @@ module "storage" {
 locals {
   # Secrets this module owns. Merged LAST over var.extra_secrets so a consumer-supplied
   # entry can never clobber the DB password, storage key or App Insights connection string.
+  # storage-key is left out when storage_key_secret_enabled is false (a filtered for
+  # expression, because a conditional's two map shapes would not unify). The app's
+  # storage_access_key_secret_uri then resolves to "" through the try() below, which is
+  # safe because the precondition on the resource group requires the MICROSOFT_AZURE_*
+  # app settings, the only readers of that URI, to be off as well.
   module_secrets = {
-    "db-password"            = random_password.db.result
-    "storage-key"            = module.storage.primary_access_key
-    "appinsights-connection" = azurerm_application_insights.main.connection_string
+    for name, value in {
+      "db-password"            = random_password.db.result
+      "storage-key"            = module.storage.primary_access_key
+      "appinsights-connection" = azurerm_application_insights.main.connection_string
+    } : name => value if name != "storage-key" || var.storage_key_secret_enabled
   }
 }
 

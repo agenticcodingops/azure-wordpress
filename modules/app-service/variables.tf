@@ -128,14 +128,15 @@ variable "database_password_secret_uri" {
   type        = string
 }
 
-# Storage configuration (for WordPress media offload)
+# Storage configuration (for the optional MICROSOFT_AZURE_* app settings an operator can
+# use to configure a Blob offload plugin)
 variable "storage_account_name" {
-  description = "Storage account name for media uploads"
+  description = "Storage account name, set as the MICROSOFT_AZURE_ACCOUNT_NAME app setting while storage_plugin_app_settings_enabled is true"
   type        = string
 }
 
 variable "storage_container_name" {
-  description = "Storage container name for media uploads"
+  description = "Storage container name, set as the MICROSOFT_AZURE_CONTAINER app setting while storage_plugin_app_settings_enabled is true"
   type        = string
 }
 

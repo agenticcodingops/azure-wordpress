@@ -165,12 +165,12 @@ variable "key_vault_soft_delete_retention_days" {
   }
 }
 
-# WARNING: the WordPress Blob Storage plugin points media URLs at the account's own
-# blob endpoint, so visitors fetch media directly from Azure rather than through the
-# CDN. Unless the blob endpoint is fronted by a CDN custom domain, set this to "Allow"
-# or media will 403 for end users. See modules/storage/README.md.
+# Media stays on /home by default and the scheduled backup uses the app subnet, so "Deny" is
+# viable when no browser reads the blob endpoint. WARNING: if you install a Blob offload plugin
+# that points media URLs at the blob endpoint, browsers fetch media from Azure directly and meet
+# this firewall: set "Allow" then, unless a CDN custom domain fronts it. See modules/storage/README.md.
 variable "storage_network_rules_default_action" {
-  description = "Default action for the storage account's network rules. Defaults to Deny. Set to 'Allow' if media is served straight from the blob endpoint rather than through a CDN custom domain."
+  description = "Default action for the storage account's network rules. Defaults to Deny, which suits the default setup: media stays on the app's /home storage and the scheduled backup reaches the account over the app subnet. Set to 'Allow' only if browsers read the blob endpoint directly, for example media from a Blob offload plugin you install, rather than through a CDN custom domain."
   type        = string
   default     = "Deny"
 
@@ -266,7 +266,21 @@ variable "app_service_webdeploy_publish_basic_authentication_enabled" {
 }
 
 variable "app_service_storage_plugin_app_settings_enabled" {
-  description = "Set the MICROSOFT_AZURE_* storage-plugin app settings on the site and its staging slot. Defaults to true, which keeps the behaviour of every earlier release. The container image does not read them (only the Microsoft Azure Storage for WordPress plugin does, as wp-config.php constants), so without that plugin they are inert, and false removes them - including the storage account key from the app's environment. The storage-key Key Vault secret is unaffected."
+  description = "Set the MICROSOFT_AZURE_ACCOUNT_NAME, MICROSOFT_AZURE_CONTAINER and MICROSOFT_AZURE_ACCOUNT_KEY app settings on the site and its staging slot. They exist so an operator can install and configure a Blob offload plugin (the Microsoft Azure Storage for WordPress plugin reads them as wp-config.php constants); they are optional. Defaults to true, which keeps the behaviour of every earlier release. The module installs no plugin and the container image does not read them, so without one they are inert and media stays on /home. False removes them, including the storage account key from the app's environment. The storage-key Key Vault secret is unaffected; set storage_key_secret_enabled = false as well to stop writing it."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+# A flat, top-level switch like the other security-relevant ones. The secret is read only by
+# the MICROSOFT_AZURE_ACCOUNT_KEY app setting, which is why turning it off needs
+# app_service_storage_plugin_app_settings_enabled = false (checked by a precondition on the
+# resource group in main.tf: this module supports Terraform >= 1.6, and a validation that
+# reads another variable needs 1.9). Shared-key access on the storage account is not
+# changed, and the scheduled backup's SAS comes from the account's connection string, not
+# from this secret.
+variable "storage_key_secret_enabled" {
+  description = "Write the storage account's primary access key to the site's Key Vault as the storage-key secret. Defaults to true, which keeps the behaviour of every earlier release. The only reader in this module is the MICROSOFT_AZURE_ACCOUNT_KEY app setting, so false requires app_service_storage_plugin_app_settings_enabled = false and fails at plan otherwise. On an existing site, false deletes the secret from the vault (a soft-delete, and a CanNotDelete lock must be lifted first); nothing else changes. The scheduled App Service backup does not use this secret, and the account's shared-key access setting is unchanged."
   type        = bool
   default     = true
   nullable    = false
@@ -897,9 +911,9 @@ variable "tags" {
 
 # Additional Key Vault secrets supplied by the consumer
 # Additive pass-through: the module's own secrets are merged last, so a consumer can
-# never clobber db-password, storage-key or appinsights-connection.
+# never clobber db-password, appinsights-connection or, unless storage_key_secret_enabled is false, storage-key.
 variable "extra_secrets" {
-  description = "Additional secrets to store in the site's Key Vault, as secret name => value. Module-owned names (db-password, storage-key, appinsights-connection) take precedence and cannot be overridden. Keys must be known at plan time."
+  description = "Additional secrets to store in the site's Key Vault, as secret name => value. Module-owned names (db-password, appinsights-connection, and storage-key unless storage_key_secret_enabled is false) take precedence and cannot be overridden. Keys must be known at plan time."
   type        = map(string)
   sensitive   = true
   default     = {}
