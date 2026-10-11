@@ -13,6 +13,9 @@ azure_subscription_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 cloudflare_api_token  = "your-cloudflare-api-token"
 cloudflare_account_id = "your-cloudflare-account-id"
 cloudflare_domain     = "example.com"
+# Enable per site after configuring its edge transform rule. Keep values in a secret store.
+# cdn_origin_header_names  = { main-site = "x_azure_fdid" }
+# cdn_origin_header_values = { main-site = ["xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"] }
 
 # Multiple WordPress sites on shared infrastructure
 sites = {

@@ -57,3 +57,16 @@ variable "cloudflare_subdomain" {
   type        = string
   default     = ""
 }
+
+variable "cdn_origin_header_values" {
+  description = "Bearer UUIDs written by the Cloudflare Request Header Transform Rule"
+  type        = list(string)
+  default     = []
+  sensitive   = true
+}
+
+variable "cdn_origin_header_name" {
+  description = "Optional Cloudflare origin header name; set to x_azure_fdid after configuring the edge rule"
+  type        = string
+  default     = null
+}

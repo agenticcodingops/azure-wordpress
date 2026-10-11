@@ -174,6 +174,24 @@ variable "cdn_provider" {
   }
 }
 
+variable "cdn_origin_header_name" {
+  description = "Request header that every CDN allow rule must also match, on the app and its staging slot: \"x_azure_fdid\" or \"x_forwarded_host\". null (the default) keeps IP-only rules."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.cdn_origin_header_name == null ? true : contains(["x_azure_fdid", "x_forwarded_host"], var.cdn_origin_header_name)
+    error_message = "cdn_origin_header_name must be null, \"x_azure_fdid\" or \"x_forwarded_host\"."
+  }
+}
+
+variable "cdn_origin_header_values" {
+  description = "Values accepted in the CDN origin header: 1 to 8 (Azure's per-header limit), so a rotation can accept the old and new values together. UUIDs are required for x_azure_fdid. Treat them as secrets."
+  type        = list(string)
+  default     = []
+  sensitive   = true
+}
+
 variable "front_door_id" {
   description = "Azure Front Door resource GUID (required when cdn_provider = azure_front_door)"
   type        = string

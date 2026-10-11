@@ -127,6 +127,19 @@ Two operational preconditions:
 
 ## Usage
 
+### Cloudflare origin header filter
+
+Cloudflare address ranges are shared across customers. To bind their allow rules to traffic that passed through
+your zone, configure a Request Header Transform Rule at the edge that overwrites `X-Azure-FDID`, then set
+`cdn_origin_header_name = "x_azure_fdid"` and pass one to eight UUIDs in the sensitive
+`cdn_origin_header_values`. The filter is added to every IPv4 and IPv6 Cloudflare rule on the app and staging
+slot; it is not added to the health-probe, Front Door, or SCM rules. The default `null` name keeps IP-only rules.
+
+The values are bearer secrets stored in state, App Service configuration, and the edge rule. Supply them from a
+secret store. Confirm the application ignores the header, enable the edge rule before the origin filter, and
+remove the origin filter before removing the edge rule. Rotate without downtime by accepting old and new values,
+switching the edge value, and then removing the old value.
+
 ```hcl
 module "app_service" {
   source = "github.com/agenticcodingops/azure-wordpress//modules/app-service?ref=v4.1.1"
@@ -219,6 +232,8 @@ No modules.
 | <a name="input_always_on"></a> [always\_on](#input\_always\_on) | Keep the app always loaded (required for production) | `bool` | `true` | no |
 | <a name="input_app_insights_connection_string_secret_uri"></a> [app\_insights\_connection\_string\_secret\_uri](#input\_app\_insights\_connection\_string\_secret\_uri) | Key Vault secret URI for App Insights connection string (versionless) | `string` | `""` | no |
 | <a name="input_app_subnet_id"></a> [app\_subnet\_id](#input\_app\_subnet\_id) | ID of the App Service VNet integration subnet (from networking module) | `string` | n/a | yes |
+| <a name="input_cdn_origin_header_name"></a> [cdn\_origin\_header\_name](#input\_cdn\_origin\_header\_name) | Request header that every CDN allow rule must also match, on the app and its staging slot: "x\_azure\_fdid" or "x\_forwarded\_host". null (the default) keeps IP-only rules. | `string` | `null` | no |
+| <a name="input_cdn_origin_header_values"></a> [cdn\_origin\_header\_values](#input\_cdn\_origin\_header\_values) | Values accepted in the CDN origin header: 1 to 8 (Azure's per-header limit), so a rotation can accept the old and new values together. UUIDs are required for x\_azure\_fdid. Treat them as secrets. | `list(string)` | `[]` | no |
 | <a name="input_cdn_provider"></a> [cdn\_provider](#input\_cdn\_provider) | CDN provider for IP restrictions: 'cloudflare', 'azure\_front\_door', 'direct', or 'none' | `string` | `"none"` | no |
 | <a name="input_cloudflare_ipv4_cidr_blocks"></a> [cloudflare\_ipv4\_cidr\_blocks](#input\_cloudflare\_ipv4\_cidr\_blocks) | Cloudflare IPv4 CIDR blocks for origin IP restrictions. When null, uses the built-in fallback list. Pass data.cloudflare\_ip\_ranges.current[0].ipv4\_cidrs for live updates. | `list(string)` | `null` | no |
 | <a name="input_cloudflare_ipv6_cidr_blocks"></a> [cloudflare\_ipv6\_cidr\_blocks](#input\_cloudflare\_ipv6\_cidr\_blocks) | Cloudflare IPv6 CIDR blocks for origin IP restrictions. When null, uses the built-in fallback list. Pass data.cloudflare\_ip\_ranges.current[0].ipv6\_cidrs for live updates. | `list(string)` | `null` | no |

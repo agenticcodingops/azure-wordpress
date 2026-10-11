@@ -46,6 +46,19 @@ variable "cloudflare_domain" {
   type        = string
 }
 
+variable "cdn_origin_header_values" {
+  description = "Bearer UUIDs written by each site's Cloudflare Request Header Transform Rule"
+  type        = map(list(string))
+  default     = {}
+  sensitive   = true
+}
+
+variable "cdn_origin_header_names" {
+  description = "Optional origin header name for each site; set to x_azure_fdid after configuring its edge rule"
+  type        = map(string)
+  default     = {}
+}
+
 # Sites configuration
 variable "sites" {
   description = "Map of WordPress sites to deploy"

@@ -107,6 +107,8 @@ module "wordpress" {
 
   # Use Cloudflare for CDN (cost-optimized)
   cdn_provider = "cloudflare"
+  # Bind the Cloudflare allow rules to this zone: enable only after an edge transform overwrites X-Azure-FDID.
+  cdn_origin_header_values = var.cdn_origin_header_values
   cloudflare = {
     enabled    = true
     account_id = var.cloudflare_account_id
@@ -134,6 +136,8 @@ module "wordpress" {
     sku_name          = "B1"
     always_on         = false # B1 doesn't support always_on
     health_check_path = "/wp-includes/images/blank.gif"
+    # Pairs with cdn_origin_header_values above; null keeps IP-only Cloudflare rules.
+    cdn_origin_header_name = var.cdn_origin_header_name
 
     extra_app_settings             = { "WP_ENVIRONMENT_TYPE" = "production" }
     extra_sticky_app_setting_names = ["WP_ENVIRONMENT_TYPE"]

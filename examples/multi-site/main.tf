@@ -84,7 +84,10 @@ module "wordpress_sites" {
     extra_app_settings             = { "WP_ENVIRONMENT_TYPE" = "production" }
     extra_sticky_app_setting_names = ["WP_ENVIRONMENT_TYPE"]
     staging_app_settings_override  = { "WP_ENVIRONMENT_TYPE" = "staging" }
+    # Enable only after an edge transform overwrites X-Azure-FDID for this zone.
+    cdn_origin_header_name = lookup(var.cdn_origin_header_names, each.key, null)
   }
+  cdn_origin_header_values   = lookup(var.cdn_origin_header_values, each.key, [])
   shared_resource_group_name = module.shared.resource_group_name
   shared_plan_sku            = var.app_service_sku
 

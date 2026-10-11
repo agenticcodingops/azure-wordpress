@@ -226,6 +226,13 @@ resource "azurerm_linux_web_app" "main" {
         name       = "AllowCloudflare-IPv4-${ip_restriction.key}"
         priority   = 100 + ip_restriction.key
         action     = "Allow"
+        dynamic "headers" {
+          for_each = var.cdn_origin_header_name == null ? [] : [var.cdn_origin_header_name]
+          content {
+            x_azure_fdid     = headers.value == "x_azure_fdid" ? var.cdn_origin_header_values : null
+            x_forwarded_host = headers.value == "x_forwarded_host" ? var.cdn_origin_header_values : null
+          }
+        }
       }
     }
 
@@ -237,6 +244,13 @@ resource "azurerm_linux_web_app" "main" {
         name       = "AllowCloudflare-IPv6-${ip_restriction.key}"
         priority   = 200 + ip_restriction.key
         action     = "Allow"
+        dynamic "headers" {
+          for_each = var.cdn_origin_header_name == null ? [] : [var.cdn_origin_header_name]
+          content {
+            x_azure_fdid     = headers.value == "x_azure_fdid" ? var.cdn_origin_header_values : null
+            x_forwarded_host = headers.value == "x_forwarded_host" ? var.cdn_origin_header_values : null
+          }
+        }
       }
     }
 
@@ -319,6 +333,11 @@ resource "azurerm_linux_web_app" "main" {
     # the new one can be created with the same name
     create_before_destroy = false
 
+    precondition {
+      condition     = var.cdn_origin_header_name == null || (local.effective_cdn_provider == "cloudflare" && length(var.cdn_origin_header_values) >= 1 && length(var.cdn_origin_header_values) <= 8)
+      error_message = "cdn_origin_header_name applies only to the Cloudflare allow rules: set cdn_provider = \"cloudflare\" and give cdn_origin_header_values 1 to 8 values, or leave the name null."
+    }
+
     ignore_changes = [
       # Ignore changes made by WordPress admin
       app_settings["WORDPRESS_CONFIG_EXTRA"]
@@ -379,6 +398,13 @@ resource "azurerm_linux_web_app_slot" "staging" {
         name       = "AllowCloudflare-IPv4-${ip_restriction.key}"
         priority   = 100 + ip_restriction.key
         action     = "Allow"
+        dynamic "headers" {
+          for_each = var.cdn_origin_header_name == null ? [] : [var.cdn_origin_header_name]
+          content {
+            x_azure_fdid     = headers.value == "x_azure_fdid" ? var.cdn_origin_header_values : null
+            x_forwarded_host = headers.value == "x_forwarded_host" ? var.cdn_origin_header_values : null
+          }
+        }
       }
     }
 
@@ -389,6 +415,13 @@ resource "azurerm_linux_web_app_slot" "staging" {
         name       = "AllowCloudflare-IPv6-${ip_restriction.key}"
         priority   = 200 + ip_restriction.key
         action     = "Allow"
+        dynamic "headers" {
+          for_each = var.cdn_origin_header_name == null ? [] : [var.cdn_origin_header_name]
+          content {
+            x_azure_fdid     = headers.value == "x_azure_fdid" ? var.cdn_origin_header_values : null
+            x_forwarded_host = headers.value == "x_forwarded_host" ? var.cdn_origin_header_values : null
+          }
+        }
       }
     }
 

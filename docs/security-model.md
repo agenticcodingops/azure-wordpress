@@ -130,6 +130,11 @@ module manages no Cloudflare resources (`modules/wordpress-site/main.tf:153`). C
 ranges are shared by every Cloudflare account; see
 [Binding the origin to one CDN account](#binding-the-origin-to-one-cdn-account).
 
+When `app_service.cdn_origin_header_name` is set, every Cloudflare IPv4 and IPv6 rule on the app and slot also
+requires one of the sensitive `cdn_origin_header_values`. The health-probe and SCM rules are unchanged. The name,
+not the sensitive values, controls whether the header block exists. The default is `null`, preserving IP-only
+rules and existing plans.
+
 **With `cdn_provider = "azure_front_door"`**:
 
 - The app and the slot allow the health probe address above and the
@@ -439,12 +444,13 @@ The module binds the custom host name on App Service but no certificate
 
 ### Binding the origin to one CDN account
 
-With Cloudflare, the origin admits Cloudflare's IP ranges. Those ranges are shared by every
-Cloudflare customer, so the rules identify Cloudflare, not your zone. A request sent through
-another Cloudflare account reaches your origin without passing your zone's WAF rules,
-redirects or access policies. The module offers no request-header check for Cloudflare
-today. An optional header filter is proposed in
-[issue #64](https://github.com/agenticcodingops/azure-wordpress/issues/64).
+With Cloudflare, IP-only origin rules identify the shared network, not your zone. To bind them to your zone, make
+a Request Header Transform Rule overwrite `X-Azure-FDID`, set `app_service.cdn_origin_header_name` to
+`"x_azure_fdid"`, and provide one to eight UUIDs in `cdn_origin_header_values`. Treat each value as a bearer
+secret: it is stored in state, App Service configuration, and the edge rule. Verify that the application ignores
+the header. Enable the edge rule before the origin filter and remove the origin filter first on rollback. For
+rotation without downtime, accept old and new values, switch the edge, then drop the old value. The alternative
+`x_forwarded_host` carrier accepts free-form strings but can affect generated URLs in reverse-proxy setups.
 
 With Front Door, the main app is bound to your profile by the `X-Azure-FDID` check. The
 staging slot is not (see [Origin restricted to the CDN](#origin-restricted-to-the-cdn)).
