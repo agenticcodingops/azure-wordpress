@@ -9,3 +9,8 @@ hassan.abbas@agenticcodingops.com
 vibecoddingops@outlook.com
 # GitHub's web-flow committer on every web-UI merge.
 noreply@github.com
+
+# The orchestrator account (a machine user with Write access, not a bot account). It merges
+# low-risk PRs through the API, which accepts only the merging account's own verified addresses
+# as the squash author, so the merge uses this one; the committer stays GitHub's web-flow.
+340677216+agenticcodingops-orchestrator@users.noreply.github.com
