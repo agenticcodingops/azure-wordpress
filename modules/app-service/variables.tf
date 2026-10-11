@@ -355,14 +355,14 @@ variable "backup_frequency_unit" {
 }
 
 variable "backup_retention_period_days" {
-  description = "Days after which a backup is deleted. 0 keeps backups indefinitely."
+  description = "Days after which a backup is deleted, 0 to 30: App Service custom backups allow no longer retention. 0 keeps backups indefinitely."
   type        = number
   default     = 30
   nullable    = false
 
   validation {
-    condition     = var.backup_retention_period_days >= 0 && floor(var.backup_retention_period_days) == var.backup_retention_period_days
-    error_message = "backup_retention_period_days must be a whole number of days, 0 or more."
+    condition     = var.backup_retention_period_days >= 0 && var.backup_retention_period_days <= 30 && floor(var.backup_retention_period_days) == var.backup_retention_period_days
+    error_message = "backup_retention_period_days must be a whole number from 0 to 30 (0 keeps backups indefinitely): App Service custom backups allow no longer retention."
   }
 }
 

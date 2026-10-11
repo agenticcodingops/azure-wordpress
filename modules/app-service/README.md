@@ -200,7 +200,7 @@ caller supplies the container SAS URL in `backup_storage_account_url`
 (`https://<account>.blob.core.windows.net/<container>?<sas>`, with read, write, delete and list
 permissions). The URL is sensitive and never an output. `backup_frequency_interval` and
 `backup_frequency_unit` (`Day`, or `Hour` with an interval of at least 2: App Service allows one
-custom backup every 2 hours at most), `backup_retention_period_days` (0 keeps backups indefinitely),
+custom backup every 2 hours at most), `backup_retention_period_days` (0 to 30, the most App Service allows; 0 keeps backups indefinitely),
 `backup_keep_at_least_one_backup` and `backup_start_time` (RFC 3339) map to the `backup` block of
 `azurerm_linux_web_app`.
 
@@ -225,7 +225,7 @@ The module enforces these validations at plan time:
 | `sku_name` | `^(B\|S\|P)[0-9]v?[0-9]?$` | SKU must be a valid App Service Plan SKU (e.g., B1, S1, P1v3) |
 | `worker_count` | 1-30 | Worker count must be between 1 and 30 |
 | `backup_frequency_unit` | `Day` or `Hour` | backup_frequency_unit must be "Day" or "Hour" |
-| `backup_retention_period_days` | whole number, 0 or more | backup_retention_period_days must be a whole number of days, 0 or more |
+| `backup_retention_period_days` | whole number, 0 to 30 | backup_retention_period_days must be a whole number from 0 to 30 (0 keeps backups indefinitely) |
 | `backup_frequency_interval` with `Hour` | at least 2 (precondition on the web app) | backup_frequency_interval must be at least 2 when backup_frequency_unit is "Hour" |
 
 <!-- BEGIN_TF_DOCS -->
@@ -266,7 +266,7 @@ No modules.
 | <a name="input_backup_frequency_interval"></a> [backup\_frequency\_interval](#input\_backup\_frequency\_interval) | How often the backup runs, in backup\_frequency\_unit units: 1 with Day is daily, 7 with Day is weekly. With Hour it must be at least 2: App Service allows one custom backup every 2 hours at most, 12 a day. | `number` | `1` | no |
 | <a name="input_backup_frequency_unit"></a> [backup\_frequency\_unit](#input\_backup\_frequency\_unit) | Unit of backup\_frequency\_interval: Day or Hour. | `string` | `"Day"` | no |
 | <a name="input_backup_keep_at_least_one_backup"></a> [backup\_keep\_at\_least\_one\_backup](#input\_backup\_keep\_at\_least\_one\_backup) | Keep the most recent backup even once it is older than backup\_retention\_period\_days. | `bool` | `true` | no |
-| <a name="input_backup_retention_period_days"></a> [backup\_retention\_period\_days](#input\_backup\_retention\_period\_days) | Days after which a backup is deleted. 0 keeps backups indefinitely. | `number` | `30` | no |
+| <a name="input_backup_retention_period_days"></a> [backup\_retention\_period\_days](#input\_backup\_retention\_period\_days) | Days after which a backup is deleted, 0 to 30: App Service custom backups allow no longer retention. 0 keeps backups indefinitely. | `number` | `30` | no |
 | <a name="input_backup_start_time"></a> [backup\_start\_time](#input\_backup\_start\_time) | When the schedule starts, in RFC 3339 (for example 2026-11-01T02:00:00Z). null (the default) starts it when the backup is configured. | `string` | `null` | no |
 | <a name="input_backup_storage_account_url"></a> [backup\_storage\_account\_url](#input\_backup\_storage\_account\_url) | SAS URL of the private blob container that receives the backups, https://<account>.blob.core.windows.net/<container>?<sas>, with read, write, delete and list permissions. Required when backup\_enabled is true. Sensitive, and never written to an output. | `string` | `null` | no |
 | <a name="input_cdn_origin_header_name"></a> [cdn\_origin\_header\_name](#input\_cdn\_origin\_header\_name) | Request header that every CDN allow rule must also match, on the app and its staging slot: "x\_azure\_fdid" or "x\_forwarded\_host". null (the default) keeps IP-only rules. | `string` | `null` | no |

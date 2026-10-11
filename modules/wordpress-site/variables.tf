@@ -324,7 +324,7 @@ variable "app_service_backup_enabled" {
 }
 
 variable "app_service_backup" {
-  description = "Settings of the scheduled App Service backup that app_service_backup_enabled turns on. container_name (default wp-backups) is the target, which must be a private entry of storage.additional_containers; while retention_period_days is finite, the account's lifecycle policy also expires that container's previous versions and snapshots after the same number of days. frequency_interval and frequency_unit (Day, or Hour with an interval of at least 2: App Service allows one custom backup every 2 hours at most), retention_period_days (0 keeps backups indefinitely), keep_at_least_one_backup and start_time (RFC 3339; null starts the schedule when it is configured) map to the web app's backup block. sas_validity_days and sas_rotation_days shape the container SAS the module generates: it starts 15 minutes before the rotation timestamp, is valid for sas_validity_days from that timestamp, and is re-issued by the first plan after sas_rotation_days, so validity must be at least twice the rotation interval (the defaults are a year and six months)."
+  description = "Settings of the scheduled App Service backup that app_service_backup_enabled turns on. container_name (default wp-backups) is the target, which must be a private entry of storage.additional_containers; while retention_period_days is finite, the account's lifecycle policy also expires that container's previous versions and snapshots after the same number of days. frequency_interval and frequency_unit (Day, or Hour with an interval of at least 2: App Service allows one custom backup every 2 hours at most), retention_period_days (0 to 30; 0 keeps backups indefinitely, and App Service accepts nothing above 30), keep_at_least_one_backup and start_time (RFC 3339; null starts the schedule when it is configured) map to the web app's backup block. sas_validity_days and sas_rotation_days shape the container SAS the module generates: it starts 15 minutes before the rotation timestamp, is valid for sas_validity_days from that timestamp, and is re-issued by the first plan after sas_rotation_days, so validity must be at least twice the rotation interval (the defaults are a year and six months)."
   type = object({
     container_name           = optional(string, "wp-backups")
     frequency_interval       = optional(number, 1)
@@ -362,8 +362,8 @@ variable "app_service_backup" {
   }
 
   validation {
-    condition     = var.app_service_backup.retention_period_days >= 0 && floor(var.app_service_backup.retention_period_days) == var.app_service_backup.retention_period_days
-    error_message = "app_service_backup.retention_period_days must be a whole number of days, 0 or more (0 keeps backups indefinitely)."
+    condition     = var.app_service_backup.retention_period_days >= 0 && var.app_service_backup.retention_period_days <= 30 && floor(var.app_service_backup.retention_period_days) == var.app_service_backup.retention_period_days
+    error_message = "app_service_backup.retention_period_days must be a whole number from 0 to 30 (0 keeps backups indefinitely): App Service custom backups allow no longer retention."
   }
 
   validation {
