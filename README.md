@@ -8,7 +8,8 @@ Deploy production-ready WordPress sites on Azure with Cloudflare CDN using Terra
 - **Staging Deployment Slots** with configurable app settings and always-on control
 - **Azure MySQL Flexible Server** on a delegated subnet with private DNS (no public endpoint)
 - **Backup & Recovery** -- configurable PITR retention (1-35 days), geo-redundant backup, storage auto-grow
-- **Azure Blob Storage** for media uploads (no Azure Files latency)
+- **Storage account** with a private uploads container, also the target for the scheduled App Service backup.
+  Media stays on the app's `/home` storage by default (no Azure Files latency)
 - **Blob Protection** -- versioning, soft-delete retention, additional containers (e.g., wp-backups)
 - **Storage Lifecycle Management** -- auto-tier to Cool, version/snapshot cleanup on schedule
 - **Cloudflare CDN** with DNS management and SSL (cost-optimized)
@@ -43,11 +44,13 @@ One call to `modules/wordpress-site` deploys one site:
 - **Secrets.** Key Vault holds the database password, the storage key and the Application Insights connection
   string. The web app reads them through Key Vault references, as its managed identity.
 - **Media.** By default WordPress writes uploads to the web app's persistent `/home` storage, not to Blob Storage.
-  They move to Blob Storage only after you install the Microsoft Azure Storage for WordPress plugin and make it
-  the default upload target. That plugin points media URLs at the blob endpoint, so browsers fetch media from Azure
-  directly, not through the CDN. The storage firewall defaults to `Deny`, and setting `Allow` is not enough on
-  its own: the account also disallows anonymous blob access and the uploads container is private, so an unsigned
-  media URL still fails. See [Media](docs/architecture.md#media).
+  They move to Blob Storage only after you install a Blob offload plugin (such as Microsoft Azure Storage for
+  WordPress) yourself and make it the default upload target; the module installs none. If you do, the plugin
+  points media URLs at the blob endpoint, so browsers fetch media from Azure directly, not through the CDN.
+  The storage firewall defaults to `Deny` (which also suits the scheduled backup, since the app subnet is
+  allow-listed), and setting `Allow` is not enough on its own: the account also
+  disallows anonymous blob access and the uploads container is private, so an unsigned media URL
+  still fails. See [Media](docs/architecture.md#media).
 - **Monitoring.** The site module creates Log Analytics, Application Insights, diagnostic settings and alerts
   itself. It does not use the standalone `monitoring` module.
 
@@ -97,12 +100,13 @@ module "wordpress_site" {
   # key_vault_network_acls_ip_rules = ["<runner IP>"] instead.
   key_vault_public_network_access_enabled = true
   # The storage firewall defaults to "Deny", which suits the default setup: uploads stay
-  # on the app's /home storage. Only if you serve media from the blob endpoint (after you
-  # install the storage plugin) do visitors' browsers meet the firewall and get 403, and
-  # "Allow" removes that gate. It is not enough on its own: the account disallows
-  # anonymous blob access and the uploads container is private, so an unsigned media
-  # URL still fails (docs/architecture.md#media). Test an uploaded file in a signed-out
-  # browser before you rely on it.
+  # on the app's /home storage, and the scheduled backup reaches the account over the app
+  # subnet. Only if you install a Blob offload plugin that points media URLs at the blob
+  # endpoint do visitors' browsers meet the firewall and get 403, and "Allow" removes
+  # that gate. It is not enough on its own: the account disallows anonymous blob access
+  # and the uploads container is private, so an unsigned media URL still fails
+  # (docs/architecture.md#media). Test an uploaded file in a signed-out browser before
+  # you rely on it.
   # storage_network_rules_default_action = "Allow"
 
   # Backup container for UpdraftPlus (v1.1.0+)
@@ -139,7 +143,7 @@ See [examples/](examples/) for complete configurations.
 | [shared-infrastructure](modules/shared-infrastructure/) | Shared App Service Plan for multi-site |
 | [app-service](modules/app-service/) | Azure App Service for WordPress |
 | [database](modules/database/) | Azure MySQL Flexible Server |
-| [storage](modules/storage/) | Azure Blob Storage for media |
+| [storage](modules/storage/) | Storage account: private uploads container, backup target |
 | [key-vault](modules/key-vault/) | Azure Key Vault for secrets |
 | [networking](modules/networking/) | VNet and subnets |
 | [dns-zones](modules/dns-zones/) | Private DNS zones |

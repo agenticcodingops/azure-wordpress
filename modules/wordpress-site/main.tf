@@ -380,7 +380,7 @@ module "storage" {
 
   # Data-plane network rules.
   # The App Service subnet is always allow-listed (it carries the Microsoft.Storage
-  # service endpoint), so the WordPress plugin can read and write media.
+  # service endpoint), so the app can reach the account (the backup, an optional offload plugin).
   # When Cloudflare is the CDN we also allow-list its live IPv4 egress ranges, which
   # covers origin pulls if the blob endpoint is fronted by a Cloudflare custom domain.
   # Cloudflare's IPv6 ranges are intentionally omitted: Azure Storage IP rules are

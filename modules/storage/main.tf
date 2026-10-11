@@ -1,6 +1,6 @@
 # Storage Module - Layer 2 Application
-# Creates Storage Account for WordPress media uploads
-# NOTE: NO Azure Files mount - media offloaded via WordPress plugin
+# Creates the site's Storage Account: private uploads container, backup target
+# NOTE: NO Azure Files mount - media stays on /home; a Blob offload plugin is optional, none installed
 
 locals {
   # Short environment suffix for naming
@@ -11,7 +11,7 @@ locals {
   storage_name = "sttr${substr(replace(var.site_name, "-", ""), 0, 12)}${local.env_suffix}"
 }
 
-# Storage Account for WordPress media uploads
+# Storage Account for the site: private uploads container, backup target
 resource "azurerm_storage_account" "main" {
   name                = local.storage_name
   resource_group_name = var.resource_group_name
@@ -26,7 +26,7 @@ resource "azurerm_storage_account" "main" {
   min_tls_version                 = "TLS1_2"
   https_traffic_only_enabled      = true
   allow_nested_items_to_be_public = false
-  shared_access_key_enabled       = true # Required for WordPress plugin
+  shared_access_key_enabled       = true # Required for the account-key SAS of the scheduled backup, and for a Blob offload plugin
 
   # Infrastructure encryption
   infrastructure_encryption_enabled = true
@@ -171,5 +171,5 @@ resource "azurerm_storage_management_policy" "lifecycle" {
 }
 
 # NOTE: NO storage_account block in App Service module
-# Media uploads handled via Microsoft Azure Storage plugin for WordPress
+# Media stays on the app's persistent /home storage; no plugin is installed
 # This avoids the 2-3 second latency from Azure Files mounts

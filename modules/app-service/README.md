@@ -18,7 +18,7 @@ This module creates:
 
 Azure Files mounts cause 2-3 second latency per page load. Instead:
 - WordPress is baked into the Docker image (immutable)
-- Media uploads use Blob Storage via plugin
+- Media stays on the app's persistent `/home` storage; the optional `MICROSOFT_AZURE_*` app settings only let an operator configure a Blob offload plugin they install themselves
 - Configuration via app settings (not file mounts)
 
 ## Sticky Settings
@@ -301,8 +301,8 @@ No modules.
 | <a name="input_staging_slot_enabled"></a> [staging\_slot\_enabled](#input\_staging\_slot\_enabled) | Create the staging deployment slot when the SKU supports one (S* and P*). Defaults to true, which keeps the behaviour of every earlier release. false creates no slot on any SKU, and on an existing deployment destroys the slot together with its managed identity; the staging\_slot\_* outputs are then null. | `bool` | `true` | no |
 | <a name="input_sticky_connection_string_names"></a> [sticky\_connection\_string\_names](#input\_sticky\_connection\_string\_names) | Connection string names to mark as sticky (slot-specific, not swapped) | `list(string)` | `[]` | no |
 | <a name="input_storage_access_key_secret_uri"></a> [storage\_access\_key\_secret\_uri](#input\_storage\_access\_key\_secret\_uri) | Key Vault secret URI for storage access key (versionless) | `string` | n/a | yes |
-| <a name="input_storage_account_name"></a> [storage\_account\_name](#input\_storage\_account\_name) | Storage account name for media uploads | `string` | n/a | yes |
-| <a name="input_storage_container_name"></a> [storage\_container\_name](#input\_storage\_container\_name) | Storage container name for media uploads | `string` | n/a | yes |
+| <a name="input_storage_account_name"></a> [storage\_account\_name](#input\_storage\_account\_name) | Storage account name, set as the MICROSOFT\_AZURE\_ACCOUNT\_NAME app setting while storage\_plugin\_app\_settings\_enabled is true | `string` | n/a | yes |
+| <a name="input_storage_container_name"></a> [storage\_container\_name](#input\_storage\_container\_name) | Storage container name, set as the MICROSOFT\_AZURE\_CONTAINER app setting while storage\_plugin\_app\_settings\_enabled is true | `string` | n/a | yes |
 | <a name="input_storage_plugin_app_settings_enabled"></a> [storage\_plugin\_app\_settings\_enabled](#input\_storage\_plugin\_app\_settings\_enabled) | Set the MICROSOFT\_AZURE\_ACCOUNT\_NAME, MICROSOFT\_AZURE\_CONTAINER and MICROSOFT\_AZURE\_ACCOUNT\_KEY app settings on the app and its staging slot. Defaults to true, which keeps the behaviour of every earlier release. Those names are read only by the Microsoft Azure Storage for WordPress plugin, as wp-config.php constants; the container image does not read them. Without that plugin they are inert, and false removes them - including the storage account key from the app's environment. The storage-key Key Vault secret is unaffected. | `bool` | `true` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to apply to all resources | `map(string)` | `{}` | no |
 | <a name="input_use_shared_plan"></a> [use\_shared\_plan](#input\_use\_shared\_plan) | Set to true when using a shared App Service Plan. This avoids plan-time unknown value issues. | `bool` | `false` | no |

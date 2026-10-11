@@ -165,12 +165,12 @@ variable "key_vault_soft_delete_retention_days" {
   }
 }
 
-# WARNING: the WordPress Blob Storage plugin points media URLs at the account's own
-# blob endpoint, so visitors fetch media directly from Azure rather than through the
-# CDN. Unless the blob endpoint is fronted by a CDN custom domain, set this to "Allow"
-# or media will 403 for end users. See modules/storage/README.md.
+# Media stays on /home by default and the scheduled backup uses the app subnet, so "Deny" is
+# viable when no browser reads the blob endpoint. WARNING: if you install a Blob offload plugin
+# that points media URLs at the blob endpoint, browsers fetch media from Azure directly and meet
+# this firewall: set "Allow" then, unless a CDN custom domain fronts it. See modules/storage/README.md.
 variable "storage_network_rules_default_action" {
-  description = "Default action for the storage account's network rules. Defaults to Deny. Set to 'Allow' if media is served straight from the blob endpoint rather than through a CDN custom domain."
+  description = "Default action for the storage account's network rules. Defaults to Deny, which suits the default setup: media stays on the app's /home storage and the scheduled backup reaches the account over the app subnet. Set to 'Allow' only if browsers read the blob endpoint directly, for example media from a Blob offload plugin you install, rather than through a CDN custom domain."
   type        = string
   default     = "Deny"
 
@@ -266,7 +266,7 @@ variable "app_service_webdeploy_publish_basic_authentication_enabled" {
 }
 
 variable "app_service_storage_plugin_app_settings_enabled" {
-  description = "Set the MICROSOFT_AZURE_* storage-plugin app settings on the site and its staging slot. Defaults to true, which keeps the behaviour of every earlier release. The container image does not read them (only the Microsoft Azure Storage for WordPress plugin does, as wp-config.php constants), so without that plugin they are inert, and false removes them - including the storage account key from the app's environment. The storage-key Key Vault secret is unaffected; set storage_key_secret_enabled = false as well to stop writing it."
+  description = "Set the MICROSOFT_AZURE_ACCOUNT_NAME, MICROSOFT_AZURE_CONTAINER and MICROSOFT_AZURE_ACCOUNT_KEY app settings on the site and its staging slot. They exist so an operator can install and configure a Blob offload plugin (the Microsoft Azure Storage for WordPress plugin reads them as wp-config.php constants); they are optional. Defaults to true, which keeps the behaviour of every earlier release. The module installs no plugin and the container image does not read them, so without one they are inert and media stays on /home. False removes them, including the storage account key from the app's environment. The storage-key Key Vault secret is unaffected; set storage_key_secret_enabled = false as well to stop writing it."
   type        = bool
   default     = true
   nullable    = false
