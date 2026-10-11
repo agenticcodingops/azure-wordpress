@@ -10,7 +10,7 @@ Deploy a single WordPress site with Cloudflare CDN on Azure.
 
 ## Version Pinning
 
-This example pins module sources to a specific release tag (`?ref=v4.1.1`). To use a different version:
+This example pins module sources to a specific release tag (`?ref=v4.2.0`). To use a different version:
 
 1. Check available versions on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page
 2. Update the `?ref=` tag in `main.tf`
@@ -66,7 +66,7 @@ same zone, set `enable_page_rules = false` in its `cloudflare` block. The
 ## SKU Note
 
 With a dedicated plan, the app-service module also creates an autoscale setting on the plan
-(`modules/app-service/main.tf:449-450` at v4.1.1). Microsoft documents autoscale for Standard tier and up, and whether
+(`modules/app-service/main.tf:482-483` at v4.2.0). Microsoft documents autoscale for Standard tier and up, and whether
 Azure accepts it on a B1 plan has not been tested. If the apply fails on that setting, use `S1`, or a shared
 plan as in [`examples/multi-site`](../multi-site/). See
 [getting started](../../docs/getting-started.md#the-other-choices).
