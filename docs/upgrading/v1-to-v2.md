@@ -1,5 +1,7 @@
 # v1 to v2
 
+> **Note added 2026-10-11.** This page keeps its original wording. Where it says the WordPress Blob Storage plugin rewrites media URLs so that `Deny` breaks media for every visitor, read that as conditional: the module installs no plugin, media stays on the web app's `/home` storage by default, and the `MICROSOFT_AZURE_*` app settings are optional, there so you can configure a Blob offload plugin yourself. Only such a plugin points media URLs at the blob endpoint, and only then does the storage firewall (and the plugin's unsigned URLs) matter. See [Media](../architecture.md#media).
+
 This page is the **v2.0.0** break (2026-08-02), the changelog's compare from v1.3.2. Releases from v1.0.0 through v1.3.2 are not restated here.
 
 ## Expected plan

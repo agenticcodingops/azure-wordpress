@@ -859,8 +859,8 @@ files.
      WP-CLI runs `mysqldump`. If the container lacks it, install it in the same session. Never write the dump under
      `/home/site/wwwroot`, which is the public web root.
    - **Site files:** `tar -czf /home/backups/wwwroot.tar.gz -C /home/site wwwroot`. The app's own storage holds
-     `wp-config.php`, themes and plugins. It also holds the uploads unless you installed the storage plugin, which
-     this module does not install. It is deleted with the web app.
+     `wp-config.php`, themes and plugins. It also holds the uploads unless you installed a Blob offload plugin
+     yourself (the module installs none). It is deleted with the web app.
    - **Download** both files through the SCM (Kudu) site.
    - **Blob containers:** copy every container in the account, not only uploads, for example
      `az storage blob download-batch --auth-mode key ...`. `--auth-mode login` needs Storage Blob Data Reader, which
