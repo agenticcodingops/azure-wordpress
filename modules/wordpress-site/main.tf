@@ -207,6 +207,15 @@ resource "azurerm_resource_group" "main" {
       condition     = local.new_alerts_enabled ? local.has_alert_route : true
       error_message = "An opt-in alert is enabled (availability_tests, or monitoring.alerts.mysql, http_5xx_rate, health_check or resource_health), but nothing would receive it. Set alert_recipients or extra_action_group_ids."
     }
+
+    # The backup target must be a private container this module creates, so the SAS
+    # scope and the container agree. Checked here, not on the SAS data source in
+    # backup.tf: a custom condition on a data source defers its read to apply time
+    # whenever anything it depends on has a pending change.
+    precondition {
+      condition     = var.app_service_backup_enabled ? try(var.storage.additional_containers[var.app_service_backup.container_name].access_type == "private", false) : true
+      error_message = "app_service_backup.container_name must be a private container declared in storage.additional_containers, for example storage = { additional_containers = { \"wp-backups\" = {} } }."
+    }
   }
 }
 
@@ -523,6 +532,16 @@ module "app_service" {
   ftp_publish_basic_authentication_enabled       = var.app_service_ftp_publish_basic_authentication_enabled
   webdeploy_publish_basic_authentication_enabled = var.app_service_webdeploy_publish_basic_authentication_enabled
   storage_plugin_app_settings_enabled            = var.app_service_storage_plugin_app_settings_enabled
+
+  # Scheduled custom backup of the production app. The SAS URL is built in backup.tf,
+  # outside this module's depends_on, so it is read at plan time once the account exists.
+  backup_enabled                  = var.app_service_backup_enabled
+  backup_storage_account_url      = local.app_service_backup_storage_account_url
+  backup_frequency_interval       = var.app_service_backup.frequency_interval
+  backup_frequency_unit           = var.app_service_backup.frequency_unit
+  backup_retention_period_days    = var.app_service_backup.retention_period_days
+  backup_keep_at_least_one_backup = var.app_service_backup.keep_at_least_one_backup
+  backup_start_time               = var.app_service_backup.start_time
 
   tags = local.common_tags
 

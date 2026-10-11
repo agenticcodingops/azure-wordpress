@@ -179,6 +179,12 @@ resource "azurerm_linux_web_app" "main" {
   # VNet integration for database access
   virtual_network_subnet_id = var.app_subnet_id
 
+  # Custom backup and restore over that VNet integration, so the backup target can
+  # keep denying public access (the app subnet is allow-listed). null, not false, when
+  # the backup is off: it leaves the provider default in place, so a plan without a
+  # backup is byte-for-byte what it was.
+  virtual_network_backup_restore_enabled = var.backup_enabled ? true : null
+
   # Managed identity for Key Vault access
   identity {
     type = "SystemAssigned"
@@ -310,6 +316,25 @@ resource "azurerm_linux_web_app" "main" {
     connection_string_names = length(var.sticky_connection_string_names) > 0 ? var.sticky_connection_string_names : null
   }
 
+  # Scheduled custom backup of this app only; the staging slot below has none. The SAS
+  # URL is sensitive in the provider schema and in the variable, and never an output.
+  dynamic "backup" {
+    for_each = var.backup_enabled ? [1] : []
+    content {
+      name                = "backup-${local.name_prefix}"
+      enabled             = true
+      storage_account_url = var.backup_storage_account_url
+
+      schedule {
+        frequency_interval       = var.backup_frequency_interval
+        frequency_unit           = var.backup_frequency_unit
+        keep_at_least_one_backup = var.backup_keep_at_least_one_backup
+        retention_period_days    = var.backup_retention_period_days
+        start_time               = var.backup_start_time
+      }
+    }
+  }
+
   # NOTE: NO storage_account block
   # Media uploads handled via Azure Blob Storage plugin
   # This avoids the 2-3 second latency from Azure Files mounts
@@ -340,6 +365,14 @@ resource "azurerm_linux_web_app" "main" {
     precondition {
       condition     = var.cdn_origin_header_name == null || (local.effective_cdn_provider == "cloudflare" && length(var.cdn_origin_header_values) >= 1 && length(var.cdn_origin_header_values) <= 8)
       error_message = "cdn_origin_header_name applies only to the Cloudflare allow rules: set cdn_provider = \"cloudflare\" and give cdn_origin_header_values 1 to 8 values, or leave the name null."
+    }
+
+    # A conditional, so the sensitive URL is only read when the backup is on. Unknown
+    # at plan on a first deployment (the composition's SAS is read at apply then), in
+    # which case Terraform checks it at apply.
+    precondition {
+      condition     = var.backup_enabled ? var.backup_storage_account_url != null : true
+      error_message = "backup_enabled is true, so backup_storage_account_url must carry the container SAS URL."
     }
 
     ignore_changes = [
