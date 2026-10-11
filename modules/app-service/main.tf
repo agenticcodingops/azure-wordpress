@@ -334,8 +334,8 @@ resource "azurerm_linux_web_app" "main" {
     create_before_destroy = false
 
     precondition {
-      condition     = var.cdn_origin_header_name == null || (length(var.cdn_origin_header_values) >= 1 && length(var.cdn_origin_header_values) <= 8)
-      error_message = "cdn_origin_header_values must contain between 1 and 8 values when cdn_origin_header_name is set."
+      condition     = var.cdn_origin_header_name == null || (local.effective_cdn_provider == "cloudflare" && length(var.cdn_origin_header_values) >= 1 && length(var.cdn_origin_header_values) <= 8)
+      error_message = "cdn_origin_header_name applies only to the Cloudflare allow rules: set cdn_provider = \"cloudflare\" and give cdn_origin_header_values 1 to 8 values, or leave the name null."
     }
 
     ignore_changes = [
