@@ -59,7 +59,7 @@ for m in modules/wordpress-site modules/shared-infrastructure modules/app-servic
 done
 ```
 
-On Windows the checkout is CRLF. Run the commands on an LF copy: `tmp=$(mktemp -d) && git archive HEAD | tar -x -C "$tmp" && cd "$tmp"`. A command that needs the git index (`git ls-files`, `git diff`) runs in the checkout itself, not in the copy. Where a tool reads a single file, strip `\r` with `sed 's/\r$//'`.
+On Windows the checkout is CRLF. Run the commands on an LF copy: `tmp=$(mktemp -d) && git archive HEAD | tar -x -C "$tmp" && cd "$tmp"` (it copies the last commit only, so commit what you want checked first). A command that needs the git index (`git ls-files`, `git diff`) runs in the checkout itself, not in the copy. Where a tool reads a single file, strip `\r` with `sed 's/\r$//'`.
 
 terraform-docs --output-check fails on the default branch when measured on a Windows machine on 2026-10-11 because modules/wordpress-site/README.md is out of date.
 
