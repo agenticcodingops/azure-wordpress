@@ -2,13 +2,10 @@
 #
 # Keep the automated review's high-level summary out of the pull request description. The summary block it
 # appended to PR descriptions tripped this repository's commit-metadata guard, which scans PR text
-# (see AGENTS.md). The summary still appears at the top of the review's walkthrough comment.
+# (see AGENTS.md). The review itself, its walkthrough comment and its inline findings are unchanged.
 #
-# Keys and their meaning come from the vendor's documentation page "Summaries" under PR reviews
+# The key and its meaning come from the vendor's documentation page "Summaries" under PR reviews
 # (docs.coderabbit.ai/pr-reviews/summaries), read on 2026-10-11:
-#   reviews.high_level_summary: false            "Disables automatic appending of the summary to the PR description."
-#   reviews.high_level_summary_in_walkthrough: true   "Moves the summary from the PR description to the top of the
-#                                                      walkthrough comment."
+#   reviews.high_level_summary: false   "Disables automatic appending of the summary to the PR description."
 reviews:
   high_level_summary: false
-  high_level_summary_in_walkthrough: true
