@@ -45,19 +45,21 @@ terraform fmt -recursive -check -diff
 
 # validate.yml "Validate": Terraform 1.9.8, init and validate each module
 for m in modules/wordpress-site modules/shared-infrastructure modules/app-service modules/database modules/storage modules/key-vault modules/networking modules/dns-zones modules/cloudflare modules/front-door modules/monitoring; do
-  terraform -chdir="$m" init -backend=false && terraform -chdir="$m" validate
+  terraform -chdir="$m" init -backend=false && terraform -chdir="$m" validate || exit 1
 done
+# leave nothing behind: lock files make terraform-docs resolve providers differently from CI
+rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl
 
-# validate.yml "Checkov": Checkov 3.3.22 (bridgecrewio/checkov-action v12.3128.0)
-RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov -d . --framework terraform --quiet --skip-check CKV_TF_1,CKV_TF_2,CKV_AZURE_225,CKV_AZURE_13,CKV_AZURE_88,CKV_AZURE_222,CKV_AZURE_17,CKV_AZURE_94,CKV_AZURE_189,CKV_AZURE_109,CKV_AZURE_41,CKV_AZURE_211,CKV_AZURE_212,CKV_AZURE_206,CKV_AZURE_33,CKV_AZURE_59,CKV_AZURE_34,CKV2_AZURE_32,CKV2_AZURE_56,CKV2_AZURE_21,CKV2_AZURE_40,CKV2_AZURE_33,CKV2_AZURE_1
+# validate.yml "Checkov": Checkov 3.3.22 (bridgecrewio/checkov-action v12.3128.0), as the suffixed install this file prescribes (keep plain checkov off PATH)
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform --quiet --skip-check CKV_TF_1,CKV_TF_2,CKV_AZURE_225,CKV_AZURE_13,CKV_AZURE_88,CKV_AZURE_222,CKV_AZURE_17,CKV_AZURE_94,CKV_AZURE_189,CKV_AZURE_109,CKV_AZURE_41,CKV_AZURE_211,CKV_AZURE_212,CKV_AZURE_206,CKV_AZURE_33,CKV_AZURE_59,CKV_AZURE_34,CKV2_AZURE_32,CKV2_AZURE_56,CKV2_AZURE_21,CKV2_AZURE_40,CKV2_AZURE_33,CKV2_AZURE_1
 
 # validate.yml "Documentation": terraform-docs 0.20.0 (terraform-docs/gh-actions v1.4.1), fail-on-diff
 for m in modules/wordpress-site modules/shared-infrastructure modules/app-service modules/database modules/storage modules/key-vault modules/networking modules/dns-zones modules/cloudflare modules/front-door modules/monitoring; do
-  terraform-docs markdown table --indent 2 --output-mode inject --output-file README.md --output-check "$m"
+  terraform-docs markdown table --indent 2 --output-mode inject --output-file README.md --output-check "$m" || exit 1
 done
 ```
 
-On Windows the checkout is CRLF. Run the commands on an LF copy: `git archive HEAD | tar -x -C "$tmp"` (or `git archive HEAD --format=tar | tar -x -C "$tmp"`). Where a tool reads a single file, strip `\r` with `sed 's/\r$//'`.
+On Windows the checkout is CRLF. Run the commands on an LF copy: `tmp=$(mktemp -d) && git archive HEAD | tar -x -C "$tmp" && cd "$tmp"`. A command that needs the git index (`git ls-files`, `git diff`) runs in the checkout itself, not in the copy. Where a tool reads a single file, strip `\r` with `sed 's/\r$//'`.
 
 terraform-docs --output-check fails on the default branch when measured on a Windows machine on 2026-10-11 because modules/wordpress-site/README.md is out of date.
 
