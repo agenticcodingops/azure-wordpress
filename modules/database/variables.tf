@@ -213,7 +213,7 @@ variable "entra_server_identity" {
 }
 
 variable "entra_admin" {
-  description = "The server's Microsoft Entra administrator: login (the MySQL user name, at most 32 characters), the principal's object ID and the tenant ID. Used only while entra_admin_enabled is true."
+  description = "The server's Microsoft Entra administrator: login (the MySQL user name, at most 32 characters), object_id and tenant_id. Used only while entra_admin_enabled is true. object_id is passed to the provider exactly as given; the module does not translate it. The azurerm documentation names the identity's client ID for a managed identity, while the design rehearsal on a real server set the administrator by the identity's principal (object) ID and it worked, so confirm on the first apply on a non-production server and use the value that proves out for you."
   type = object({
     login     = string
     object_id = string
@@ -224,6 +224,18 @@ variable "entra_admin" {
   validation {
     condition     = var.entra_admin == null ? true : length(var.entra_admin.login) >= 1 && length(var.entra_admin.login) <= 32
     error_message = "entra_admin.login is a MySQL user name and must be 1 to 32 characters."
+  }
+}
+
+variable "entra_admin_wait_seconds" {
+  description = "Seconds to wait after the server and its identity exist and before the Entra administrator is created, because a freshly attached identity can still be propagating and the API then fails transiently. Used only while entra_admin_enabled is true; 0 skips the wait. The pause happens once, when it is first created."
+  type        = number
+  default     = 30
+  nullable    = false
+
+  validation {
+    condition     = var.entra_admin_wait_seconds >= 0 && var.entra_admin_wait_seconds <= 300 && floor(var.entra_admin_wait_seconds) == var.entra_admin_wait_seconds
+    error_message = "entra_admin_wait_seconds must be a whole number from 0 to 300."
   }
 }
 

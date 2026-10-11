@@ -133,6 +133,7 @@ not restart, but a new `long_query_time` applies to new connections only.
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.6.0 |
 | <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | ~> 5.6 |
 | <a name="requirement_null"></a> [null](#requirement\_null) | >= 3.2.0, < 4.0 |
+| <a name="requirement_time"></a> [time](#requirement\_time) | >= 0.9.0, < 1.0 |
 
 ## Providers
 
@@ -140,6 +141,7 @@ not restart, but a new `long_query_time` applies to new connections only.
 |------|---------|
 | <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | ~> 5.6 |
 | <a name="provider_null"></a> [null](#provider\_null) | >= 3.2.0, < 4.0 |
+| <a name="provider_time"></a> [time](#provider\_time) | >= 0.9.0, < 1.0 |
 
 ## Modules
 
@@ -157,6 +159,7 @@ No modules.
 | [azurerm_mysql_flexible_server_configuration.require_secure_transport](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/mysql_flexible_server_configuration) | resource |
 | [azurerm_mysql_flexible_server_configuration.slow_query_log](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/mysql_flexible_server_configuration) | resource |
 | [null_resource.validate_production_sku](https://registry.terraform.io/providers/hashicorp/null/latest/docs/resources/resource) | resource |
+| [time_sleep.entra_admin_identity](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 
 ## Inputs
 
@@ -168,8 +171,9 @@ No modules.
 | <a name="input_backup_retention_days"></a> [backup\_retention\_days](#input\_backup\_retention\_days) | Backup retention in days (1-35) | `number` | `7` | no |
 | <a name="input_db_subnet_id"></a> [db\_subnet\_id](#input\_db\_subnet\_id) | ID of the database subnet (from networking module) | `string` | n/a | yes |
 | <a name="input_enforce_production_sku"></a> [enforce\_production\_sku](#input\_enforce\_production\_sku) | Enforce D-series SKU for production (fails if Burstable in prod) | `bool` | `true` | no |
-| <a name="input_entra_admin"></a> [entra\_admin](#input\_entra\_admin) | The server's Microsoft Entra administrator: login (the MySQL user name, at most 32 characters), the principal's object ID and the tenant ID. Used only while entra\_admin\_enabled is true. | <pre>object({<br/>    login     = string<br/>    object_id = string<br/>    tenant_id = string<br/>  })</pre> | `null` | no |
+| <a name="input_entra_admin"></a> [entra\_admin](#input\_entra\_admin) | The server's Microsoft Entra administrator: login (the MySQL user name, at most 32 characters), object\_id and tenant\_id. Used only while entra\_admin\_enabled is true. object\_id is passed to the provider exactly as given; the module does not translate it. The azurerm documentation names the identity's client ID for a managed identity, while the design rehearsal on a real server set the administrator by the identity's principal (object) ID and it worked, so confirm on the first apply on a non-production server and use the value that proves out for you. | <pre>object({<br/>    login     = string<br/>    object_id = string<br/>    tenant_id = string<br/>  })</pre> | `null` | no |
 | <a name="input_entra_admin_enabled"></a> [entra\_admin\_enabled](#input\_entra\_admin\_enabled) | Attach entra\_server\_identity to the server and set entra\_admin as its Microsoft Entra administrator. Off by default. Both are in-place changes in azurerm 5.x; neither replaces the server. Requires entra\_server\_identity and entra\_admin. | `bool` | `false` | no |
+| <a name="input_entra_admin_wait_seconds"></a> [entra\_admin\_wait\_seconds](#input\_entra\_admin\_wait\_seconds) | Seconds to wait after the server and its identity exist and before the Entra administrator is created, because a freshly attached identity can still be propagating and the API then fails transiently. Used only while entra\_admin\_enabled is true; 0 skips the wait. The pause happens once, when it is first created. | `number` | `30` | no |
 | <a name="input_entra_server_identity"></a> [entra\_server\_identity](#input\_entra\_server\_identity) | The user-assigned identity the server uses to validate Microsoft Entra tokens: its resource ID, client ID and principal ID. Used only while entra\_admin\_enabled is true, and only its id is read. With Layout A it needs the Microsoft Graph permissions User.Read.All, GroupMember.Read.All and Application.Read.All, granted by the caller; with Layout B (the administrator is the app's own identity) it needs none. | <pre>object({<br/>    id           = string<br/>    client_id    = string<br/>    principal_id = string<br/>  })</pre> | `null` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name (nonprod or production) | `string` | n/a | yes |
 | <a name="input_geo_redundant_backup"></a> [geo\_redundant\_backup](#input\_geo\_redundant\_backup) | Enable geo-redundant backup (recommended for production). FORCES REPLACEMENT: azurerm can only set this at creation, so changing it on an existing server destroys and recreates it. Choose at creation time. | `bool` | `false` | no |

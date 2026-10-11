@@ -15,5 +15,10 @@ terraform {
       source  = "hashicorp/null"
       version = ">= 3.2.0, < 4.0"
     }
+    # The same bound as modules/wordpress-site: Terraform intersects the two, so they must agree.
+    time = {
+      source  = "hashicorp/time"
+      version = ">= 0.9.0, < 1.0"
+    }
   }
 }

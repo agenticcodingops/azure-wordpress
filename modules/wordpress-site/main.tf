@@ -130,6 +130,19 @@ locals {
     [for name, secret_name in var.extra_secret_app_settings : name if contains(["CACHE_MYSQL_ACCESS_TOKEN", "DB_SSL_CONNECTION"], name)]
   )
 
+  # Settings the stages own. extra_app_settings is merged last in the app-service module, so a
+  # caller's value for one of these names would win over the staged value. Checked in both
+  # extra maps, because a Key Vault reference would win just the same. Stage 2 owns the three
+  # login settings; stage 3 owns DATABASE_PASSWORD.
+  mysql_entra_stage2_owned_overrides = distinct(concat(
+    [for name in keys(coalesce(var.app_service.extra_app_settings, {})) : name if contains(["ENABLE_MYSQL_MANAGED_IDENTITY", "ENTRA_CLIENT_ID", "DATABASE_USERNAME"], name)],
+    [for name in keys(var.extra_secret_app_settings) : name if contains(["ENABLE_MYSQL_MANAGED_IDENTITY", "ENTRA_CLIENT_ID", "DATABASE_USERNAME"], name)]
+  ))
+  mysql_entra_stage3_owned_overrides = distinct(concat(
+    [for name in keys(coalesce(var.app_service.extra_app_settings, {})) : name if name == "DATABASE_PASSWORD"],
+    [for name in keys(var.extra_secret_app_settings) : name if name == "DATABASE_PASSWORD"]
+  ))
+
   # Key Vault lifecycle defaults with environment-aware settings.
   # Purge protection is a production control: on nonprod, which is destroyed and rebuilt
   # deliberately, it buys nothing and locks the vault name for the full retention window
@@ -276,6 +289,16 @@ resource "azurerm_resource_group" "main" {
       error_message = "mysql_entra_stage_app_switch_enabled (stage 2) cannot be combined with these app settings: CACHE_MYSQL_ACCESS_TOKEN=true (the token cache starts a PHP session on every request and writes the token to a file), DB_SSL_CONNECTION=false (TLS off), or either name in extra_secret_app_settings (a Key Vault value cannot be checked). Remove them from app_service.extra_app_settings or extra_secret_app_settings."
     }
 
+    precondition {
+      condition     = !var.mysql_entra_stage_app_switch_enabled || length(local.mysql_entra_stage2_owned_overrides) == 0
+      error_message = "mysql_entra_stage_app_switch_enabled (stage 2) sets ENABLE_MYSQL_MANAGED_IDENTITY, ENTRA_CLIENT_ID and DATABASE_USERNAME itself, and app_service.extra_app_settings or extra_secret_app_settings would override the staged value. Remove: ${join(", ", local.mysql_entra_stage2_owned_overrides)}."
+    }
+
+    precondition {
+      condition     = !var.mysql_entra_stage_drop_password_enabled || length(local.mysql_entra_stage3_owned_overrides) == 0
+      error_message = "mysql_entra_stage_drop_password_enabled (stage 3) removes DATABASE_PASSWORD from the production app, and app_service.extra_app_settings or extra_secret_app_settings would put it back. Remove: ${join(", ", local.mysql_entra_stage3_owned_overrides)}."
+    }
+
     # The slot always logs in with the password, so it still needs password logins.
     precondition {
       condition     = !var.mysql_entra_stage_aad_only_enabled || !local.app_config.staging_slot_enabled
@@ -404,6 +427,7 @@ module "database" {
   entra_admin_enabled      = var.mysql_entra_stage_identity_enabled
   entra_server_identity    = var.mysql_entra_server_identity
   entra_admin              = var.mysql_entra_admin
+  entra_admin_wait_seconds = var.mysql_entra_admin_wait_seconds
   aad_auth_only_enabled    = var.mysql_entra_stage_aad_only_enabled
   require_secure_transport = var.mysql_require_secure_transport
 

@@ -123,11 +123,27 @@ resource "azurerm_mysql_flexible_server_configuration" "require_secure_transport
 resource "azurerm_mysql_flexible_server_active_directory_administrator" "main" {
   count = var.entra_admin_enabled ? 1 : 0
 
-  server_id   = azurerm_mysql_flexible_server.main.id
+  server_id = azurerm_mysql_flexible_server.main.id
+  # Passed on exactly as given: the module does not translate it. See the entra_admin input.
   identity_id = var.entra_server_identity.id
   login       = var.entra_admin.login
   object_id   = var.entra_admin.object_id
   tenant_id   = var.entra_admin.tenant_id
+
+  depends_on = [time_sleep.entra_admin_identity]
+}
+
+# A pause between attaching the identity to the server and creating the administrator. On a
+# first apply the identity can still be propagating when the administrator is created, and the
+# API then fails transiently; the AVM MySQL module has active_directory_administrator_wait_seconds
+# for the same reason. Exists only with the administrator, and only when the wait is above 0.
+# It has no triggers, so it runs once, when it is created, and never delays a later plan.
+resource "time_sleep" "entra_admin_identity" {
+  count = var.entra_admin_enabled && var.entra_admin_wait_seconds > 0 ? 1 : 0
+
+  create_duration = "${var.entra_admin_wait_seconds}s"
+
+  depends_on = [azurerm_mysql_flexible_server.main]
 }
 
 # Stage 4: password logins stop working. Created only when the flag is true; deleting the

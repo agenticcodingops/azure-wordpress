@@ -120,7 +120,7 @@ variable "mysql_entra_server_identity" {
 }
 
 variable "mysql_entra_admin" {
-  description = "The MySQL server's Microsoft Entra administrator: login (the MySQL user name, at most 32 characters), object_id (the principal's object ID) and tenant_id. Used from stage 1. Layout B is object_id equal to mysql_entra_app_identity.principal_id, with mysql_entra_app_database_user equal to login; Layout A uses different values. Null (the default) means unused."
+  description = "The MySQL server's Microsoft Entra administrator: login (the MySQL user name, at most 32 characters), object_id and tenant_id. Used from stage 1. The module passes object_id to the provider exactly as given and does not translate it. The azurerm documentation says that for a managed identity it should be the identity's client ID; the design rehearsal on a real server set the administrator by the identity's principal (object) ID and it worked. Confirm on the first stage-1 apply on a non-production server, and use the value that proves out for you. Layout B is the administrator and the app being the same identity: object_id equal to mysql_entra_app_identity.principal_id when the principal ID is the proven value, or mysql_entra_app_identity.client_id when the client ID is, with mysql_entra_app_database_user equal to login. Layout A uses different values. Null (the default) means unused."
   type = object({
     login     = string
     object_id = string
@@ -162,15 +162,27 @@ variable "mysql_entra_stage_identity_enabled" {
   nullable    = false
 }
 
+variable "mysql_entra_admin_wait_seconds" {
+  description = "Seconds to wait between attaching the server identity and creating the Entra administrator at stage 1, because a freshly attached identity can still be propagating and the API then fails transiently. Applies only while mysql_entra_stage_identity_enabled is true, and once, when the administrator is first created. 0 skips the wait. The default is 30."
+  type        = number
+  default     = 30
+  nullable    = false
+
+  validation {
+    condition     = var.mysql_entra_admin_wait_seconds >= 0 && var.mysql_entra_admin_wait_seconds <= 300 && floor(var.mysql_entra_admin_wait_seconds) == var.mysql_entra_admin_wait_seconds
+    error_message = "mysql_entra_admin_wait_seconds must be a whole number from 0 to 300."
+  }
+}
+
 variable "mysql_entra_stage_app_switch_enabled" {
-  description = "Stage 2, off by default; requires mysql_entra_stage_identity_enabled and mysql_entra_app_database_user. Sets ENABLE_MYSQL_MANAGED_IDENTITY=true, ENTRA_CLIENT_ID and DATABASE_USERNAME on the production app, so the image logs in with a token. The container restarts; on the Microsoft image that was measured with no failed request. With a staging slot, those names, and DATABASE_PASSWORD, become sticky and the slot keeps its password settings. Rejects app_service.extra_app_settings and extra_secret_app_settings that set CACHE_MYSQL_ACCESS_TOKEN=true (the token cache starts a PHP session on every request and writes the token to a file) or DB_SSL_CONNECTION=false (TLS off). To go back, switch stages 4 and 3 off first, then this one: the app needs its password setting back before the username does."
+  description = "Stage 2, off by default; requires mysql_entra_stage_identity_enabled and mysql_entra_app_database_user. Sets ENABLE_MYSQL_MANAGED_IDENTITY=true, ENTRA_CLIENT_ID and DATABASE_USERNAME on the production app, so the image logs in with a token. The container restarts; on the Microsoft image that was measured with no failed request. With a staging slot, those names, and DATABASE_PASSWORD, become sticky and the slot keeps its password settings. Rejects app_service.extra_app_settings and extra_secret_app_settings that set CACHE_MYSQL_ACCESS_TOKEN=true (the token cache starts a PHP session on every request and writes the token to a file) or DB_SSL_CONNECTION=false (TLS off), and any that name ENABLE_MYSQL_MANAGED_IDENTITY, ENTRA_CLIENT_ID or DATABASE_USERNAME, which would override the staged value. Before turning it on, check that the site's wp-config.php carries the image's managed-identity block (see the README). To go back, switch stages 4 and 3 off first, then this one: the app needs its password setting back before the username does."
   type        = bool
   default     = false
   nullable    = false
 }
 
 variable "mysql_entra_stage_drop_password_enabled" {
-  description = "Stage 3, off by default; requires mysql_entra_stage_app_switch_enabled. Removes DATABASE_PASSWORD from the production app. The db-password Key Vault secret is still written, because the way back needs it, and the staging slot keeps its DATABASE_PASSWORD. Turn it off again, and apply, before turning stage 2 off."
+  description = "Stage 3, off by default; requires mysql_entra_stage_app_switch_enabled. Removes DATABASE_PASSWORD from the production app, and rejects extra settings that name DATABASE_PASSWORD, which would put it back. The db-password Key Vault secret is still written, because the way back needs it, and the staging slot keeps its DATABASE_PASSWORD. Turn it off again, and apply, before turning stage 2 off."
   type        = bool
   default     = false
   nullable    = false
