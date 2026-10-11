@@ -16,3 +16,6 @@ cloudflare_api_token  = "your-cloudflare-api-token"
 cloudflare_account_id = "your-cloudflare-account-id"
 cloudflare_domain     = "example.com"
 cloudflare_subdomain  = "blog"
+# Enable after configuring the edge transform rule. Keep this value in a secret store.
+# cdn_origin_header_name   = "x_azure_fdid"
+# cdn_origin_header_values = ["xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"]

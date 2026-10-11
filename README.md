@@ -25,7 +25,9 @@ One call to `modules/wordpress-site` deploys one site:
   (`direct`, the default). Only one is created. Cloudflare records and rules also need `cloudflare.enabled = true`.
   With a CDN, the main site denies traffic that matches no rule. With Cloudflare it allows Cloudflare's address
   ranges, which every Cloudflare account shares, so they admit Cloudflare and not only your zone, and Azure's
-  `168.63.129.16` address. With Front Door and `front_door.enabled` true (the default), a patch
+  `168.63.129.16` address. Optionally set `app_service.cdn_origin_header_name` and the sensitive top-level
+  `cdn_origin_header_values` to require a zone-specific header on every Cloudflare address rule for both the app
+  and its staging slot. With Front Door and `front_door.enabled` true (the default), a patch
   that runs after Front Door is created narrows it to your own Front Door profile and drops the `168.63.129.16`
   rule. The web app resource does not ignore that change, so a later apply is expected to restore the module's own
   rules: any Front Door profile, with no `X-Azure-FDID` check, plus `168.63.129.16`. Nothing guarantees that the
@@ -222,7 +224,8 @@ Prices for each SKU, with their date and region, are in the [cost guide](docs/co
 - **Firewalls**: Key Vault and Storage deny public data-plane access by default; the App Service subnet is allowed
   through service endpoints
 - **IP Restrictions**: With `cloudflare`, the main site accepts Cloudflare's address ranges, which every Cloudflare
-  account shares, and Azure's `168.63.129.16` address. With `azure_front_door` and `front_door.enabled` true (the
+  account shares, and Azure's `168.63.129.16` address. The optional CDN origin header binds those shared address
+  rules to requests carrying your bearer secret. With `azure_front_door` and `front_door.enabled` true (the
   default), the patch applied after Front Door is created makes it accept only your Front Door profile and drops
   the `168.63.129.16` rule. A later apply is expected to restore the module's own rules (any Front Door profile, plus `168.63.129.16`), and nothing
   guarantees the patch runs again. The staging slot accepts any Front Door profile. With

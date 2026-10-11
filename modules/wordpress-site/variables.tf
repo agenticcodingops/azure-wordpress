@@ -272,6 +272,20 @@ variable "app_service_storage_plugin_app_settings_enabled" {
   nullable    = false
 }
 
+variable "cdn_origin_header_values" {
+  description = "Values accepted in the optional CDN origin header. Supply 1 to 8 values when app_service.cdn_origin_header_name is set. Treat them as bearer secrets."
+  type        = list(string)
+  default     = []
+  sensitive   = true
+}
+
+variable "app_service_ip_security_audit_logs_enabled" {
+  description = "Send AppServiceIPSecAuditLogs to the site's Log Analytics workspace. Off by default."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 # App Service configuration
 variable "app_service" {
   description = "App Service configuration"
@@ -287,8 +301,14 @@ variable "app_service" {
     sticky_connection_string_names = optional(list(string), [])
     staging_app_settings_override  = optional(map(string), {})
     staging_always_on              = optional(bool, false)
+    cdn_origin_header_name         = optional(string)
   })
   default = {}
+
+  validation {
+    condition     = var.app_service.cdn_origin_header_name == null ? true : contains(["x_azure_fdid", "x_forwarded_host"], var.app_service.cdn_origin_header_name)
+    error_message = "app_service.cdn_origin_header_name must be null, \"x_azure_fdid\" or \"x_forwarded_host\"."
+  }
 }
 
 # Shared resource group for App Service (required when use_shared_plan = true)

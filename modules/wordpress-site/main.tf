@@ -498,8 +498,10 @@ module "app_service" {
   # CDN provider configuration - controls IP restrictions
   # NOTE: front_door_id is NOT passed here to avoid circular dependency
   # The azapi_update_resource below updates IP restrictions after Front Door is created
-  cdn_provider       = var.cdn_provider
-  front_door_enabled = local.fd_config.enabled
+  cdn_provider             = var.cdn_provider
+  front_door_enabled       = local.fd_config.enabled
+  cdn_origin_header_name   = var.app_service.cdn_origin_header_name
+  cdn_origin_header_values = var.cdn_origin_header_values
 
   # Live Cloudflare IP ranges fetched at apply time — keeps origin restrictions current
   # as Cloudflare adds new egress CIDRs. Null when not using Cloudflare (falls back to
@@ -598,6 +600,13 @@ resource "azurerm_monitor_diagnostic_setting" "app_service" {
 
   enabled_log {
     category = "AppServicePlatformLogs"
+  }
+
+  dynamic "enabled_log" {
+    for_each = var.app_service_ip_security_audit_logs_enabled ? [1] : []
+    content {
+      category = "AppServiceIPSecAuditLogs"
+    }
   }
 
   # Metrics
