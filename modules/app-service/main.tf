@@ -23,6 +23,10 @@ locals {
   # in depth - it keeps the guard correct if that regex is ever widened.
   sku_supports_slots = can(regex("^(S|P)[0-9]", var.sku_name))
 
+  # The slot exists only when the SKU supports one AND the caller has not opted out.
+  # staging_slot_enabled defaults to true, so every earlier release's plan is unchanged.
+  create_staging_slot = local.sku_supports_slots && var.staging_slot_enabled
+
   # CDN provider detection (support both new cdn_provider and legacy front_door_enabled)
   # Priority: cdn_provider > front_door_enabled
   effective_cdn_provider = var.cdn_provider != "none" ? var.cdn_provider : (var.front_door_enabled ? "azure_front_door" : "direct")
@@ -346,9 +350,10 @@ resource "azurerm_linux_web_app" "main" {
 }
 
 # Staging Deployment Slot
-# Only create for Standard (S*) and Premium (P*) SKUs - Basic tier doesn't support slots
+# Only create for Standard (S*) and Premium (P*) SKUs - Basic tier doesn't support slots -
+# and only while staging_slot_enabled is true (the default).
 resource "azurerm_linux_web_app_slot" "staging" {
-  count = local.sku_supports_slots ? 1 : 0
+  count = local.create_staging_slot ? 1 : 0
 
   name           = "staging"
   app_service_id = azurerm_linux_web_app.main.id

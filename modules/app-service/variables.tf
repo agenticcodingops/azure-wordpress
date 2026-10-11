@@ -301,6 +301,13 @@ variable "staging_always_on" {
   default     = false
 }
 
+variable "staging_slot_enabled" {
+  description = "Create the staging deployment slot when the SKU supports one (S* and P*). Defaults to true, which keeps the behaviour of every earlier release. false creates no slot on any SKU, and on an existing deployment destroys the slot together with its managed identity; the staging_slot_* outputs are then null."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
 variable "cloudflare_ipv4_cidr_blocks" {
   description = "Cloudflare IPv4 CIDR blocks for origin IP restrictions. When null, uses the built-in fallback list. Pass data.cloudflare_ip_ranges.current[0].ipv4_cidrs for live updates."
   type        = list(string)

@@ -83,6 +83,11 @@ output "staging_slot_principal_id" {
   value       = module.app_service.staging_slot_principal_id
 }
 
+output "staging_slot_enabled" {
+  description = "Whether the staging slot is created: app_service.staging_slot_enabled is true and the SKU is S* or P*. Known at plan time; staging_slot_hostname and staging_slot_principal_id are null when this is false."
+  value       = module.app_service.staging_slot_enabled
+}
+
 # Key Vault outputs
 output "key_vault_id" {
   description = "Key Vault ID"

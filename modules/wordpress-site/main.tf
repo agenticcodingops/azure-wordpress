@@ -127,6 +127,11 @@ locals {
     always_on         = coalesce(var.app_service.always_on, true)
     health_check_path = coalesce(var.app_service.health_check_path, "/wp-includes/images/blank.gif")
     worker_count      = coalesce(var.app_service.worker_count, 1)
+    # The staging slot exists only on an S*/P* SKU, and only unless the caller opts out. This is
+    # the app-service module's own slot predicate on the SKU it receives (local.effective_sku), so
+    # the slot's Key Vault policy, diagnostic setting and check agree with the slot's count. Never
+    # count on staging_slot_id or staging_slot_principal_id: both are unknown until the slot exists.
+    staging_slot_enabled = coalesce(var.app_service.staging_slot_enabled, true) && can(regex("^(S|P)[0-9]", local.effective_sku))
   }
 
   # Resource group for App Service
@@ -494,6 +499,7 @@ module "app_service" {
   sticky_connection_string_names = coalesce(var.app_service.sticky_connection_string_names, [])
   staging_app_settings_override  = coalesce(var.app_service.staging_app_settings_override, {})
   staging_always_on              = coalesce(var.app_service.staging_always_on, false)
+  staging_slot_enabled           = coalesce(var.app_service.staging_slot_enabled, true)
 
   # CDN provider configuration - controls IP restrictions
   # NOTE: front_door_id is NOT passed here to avoid circular dependency
@@ -548,11 +554,11 @@ resource "azurerm_key_vault_access_policy" "app_service_update" {
 
 # Key Vault access policy for staging slot managed identity
 resource "azurerm_key_vault_access_policy" "staging_slot" {
-  # Count on the SKU, not on staging_slot_principal_id: that ID is unknown until the slot
-  # exists, so on S*/P* a greenfield plan fails with "Invalid count argument". This mirrors
-  # the app-service module's local.sku_supports_slots on the exact SKU it receives
-  # (local.sku_supports_slots is defined in monitoring.tf).
-  count = local.sku_supports_slots ? 1 : 0
+  # Count on the SKU and the opt-out flag, not on staging_slot_principal_id: that ID is unknown
+  # until the slot exists, so on S*/P* a greenfield plan fails with "Invalid count argument".
+  # local.app_config.staging_slot_enabled mirrors the app-service module's own slot predicate on
+  # the exact SKU it receives, so this policy exists exactly when the slot does.
+  count = local.app_config.staging_slot_enabled ? 1 : 0
 
   key_vault_id = module.key_vault.id
   tenant_id    = var.tenant_id
