@@ -101,35 +101,70 @@ resource "azurerm_storage_container" "additional" {
 }
 
 # Lifecycle Management Policy (Infracost FinOps requirement)
-# Configurable tiering and version cleanup
+# Configurable tiering and version cleanup. An account holds one policy, so the backup
+# container's version expiry (backup_container_lifecycle) is a second rule of this same
+# resource, and the resource exists when either rule is wanted. The uploads rule is
+# unchanged; it is only wrapped so the policy can carry the backup rule on its own.
+locals {
+  backup_lifecycle_rule_enabled = var.backup_container_lifecycle != null
+}
+
 resource "azurerm_storage_management_policy" "lifecycle" {
-  count = var.lifecycle_policy_enabled ? 1 : 0
+  count = var.lifecycle_policy_enabled || local.backup_lifecycle_rule_enabled ? 1 : 0
 
   storage_account_id = azurerm_storage_account.main.id
 
-  rule {
-    name    = "lifecycle-tiering-and-cleanup"
-    enabled = true
+  dynamic "rule" {
+    for_each = var.lifecycle_policy_enabled ? [1] : []
+    content {
+      name    = "lifecycle-tiering-and-cleanup"
+      enabled = true
 
-    filters {
-      prefix_match = var.lifecycle_prefix_match
-      blob_types   = ["blockBlob"]
+      filters {
+        prefix_match = var.lifecycle_prefix_match
+        blob_types   = ["blockBlob"]
+      }
+
+      actions {
+        # Move to cool tier if not accessed for N days
+        base_blob {
+          tier_to_cool_after_days_since_last_access_time_greater_than = var.lifecycle_cool_tier_days
+        }
+
+        # Delete old versions after N days
+        version {
+          delete_after_days_since_creation = var.lifecycle_version_delete_days
+        }
+
+        # Delete old snapshots after N days
+        snapshot {
+          delete_after_days_since_creation_greater_than = var.lifecycle_snapshot_delete_days
+        }
+      }
     }
+  }
 
-    actions {
-      # Move to cool tier if not accessed for N days
-      base_blob {
-        tier_to_cool_after_days_since_last_access_time_greater_than = var.lifecycle_cool_tier_days
+  # Expire the previous versions and snapshots that App Service's own retention leaves
+  # behind in the backup container. Base blobs are left to App Service.
+  dynamic "rule" {
+    for_each = local.backup_lifecycle_rule_enabled ? [var.backup_container_lifecycle] : []
+    content {
+      name    = "backup-version-cleanup"
+      enabled = true
+
+      filters {
+        prefix_match = ["${rule.value.container_name}/"]
+        blob_types   = ["blockBlob"]
       }
 
-      # Delete old versions after N days
-      version {
-        delete_after_days_since_creation = var.lifecycle_version_delete_days
-      }
+      actions {
+        version {
+          delete_after_days_since_creation = rule.value.retention_days
+        }
 
-      # Delete old snapshots after N days
-      snapshot {
-        delete_after_days_since_creation_greater_than = var.lifecycle_snapshot_delete_days
+        snapshot {
+          delete_after_days_since_creation_greater_than = rule.value.retention_days
+        }
       }
     }
   }

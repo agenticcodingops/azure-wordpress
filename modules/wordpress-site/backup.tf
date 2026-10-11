@@ -17,19 +17,31 @@
 # Terraform defer the read whenever anything it depends on, directly or indirectly,
 # has a pending change. The container check sits on azurerm_resource_group.main.
 
-# The SAS start. time_rotating keeps its timestamp in state and proposes a replacement
-# only once sas_rotation_days have passed, so the SAS is stable between rotations and
-# the first plan after the rotation date shows the replacement. timestamp() would
-# re-issue the SAS on every plan.
+# The rotation timestamp the SAS window hangs off. time_rotating keeps it in state and
+# proposes a replacement only once sas_rotation_days have passed, so the SAS is stable
+# between rotations and the first plan after the rotation date shows the replacement.
+# timestamp() would re-issue the SAS on every plan.
 resource "time_rotating" "backup_sas" {
   count = var.app_service_backup_enabled ? 1 : 0
 
   rotation_days = var.app_service_backup.sas_rotation_days
 }
 
-# The SAS expiry, measured from the same start. The validation on app_service_backup
-# keeps validity at least twice the rotation interval, so the SAS a rotation replaces
-# stays valid for at least one more interval while the rotation waits to be applied.
+# The SAS start: the rotation timestamp backdated by 15 minutes, as Microsoft's SAS
+# guidance asks, so clock skew between App Service and the storage service cannot make
+# a freshly issued SAS invalid. Derived from the rotation timestamp, so it is as stable
+# as the rotation itself.
+resource "time_offset" "backup_sas_start" {
+  count = var.app_service_backup_enabled ? 1 : 0
+
+  base_rfc3339   = time_rotating.backup_sas[0].rfc3339
+  offset_minutes = -15
+}
+
+# The SAS expiry, measured from the rotation timestamp. The validation on
+# app_service_backup keeps validity at least twice the rotation interval, so the SAS a
+# rotation replaces stays valid for at least one more interval while the rotation
+# waits to be applied.
 resource "time_offset" "backup_sas_expiry" {
   count = var.app_service_backup_enabled ? 1 : 0
 
@@ -49,7 +61,7 @@ data "azurerm_storage_account_blob_container_sas" "backup" {
   container_name    = var.app_service_backup.container_name
   https_only        = true
 
-  start  = time_rotating.backup_sas[0].rfc3339
+  start  = time_offset.backup_sas_start[0].rfc3339
   expiry = time_offset.backup_sas_expiry[0].rfc3339
 
   permissions {

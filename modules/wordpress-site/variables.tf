@@ -324,7 +324,7 @@ variable "app_service_backup_enabled" {
 }
 
 variable "app_service_backup" {
-  description = "Settings of the scheduled App Service backup that app_service_backup_enabled turns on. container_name (default wp-backups) is the target, which must be a private entry of storage.additional_containers. frequency_interval and frequency_unit (Day or Hour), retention_period_days (0 keeps backups indefinitely), keep_at_least_one_backup and start_time (RFC 3339; null starts the schedule when it is configured) map to the web app's backup block. sas_validity_days and sas_rotation_days shape the container SAS the module generates: valid for sas_validity_days from issue and re-issued by the first plan after sas_rotation_days, so validity must be at least twice the rotation interval (the defaults are a year and six months)."
+  description = "Settings of the scheduled App Service backup that app_service_backup_enabled turns on. container_name (default wp-backups) is the target, which must be a private entry of storage.additional_containers; while retention_period_days is finite, the account's lifecycle policy also expires that container's previous versions and snapshots after the same number of days. frequency_interval and frequency_unit (Day, or Hour with an interval of at least 2: App Service allows one custom backup every 2 hours at most), retention_period_days (0 keeps backups indefinitely), keep_at_least_one_backup and start_time (RFC 3339; null starts the schedule when it is configured) map to the web app's backup block. sas_validity_days and sas_rotation_days shape the container SAS the module generates: it starts 15 minutes before the rotation timestamp, is valid for sas_validity_days from that timestamp, and is re-issued by the first plan after sas_rotation_days, so validity must be at least twice the rotation interval (the defaults are a year and six months)."
   type = object({
     container_name           = optional(string, "wp-backups")
     frequency_interval       = optional(number, 1)
@@ -338,9 +338,11 @@ variable "app_service_backup" {
   default  = {}
   nullable = false
 
+  # Azure's container naming rules, the same rule the storage module applies to
+  # additional_containers keys.
   validation {
-    condition     = can(regex("^[a-z0-9][a-z0-9-]{2,62}$", var.app_service_backup.container_name))
-    error_message = "app_service_backup.container_name must be 3-63 characters of lowercase letters, digits and hyphens."
+    condition     = length(var.app_service_backup.container_name) >= 3 && length(var.app_service_backup.container_name) <= 63 && can(regex("^[a-z0-9]([a-z0-9]|-[a-z0-9])*$", var.app_service_backup.container_name))
+    error_message = "app_service_backup.container_name must be a valid container name: 3-63 lowercase letters, digits and hyphens, starting and ending with a letter or digit, with no consecutive hyphens."
   }
 
   validation {
@@ -351,6 +353,12 @@ variable "app_service_backup" {
   validation {
     condition     = contains(["Day", "Hour"], var.app_service_backup.frequency_unit)
     error_message = "app_service_backup.frequency_unit must be \"Day\" or \"Hour\"."
+  }
+
+  # App Service allows one custom backup every 2 hours at most (12 a day).
+  validation {
+    condition     = var.app_service_backup.frequency_unit == "Hour" ? var.app_service_backup.frequency_interval >= 2 : true
+    error_message = "app_service_backup.frequency_interval must be at least 2 when frequency_unit is \"Hour\": App Service allows one custom backup every 2 hours at most."
   }
 
   validation {

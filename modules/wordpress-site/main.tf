@@ -360,6 +360,15 @@ module "storage" {
   lifecycle_snapshot_delete_days  = var.storage.lifecycle_snapshot_delete_days
   lifecycle_prefix_match          = var.storage.lifecycle_prefix_match
 
+  # With blob versioning on, a backup App Service deletes at the end of its retention
+  # survives as a previous version; this second lifecycle rule expires those versions
+  # (and snapshots) after the same number of days. Nothing when the backup is off or
+  # retention is indefinite.
+  backup_container_lifecycle = var.app_service_backup_enabled && var.app_service_backup.retention_period_days > 0 ? {
+    container_name = var.app_service_backup.container_name
+    retention_days = var.app_service_backup.retention_period_days
+  } : null
+
   # Data-plane network rules.
   # The App Service subnet is always allow-listed (it carries the Microsoft.Storage
   # service endpoint), so the WordPress plugin can read and write media.

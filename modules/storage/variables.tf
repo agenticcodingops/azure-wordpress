@@ -132,6 +132,41 @@ variable "additional_containers" {
     ])
     error_message = "Container access_type must be 'private', 'blob', or 'container'."
   }
+
+  # Azure's container naming rules, checked at plan rather than at apply. The same
+  # rule guards the composition's app_service_backup.container_name.
+  validation {
+    condition = alltrue([
+      for name in keys(var.additional_containers) :
+      length(name) >= 3 && length(name) <= 63 && can(regex("^[a-z0-9]([a-z0-9]|-[a-z0-9])*$", name))
+    ])
+    error_message = "Each additional_containers key must be a valid container name: 3-63 lowercase letters, digits and hyphens, starting and ending with a letter or digit, with no consecutive hyphens."
+  }
+}
+
+# Version and snapshot expiry for a container that receives App Service backups. The
+# composition passes it when the scheduled backup is on with a finite retention. With
+# blob versioning on (the default), a backup App Service deletes at the end of its
+# retention becomes a previous version that nothing reclaims; this rule expires those
+# versions, and any snapshots, after the same number of days. It never touches base
+# blobs: App Service owns the backups' own retention.
+variable "backup_container_lifecycle" {
+  description = "Expire previous versions and snapshots in one container after retention_days, as a second rule of the lifecycle management policy; null (the default) adds no rule. Meant for the container that receives App Service backups: the policy's uploads rule is unchanged, and the policy exists whenever this is set, even with lifecycle_policy_enabled = false."
+  type = object({
+    container_name = string
+    retention_days = number
+  })
+  default = null
+
+  validation {
+    condition     = var.backup_container_lifecycle == null ? true : (length(var.backup_container_lifecycle.container_name) >= 3 && length(var.backup_container_lifecycle.container_name) <= 63 && can(regex("^[a-z0-9]([a-z0-9]|-[a-z0-9])*$", var.backup_container_lifecycle.container_name)))
+    error_message = "backup_container_lifecycle.container_name must be a valid container name: 3-63 lowercase letters, digits and hyphens, starting and ending with a letter or digit, with no consecutive hyphens."
+  }
+
+  validation {
+    condition     = var.backup_container_lifecycle == null ? true : (var.backup_container_lifecycle.retention_days >= 1 && floor(var.backup_container_lifecycle.retention_days) == var.backup_container_lifecycle.retention_days)
+    error_message = "backup_container_lifecycle.retention_days must be a whole number of days, at least 1."
+  }
 }
 
 variable "versioning_enabled" {

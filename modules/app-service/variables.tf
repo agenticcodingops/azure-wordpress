@@ -331,7 +331,7 @@ variable "backup_storage_account_url" {
 }
 
 variable "backup_frequency_interval" {
-  description = "How often the backup runs, in backup_frequency_unit units: 1 with Day is daily, 7 with Day is weekly."
+  description = "How often the backup runs, in backup_frequency_unit units: 1 with Day is daily, 7 with Day is weekly. With Hour it must be at least 2: App Service allows one custom backup every 2 hours at most, 12 a day."
   type        = number
   default     = 1
   nullable    = false

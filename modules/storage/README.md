@@ -111,6 +111,18 @@ over hardcoding, since the ranges change occasionally.
 > ranges cannot be expressed here. Azure also rejects `/31` and `/32` prefixes — pass a
 > bare IP address instead.
 
+## Backup container lifecycle
+
+`backup_container_lifecycle = { container_name, retention_days }` (default `null`) adds a second rule,
+`backup-version-cleanup`, to the lifecycle management policy, scoped to that one container: previous versions
+and snapshots are deleted `retention_days` after they were created, base blobs are untouched. The
+`wordpress-site` composition sets it for the App Service backup container while the backup's retention is
+finite, because with versioning on, a backup App Service deletes at the end of its retention would otherwise
+survive as a previous version for ever. The uploads rule is unchanged, and the policy exists while this rule is
+set even with `lifecycle_policy_enabled = false`. Container names, here and in `additional_containers`, must
+follow Azure's rules: 3-63 lowercase letters, digits and hyphens, starting and ending with a letter or digit,
+with no consecutive hyphens.
+
 ## Validation Rules
 
 The module enforces these validations at plan time:
@@ -157,6 +169,7 @@ No modules.
 | <a name="input_account_replication_type"></a> [account\_replication\_type](#input\_account\_replication\_type) | Storage account replication type | `string` | `"LRS"` | no |
 | <a name="input_account_tier"></a> [account\_tier](#input\_account\_tier) | Storage account tier (Standard or Premium) | `string` | `"Standard"` | no |
 | <a name="input_additional_containers"></a> [additional\_containers](#input\_additional\_containers) | Map of additional blob containers to create (e.g., wp-backups for UpdraftPlus) | <pre>map(object({<br/>    access_type = optional(string, "private")<br/>  }))</pre> | `{}` | no |
+| <a name="input_backup_container_lifecycle"></a> [backup\_container\_lifecycle](#input\_backup\_container\_lifecycle) | Expire previous versions and snapshots in one container after retention\_days, as a second rule of the lifecycle management policy; null (the default) adds no rule. Meant for the container that receives App Service backups: the policy's uploads rule is unchanged, and the policy exists whenever this is set, even with lifecycle\_policy\_enabled = false. | <pre>object({<br/>    container_name = string<br/>    retention_days = number<br/>  })</pre> | `null` | no |
 | <a name="input_blob_delete_retention_days"></a> [blob\_delete\_retention\_days](#input\_blob\_delete\_retention\_days) | Number of days to retain soft-deleted blobs (1-365) | `number` | `30` | no |
 | <a name="input_container_delete_retention_days"></a> [container\_delete\_retention\_days](#input\_container\_delete\_retention\_days) | Number of days to retain soft-deleted containers (1-365) | `number` | `30` | no |
 | <a name="input_container_name"></a> [container\_name](#input\_container\_name) | Name of the blob container for WordPress uploads | `string` | `"wp-uploads"` | no |

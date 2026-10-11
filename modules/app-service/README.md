@@ -199,13 +199,15 @@ staging slot is never backed up. App Service accepts a SAS for this, not a manag
 caller supplies the container SAS URL in `backup_storage_account_url`
 (`https://<account>.blob.core.windows.net/<container>?<sas>`, with read, write, delete and list
 permissions). The URL is sensitive and never an output. `backup_frequency_interval` and
-`backup_frequency_unit` (`Day` or `Hour`), `backup_retention_period_days` (0 keeps backups
-indefinitely), `backup_keep_at_least_one_backup` and `backup_start_time` (RFC 3339) map to the
-`backup` block of `azurerm_linux_web_app`.
+`backup_frequency_unit` (`Day`, or `Hour` with an interval of at least 2: App Service allows one
+custom backup every 2 hours at most), `backup_retention_period_days` (0 keeps backups indefinitely),
+`backup_keep_at_least_one_backup` and `backup_start_time` (RFC 3339) map to the `backup` block of
+`azurerm_linux_web_app`.
 
-With the backup on, the module also sets `virtual_network_backup_restore_enabled`, so the backup and
-any restore travel over the app's VNet integration and the target account can keep denying public
-access. Off, the argument is left at the provider default, so earlier plans are unchanged.
+With the backup on, the module also sets `virtual_network_backup_restore_enabled` on the app and on
+the staging slot when one exists (Azure sets it per slot; the slot gets no backup schedule), so the
+backup and any restore travel over the VNet integration and the target account can keep denying
+public access. Off, the argument is left at the provider default, so earlier plans are unchanged.
 
 Custom backups are capped at 10 GB, include no database, and restore to a new app or slot. The
 `wordpress-site` composition generates and rotates the SAS itself and documents the limits, the
@@ -224,6 +226,7 @@ The module enforces these validations at plan time:
 | `worker_count` | 1-30 | Worker count must be between 1 and 30 |
 | `backup_frequency_unit` | `Day` or `Hour` | backup_frequency_unit must be "Day" or "Hour" |
 | `backup_retention_period_days` | whole number, 0 or more | backup_retention_period_days must be a whole number of days, 0 or more |
+| `backup_frequency_interval` with `Hour` | at least 2 (precondition on the web app) | backup_frequency_interval must be at least 2 when backup_frequency_unit is "Hour" |
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
@@ -260,7 +263,7 @@ No modules.
 | <a name="input_app_insights_connection_string_secret_uri"></a> [app\_insights\_connection\_string\_secret\_uri](#input\_app\_insights\_connection\_string\_secret\_uri) | Key Vault secret URI for App Insights connection string (versionless) | `string` | `""` | no |
 | <a name="input_app_subnet_id"></a> [app\_subnet\_id](#input\_app\_subnet\_id) | ID of the App Service VNet integration subnet (from networking module) | `string` | n/a | yes |
 | <a name="input_backup_enabled"></a> [backup\_enabled](#input\_backup\_enabled) | Schedule a custom App Service backup of the production app to backup\_storage\_account\_url. Off by default. The staging slot is never backed up. Also sets virtual\_network\_backup\_restore\_enabled, so the backup and any restore travel over the app's VNet integration and the target account can keep denying public access. Basic, Standard and Premium SKUs support it. See the README's Backup section. | `bool` | `false` | no |
-| <a name="input_backup_frequency_interval"></a> [backup\_frequency\_interval](#input\_backup\_frequency\_interval) | How often the backup runs, in backup\_frequency\_unit units: 1 with Day is daily, 7 with Day is weekly. | `number` | `1` | no |
+| <a name="input_backup_frequency_interval"></a> [backup\_frequency\_interval](#input\_backup\_frequency\_interval) | How often the backup runs, in backup\_frequency\_unit units: 1 with Day is daily, 7 with Day is weekly. With Hour it must be at least 2: App Service allows one custom backup every 2 hours at most, 12 a day. | `number` | `1` | no |
 | <a name="input_backup_frequency_unit"></a> [backup\_frequency\_unit](#input\_backup\_frequency\_unit) | Unit of backup\_frequency\_interval: Day or Hour. | `string` | `"Day"` | no |
 | <a name="input_backup_keep_at_least_one_backup"></a> [backup\_keep\_at\_least\_one\_backup](#input\_backup\_keep\_at\_least\_one\_backup) | Keep the most recent backup even once it is older than backup\_retention\_period\_days. | `bool` | `true` | no |
 | <a name="input_backup_retention_period_days"></a> [backup\_retention\_period\_days](#input\_backup\_retention\_period\_days) | Days after which a backup is deleted. 0 keeps backups indefinitely. | `number` | `30` | no |

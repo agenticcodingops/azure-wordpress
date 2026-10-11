@@ -375,6 +375,14 @@ resource "azurerm_linux_web_app" "main" {
       error_message = "backup_enabled is true, so backup_storage_account_url must carry the container SAS URL."
     }
 
+    # App Service allows one custom backup every 2 hours at most. A precondition, not a
+    # variable validation: a cross-variable validation needs Terraform 1.9, and this
+    # module supports 1.6.
+    precondition {
+      condition     = var.backup_frequency_unit == "Hour" ? var.backup_frequency_interval >= 2 : true
+      error_message = "backup_frequency_interval must be at least 2 when backup_frequency_unit is \"Hour\": App Service allows one custom backup every 2 hours at most."
+    }
+
     ignore_changes = [
       # Ignore changes made by WordPress admin
       app_settings["WORDPRESS_CONFIG_EXTRA"]
@@ -401,6 +409,12 @@ resource "azurerm_linux_web_app_slot" "staging" {
 
   # VNet integration
   virtual_network_subnet_id = var.app_subnet_id
+
+  # Azure sets backup/restore over the VNet per slot, so the slot gets the same flag as
+  # the app whenever the backup is on (a restore into this slot then reaches the
+  # account under Deny). The slot gets no backup schedule. null, not false, when the
+  # backup is off, so earlier plans are unchanged.
+  virtual_network_backup_restore_enabled = var.backup_enabled ? true : null
 
   # Managed identity
   identity {
