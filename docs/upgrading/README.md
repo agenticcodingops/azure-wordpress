@@ -13,6 +13,7 @@ Read every page between the release you are on and the release you are moving to
 | v3 to v4 | [v3 to v4](v3-to-v4.md) | v3.1.0, v4.0.0 |
 | 4.0 to 4.1 | [4.0 to 4.1](v4.0-to-v4.1.md) | v4.0.1, v4.0.2, v4.1.0 |
 | 4.1.0 to 4.1.1 | [4.1.0 to 4.1.1](v4.1.0-to-v4.1.1.md) | v4.1.1 |
+| 4.1.1 to 4.3.0 | [4.1.1 to 4.3.0](v4.1.1-to-v4.3.0.md) | v4.2.0, v4.3.0 |
 | MySQL 8.0 to 8.4 | [MySQL 8.0 to 8.4](mysql-8.0-to-8.4.md) | input added in v4.1.0 |
 
 The v2 to v3 page has the Key Vault lifecycle diagram. Patch, minor, and major guarantees stay in the repository README under [Version guarantees](../../README.md#version-guarantees).
