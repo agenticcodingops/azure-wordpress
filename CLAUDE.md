@@ -39,8 +39,9 @@ terraform-docs markdown table --indent 2 --output-mode inject --output-file READ
 Run these before pushing. They are what CI runs on a pull request, at the same versions.
 
 ```bash
-# validate.yml "Terraform Version" and "Format Check": Terraform 1.9.8
-terraform version
+set -euo pipefail   # stop at the first failed check
+# validate.yml "Terraform Version" and "Format Check": Terraform 1.9.8 exactly, as the workflow asserts
+terraform version | grep -q '^Terraform v1.9.8$' || { echo 'CI runs Terraform 1.9.8; install that binary'; exit 1; }
 terraform fmt -recursive -check -diff
 
 # validate.yml "Validate": Terraform 1.9.8, init and validate each module
