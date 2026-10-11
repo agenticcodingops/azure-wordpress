@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0](https://github.com/agenticcodingops/azure-wordpress/compare/v4.1.1...v4.2.0) (2026-10-11)
+
+
+### Features
+
+* **app-service:** optional request-header filter on the Cloudflare allow rules ([#104](https://github.com/agenticcodingops/azure-wordpress/issues/104)) ([56b027e](https://github.com/agenticcodingops/azure-wordpress/commit/56b027e629a2b54a897494e9df09ec9f1a9e3a16))
+
 ## [4.1.1](https://github.com/agenticcodingops/azure-wordpress/compare/v4.1.0...v4.1.1) (2026-10-02)
 
 
