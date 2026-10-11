@@ -34,6 +34,41 @@ terraform-docs markdown table --indent 2 --output-mode inject --output-file READ
 <!-- END_TF_DOCS -->' modules/<module>
 ```
 
+## Local CI parity
+
+Run these before pushing. They are what CI runs on a pull request, at the same versions.
+
+```bash
+set -euo pipefail   # stop at the first failed check
+# validate.yml "Terraform Version" and "Format Check": Terraform 1.9.8 exactly, as the workflow asserts
+terraform version | grep -q '^Terraform v1.9.8$' || { echo 'CI runs Terraform 1.9.8; install that binary'; exit 1; }
+terraform fmt -recursive -check -diff
+
+# validate.yml "Validate": Terraform 1.9.8, init and validate each module
+for m in modules/wordpress-site modules/shared-infrastructure modules/app-service modules/database modules/storage modules/key-vault modules/networking modules/dns-zones modules/cloudflare modules/front-door modules/monitoring; do
+  terraform -chdir="$m" init -backend=false && terraform -chdir="$m" validate || exit 1
+done
+# leave nothing behind: lock files make terraform-docs resolve providers differently from CI
+rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl
+
+# validate.yml "Checkov": Checkov 3.3.22 (bridgecrewio/checkov-action v12.3128.0), as the suffixed install this file prescribes (keep plain checkov off PATH)
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform --quiet --skip-check CKV_TF_1,CKV_TF_2,CKV_AZURE_225,CKV_AZURE_13,CKV_AZURE_88,CKV_AZURE_222,CKV_AZURE_17,CKV_AZURE_94,CKV_AZURE_189,CKV_AZURE_109,CKV_AZURE_41,CKV_AZURE_211,CKV_AZURE_212,CKV_AZURE_206,CKV_AZURE_33,CKV_AZURE_59,CKV_AZURE_34,CKV2_AZURE_32,CKV2_AZURE_56,CKV2_AZURE_21,CKV2_AZURE_40,CKV2_AZURE_33,CKV2_AZURE_1
+
+# validate.yml "Documentation": terraform-docs 0.20.0 (terraform-docs/gh-actions v1.4.1), fail-on-diff
+for m in modules/wordpress-site modules/shared-infrastructure modules/app-service modules/database modules/storage modules/key-vault modules/networking modules/dns-zones modules/cloudflare modules/front-door modules/monitoring; do
+  terraform-docs markdown table --indent 2 --output-mode inject --output-file README.md --output-check "$m" || exit 1
+done
+```
+
+On Windows the checkout is CRLF. Run the commands on an LF copy: `tmp=$(mktemp -d) && git -c core.autocrlf=false archive HEAD | tar -x -C "$tmp" && cd "$tmp"` (`git archive` applies the checkout-time line-ending conversion unless told not to, and it copies the last commit only, so commit what you want checked first). A command that needs the git index (`git ls-files`, `git diff`) runs in the checkout itself, not in the copy. Where a tool reads a single file, strip `\r` with `sed 's/\r$//'`.
+
+terraform-docs --output-check fails on the default branch when measured on a Windows machine on 2026-10-11 because modules/wordpress-site/README.md is out of date.
+
+- semgrep.yml: runs in CI only: `semgrep ci` needs SEMGREP_APP_TOKEN (semgrep 1.178.0).
+- terraform-scan.yml: runs in CI only: the shared scan workflow at v2.3.2 (Trivy IaC, Checkov, tflint) uploads SARIF.
+- commit-hygiene.yml "Commit Metadata": runs in CI only: it reads the push or pull_request_target event. The same scanner is `.githooks/branding-guard.sh`, installed with `sh .githooks/install.sh`.
+- the automated review workflows: runs in CI only: they post a review and need a token.
+
 ## Architecture
 
 **Two-layer deployment model with explicit `depends_on`:**
