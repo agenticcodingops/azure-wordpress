@@ -431,9 +431,9 @@ resource "azurerm_monitor_activity_log_alert" "resource_health" {
 # ============================================================================
 
 locals {
-  # The app-service module's own predicate, on the SKU it receives. Never count on
-  # staging_slot_id != null: that ID is unknown until the slot exists.
-  sku_supports_slots = can(regex("^(S|P)[0-9]", local.app_config.sku_name))
+  # Whether the staging slot exists is local.app_config.staging_slot_enabled (main.tf): the
+  # app-service module's own predicate on the SKU it receives, and the opt-out flag. Never
+  # count on staging_slot_id != null: that ID is unknown until the slot exists.
 
   # Per-target defaults for the three AVM-shaped inputs.
   diagnostic_setting_targets = {
@@ -611,8 +611,8 @@ resource "azurerm_monitor_diagnostic_setting" "storage_blob" {
 }
 
 resource "azurerm_monitor_diagnostic_setting" "staging_slot" {
-  # Filtered on the SKU, which is known at plan time. See the check block below.
-  for_each = { for key, ds in local.diagnostic_settings.staging_slot : key => ds if local.sku_supports_slots }
+  # Filtered on the SKU and the opt-out flag, both known at plan time. See the check block below.
+  for_each = { for key, ds in local.diagnostic_settings.staging_slot : key => ds if local.app_config.staging_slot_enabled }
 
   name                           = each.value.name
   target_resource_id             = module.app_service.staging_slot_id
@@ -657,11 +657,12 @@ resource "azurerm_monitor_diagnostic_setting" "staging_slot" {
   }
 }
 
-# A warning, not an error: a consumer that moves a site from S1 to B1 should not be
-# blocked by a setting that simply has no slot to attach to.
+# A warning, not an error: a consumer that moves a site from S1 to B1, or that sets
+# app_service.staging_slot_enabled = false, should not be blocked by a setting that simply
+# has no slot to attach to.
 check "staging_slot_diagnostic_settings_need_a_slot" {
   assert {
-    condition     = length(var.staging_slot_diagnostic_settings) == 0 || local.sku_supports_slots
-    error_message = "staging_slot_diagnostic_settings is set, but SKU ${local.app_config.sku_name} has no staging slot (only S* and P* do), so no slot diagnostic setting is created."
+    condition     = length(var.staging_slot_diagnostic_settings) == 0 || local.app_config.staging_slot_enabled
+    error_message = "staging_slot_diagnostic_settings is set, but the site has no staging slot (SKU ${local.app_config.sku_name} is not S* or P*, or app_service.staging_slot_enabled is false), so no slot diagnostic setting is created."
   }
 }

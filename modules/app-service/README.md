@@ -187,6 +187,11 @@ On a Basic plan the slot is silently skipped and the `staging_slot_hostname` and
 composition module get the same behaviour, driven by `shared_plan_sku` when using a
 shared plan.
 
+`staging_slot_enabled` (default `true`) opts out of the slot on a SKU that supports one.
+`false` creates no slot, and on an existing deployment destroys the slot together with its
+managed identity; the `staging_slot_*` outputs are then `null`. The `staging_slot_enabled`
+output reports the result of both conditions, and is known at plan time.
+
 ## Validation Rules
 
 The module enforces these validations at plan time:
@@ -261,6 +266,7 @@ No modules.
 | <a name="input_sku_name"></a> [sku\_name](#input\_sku\_name) | App Service Plan SKU (P1v3 recommended for production) | `string` | `"P1v3"` | no |
 | <a name="input_staging_always_on"></a> [staging\_always\_on](#input\_staging\_always\_on) | Keep the staging slot always loaded (set to false to save cost) | `bool` | `false` | no |
 | <a name="input_staging_app_settings_override"></a> [staging\_app\_settings\_override](#input\_staging\_app\_settings\_override) | App settings to override in the staging slot (merged on top of production settings) | `map(string)` | `{}` | no |
+| <a name="input_staging_slot_enabled"></a> [staging\_slot\_enabled](#input\_staging\_slot\_enabled) | Create the staging deployment slot when the SKU supports one (S* and P*). Defaults to true, which keeps the behaviour of every earlier release. false creates no slot on any SKU, and on an existing deployment destroys the slot together with its managed identity; the staging\_slot\_* outputs are then null. | `bool` | `true` | no |
 | <a name="input_sticky_connection_string_names"></a> [sticky\_connection\_string\_names](#input\_sticky\_connection\_string\_names) | Connection string names to mark as sticky (slot-specific, not swapped) | `list(string)` | `[]` | no |
 | <a name="input_storage_access_key_secret_uri"></a> [storage\_access\_key\_secret\_uri](#input\_storage\_access\_key\_secret\_uri) | Key Vault secret URI for storage access key (versionless) | `string` | n/a | yes |
 | <a name="input_storage_account_name"></a> [storage\_account\_name](#input\_storage\_account\_name) | Storage account name for media uploads | `string` | n/a | yes |
@@ -281,6 +287,7 @@ No modules.
 | <a name="output_name"></a> [name](#output\_name) | Name of the Linux Web App |
 | <a name="output_plan_id"></a> [plan\_id](#output\_plan\_id) | ID of the App Service Plan (created or existing) |
 | <a name="output_principal_id"></a> [principal\_id](#output\_principal\_id) | Principal ID of the Web App managed identity |
+| <a name="output_staging_slot_enabled"></a> [staging\_slot\_enabled](#output\_staging\_slot\_enabled) | Whether the staging slot is created: staging\_slot\_enabled is true and the SKU supports slots (S* and P*). Known at plan time, unlike the other staging\_slot\_* outputs, which are null when this is false. |
 | <a name="output_staging_slot_hostname"></a> [staging\_slot\_hostname](#output\_staging\_slot\_hostname) | Hostname of the staging deployment slot (null if SKU doesn't support slots) |
 | <a name="output_staging_slot_id"></a> [staging\_slot\_id](#output\_staging\_slot\_id) | ID of the staging deployment slot (null if SKU doesn't support slots) |
 | <a name="output_staging_slot_principal_id"></a> [staging\_slot\_principal\_id](#output\_staging\_slot\_principal\_id) | Principal ID of the staging slot managed identity (null if SKU doesn't support slots) |

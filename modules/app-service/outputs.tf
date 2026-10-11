@@ -46,6 +46,11 @@ output "staging_slot_principal_id" {
   value       = length(azurerm_linux_web_app_slot.staging) > 0 ? azurerm_linux_web_app_slot.staging[0].identity[0].principal_id : null
 }
 
+output "staging_slot_enabled" {
+  description = "Whether the staging slot is created: staging_slot_enabled is true and the SKU supports slots (S* and P*). Known at plan time, unlike the other staging_slot_* outputs, which are null when this is false."
+  value       = local.create_staging_slot
+}
+
 output "custom_domain_verification_id" {
   description = "Custom domain verification ID for DNS TXT record (asuid.<subdomain>)"
   value       = azurerm_linux_web_app.main.custom_domain_verification_id

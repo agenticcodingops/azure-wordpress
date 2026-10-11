@@ -288,7 +288,7 @@ variable "app_service_ip_security_audit_logs_enabled" {
 
 # App Service configuration
 variable "app_service" {
-  description = "App Service configuration"
+  description = "App Service configuration. staging_slot_enabled (default true) creates the staging slot on S* and P* SKUs; false creates none, and on an existing deployment destroys the slot, its Key Vault access policy and any staging_slot_diagnostic_settings entry."
   type = object({
     plan_id                        = optional(string, null)
     use_shared_plan                = optional(bool, false)
@@ -301,6 +301,7 @@ variable "app_service" {
     sticky_connection_string_names = optional(list(string), [])
     staging_app_settings_override  = optional(map(string), {})
     staging_always_on              = optional(bool, false)
+    staging_slot_enabled           = optional(bool, true)
     cdn_origin_header_name         = optional(string)
   })
   default = {}
@@ -639,7 +640,7 @@ variable "storage_blob_diagnostic_settings" {
 }
 
 variable "staging_slot_diagnostic_settings" {
-  description = "Diagnostic settings for the staging slot, AVM diagnostic_settings shape, one setting per map entry. Empty (the default) creates none. Only S* and P* SKUs have a slot; on any other SKU this input is ignored, with a warning. logs = null sends the four App Service categories the production app sends; metrics = null sends AllMetrics. With no destination set, it sends to the site workspace."
+  description = "Diagnostic settings for the staging slot, AVM diagnostic_settings shape, one setting per map entry. Empty (the default) creates none. Only S* and P* SKUs have a slot; on any other SKU, or when app_service.staging_slot_enabled is false, this input is ignored, with a warning. logs = null sends the four App Service categories the production app sends; metrics = null sends AllMetrics. With no destination set, it sends to the site workspace."
   type = map(object({
     name = optional(string, null) # null => diag-<target>-<site_name>-<map key>
     logs = optional(set(object({  # null => the target's default categories

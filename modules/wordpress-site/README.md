@@ -231,6 +231,38 @@ module "wordpress" {
 - Setting it back to `false` resets both parameters to their server defaults.
 - Audit logging is not offered, so `MySqlAuditLogs` stays enabled and empty.
 
+## Staging Deployment Slots
+
+On Standard (S\*) and Premium (P\*) SKUs the module creates a `staging` deployment slot with its own managed
+identity, a Key Vault access policy for that identity, and, when `staging_slot_diagnostic_settings` is set, a
+diagnostic setting on the slot. Basic (B\*) plans have no slots, so none of these exist there. In shared-plan
+mode the SKU that decides this is `shared_plan_sku`.
+
+`app_service.staging_slot_enabled` (default `true`) opts out of the slot on a SKU that supports one:
+
+```hcl
+module "wordpress" {
+  # ... existing configuration ...
+
+  app_service = {
+    sku_name             = "S1"
+    staging_slot_enabled = false # no staging slot, although S1 supports one
+  }
+}
+```
+
+The default keeps the behaviour of every earlier release: a plan that leaves the flag unset is unchanged.
+Setting it to `false` on an existing deployment **destroys** the staging slot and its managed identity, the
+slot's Key Vault access policy (`azurerm_key_vault_access_policy.staging_slot`) and every slot diagnostic
+setting (`azurerm_monitor_diagnostic_setting.staging_slot`). Whatever is deployed to the slot is lost, so swap
+it into production first if you want to keep it. A `staging_slot_diagnostic_settings` entry left in place is
+ignored, with the same warning as on a B\* SKU. A CanNotDelete lock blocks these deletes; remove it first (see
+[Resource locks](#resource-locks)). Setting the flag back to `true` creates a new slot with a new managed
+identity, so the slot's principal ID changes.
+
+The `staging_slot_enabled` output says, at plan time, whether the slot exists. `staging_slot_hostname` and
+`staging_slot_principal_id` are `null` when it does not; do not drive a `count` from either of them.
+
 ## Diagnostic settings
 
 The app service and MySQL diagnostic settings are unconditional. Three more targets are opt-in, each through a
@@ -264,8 +296,8 @@ module "wordpress" {
 
 - **Blob metrics.** `AllMetrics` is rejected for the blob service: the API expands it into `Capacity` and
   `Transaction`, so the plan would show a change on every run. List the categories you want instead.
-- **Staging slot.** Only S* and P* SKUs have a slot. On any other SKU the input is ignored and the plan
-  prints a warning.
+- **Staging slot.** Only S* and P* SKUs have a slot, and `app_service.staging_slot_enabled = false` removes
+  it. Without a slot the input is ignored and the plan prints a warning.
 - **Destination type.** `log_analytics_destination_type` defaults to null, which leaves Azure's default for
   the target (`AzureDiagnostics` for Key Vault). `"Dedicated"` selects resource-specific tables where the
   service has them, such as `AZKVAuditLogs` for Key Vault. The argument is optional and computed, so null
@@ -322,8 +354,8 @@ extension resources such as diagnostic settings and alert rules. While the lock 
 at apply:
 
 - destroying the site, or removing it from a `for_each`;
-- removing the staging slot (moving from S*/P* to B*), a web test, an alert, or a diagnostic-setting map
-  entry, and turning an alert family back to `enabled = false`;
+- removing the staging slot (moving from S*/P* to B*, or `app_service.staging_slot_enabled = false`), a web
+  test, an alert, or a diagnostic-setting map entry, and turning an alert family back to `enabled = false`;
 - any change that forces replacement, which deletes first or last: the Key Vault (purge protection,
   retention, `key_vault_name_suffix`, region), the MySQL server (`geo_redundant_backup`), a diagnostic
   setting's name or target, a web test's location or component, the 5xx-rate rule's location or scope, and
@@ -413,7 +445,7 @@ the shared plan, fail in the same way.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_alert_recipients"></a> [alert\_recipients](#input\_alert\_recipients) | Email addresses for alert notifications | `list(string)` | `[]` | no |
-| <a name="input_app_service"></a> [app\_service](#input\_app\_service) | App Service configuration | <pre>object({<br/>    plan_id                        = optional(string, null)<br/>    use_shared_plan                = optional(bool, false)<br/>    sku_name                       = optional(string, "P1v3")<br/>    always_on                      = optional(bool, true)<br/>    health_check_path              = optional(string)<br/>    worker_count                   = optional(number, 1)<br/>    extra_app_settings             = optional(map(string), {})<br/>    extra_sticky_app_setting_names = optional(list(string), [])<br/>    sticky_connection_string_names = optional(list(string), [])<br/>    staging_app_settings_override  = optional(map(string), {})<br/>    staging_always_on              = optional(bool, false)<br/>    cdn_origin_header_name         = optional(string)<br/>  })</pre> | `{}` | no |
+| <a name="input_app_service"></a> [app\_service](#input\_app\_service) | App Service configuration. staging\_slot\_enabled (default true) creates the staging slot on S* and P* SKUs; false creates none, and on an existing deployment destroys the slot, its Key Vault access policy and any staging\_slot\_diagnostic\_settings entry. | <pre>object({<br/>    plan_id                        = optional(string, null)<br/>    use_shared_plan                = optional(bool, false)<br/>    sku_name                       = optional(string, "P1v3")<br/>    always_on                      = optional(bool, true)<br/>    health_check_path              = optional(string)<br/>    worker_count                   = optional(number, 1)<br/>    extra_app_settings             = optional(map(string), {})<br/>    extra_sticky_app_setting_names = optional(list(string), [])<br/>    sticky_connection_string_names = optional(list(string), [])<br/>    staging_app_settings_override  = optional(map(string), {})<br/>    staging_always_on              = optional(bool, false)<br/>    staging_slot_enabled           = optional(bool, true)<br/>    cdn_origin_header_name         = optional(string)<br/>  })</pre> | `{}` | no |
 | <a name="input_app_service_ftp_publish_basic_authentication_enabled"></a> [app\_service\_ftp\_publish\_basic\_authentication\_enabled](#input\_app\_service\_ftp\_publish\_basic\_authentication\_enabled) | Enable basic authentication for FTP publishing on the site and its staging slot. Defaults to true, matching the azurerm provider default. FTP is already closed at the transport layer (ftps\_state is Disabled). | `bool` | `true` | no |
 | <a name="input_app_service_ip_security_audit_logs_enabled"></a> [app\_service\_ip\_security\_audit\_logs\_enabled](#input\_app\_service\_ip\_security\_audit\_logs\_enabled) | Send AppServiceIPSecAuditLogs to the site's Log Analytics workspace. Off by default. | `bool` | `false` | no |
 | <a name="input_app_service_scm_ip_restriction_default_action"></a> [app\_service\_scm\_ip\_restriction\_default\_action](#input\_app\_service\_scm\_ip\_restriction\_default\_action) | Default action for SCM/Kudu traffic matching no app\_service\_scm\_ip\_restrictions entry. Defaults to 'Allow', matching the azurerm provider default. Set to 'Deny' to close Kudu to everything not allow-listed. | `string` | `"Allow"` | no |
@@ -450,7 +482,7 @@ the shared plan, fail in the same way.
 | <a name="input_shared_plan_sku"></a> [shared\_plan\_sku](#input\_shared\_plan\_sku) | SKU of the shared App Service Plan. Required when app\_service.use\_shared\_plan = true to determine feature availability. | `string` | `null` | no |
 | <a name="input_shared_resource_group_name"></a> [shared\_resource\_group\_name](#input\_shared\_resource\_group\_name) | Name of the shared resource group where the shared App Service Plan is located. Required when app\_service.use\_shared\_plan = true. | `string` | `null` | no |
 | <a name="input_site_name"></a> [site\_name](#input\_site\_name) | Site name used for resource naming (lowercase, hyphens only) | `string` | n/a | yes |
-| <a name="input_staging_slot_diagnostic_settings"></a> [staging\_slot\_diagnostic\_settings](#input\_staging\_slot\_diagnostic\_settings) | Diagnostic settings for the staging slot, AVM diagnostic\_settings shape, one setting per map entry. Empty (the default) creates none. Only S* and P* SKUs have a slot; on any other SKU this input is ignored, with a warning. logs = null sends the four App Service categories the production app sends; metrics = null sends AllMetrics. With no destination set, it sends to the site workspace. | <pre>map(object({<br/>    name = optional(string, null) # null => diag-<target>-<site_name>-<map key><br/>    logs = optional(set(object({  # null => the target's default categories<br/>      category       = optional(string, null)<br/>      category_group = optional(string, null)<br/>      enabled        = optional(bool, true) # false entries are dropped<br/>    })))<br/>    metrics = optional(set(object({ # null => the target's default metrics<br/>      category = optional(string, "AllMetrics")<br/>      enabled  = optional(bool, true)<br/>    })))<br/>    log_analytics_destination_type           = optional(string, null) # AVM defaults to "Dedicated"; null leaves Azure's default<br/>    workspace_resource_id                    = optional(string, null) # null, with no other destination => the site workspace<br/>    storage_account_resource_id              = optional(string, null)<br/>    event_hub_authorization_rule_resource_id = optional(string, null)<br/>    event_hub_name                           = optional(string, null)<br/>    marketplace_partner_resource_id          = optional(string, null)<br/>  }))</pre> | `{}` | no |
+| <a name="input_staging_slot_diagnostic_settings"></a> [staging\_slot\_diagnostic\_settings](#input\_staging\_slot\_diagnostic\_settings) | Diagnostic settings for the staging slot, AVM diagnostic\_settings shape, one setting per map entry. Empty (the default) creates none. Only S* and P* SKUs have a slot; on any other SKU, or when app\_service.staging\_slot\_enabled is false, this input is ignored, with a warning. logs = null sends the four App Service categories the production app sends; metrics = null sends AllMetrics. With no destination set, it sends to the site workspace. | <pre>map(object({<br/>    name = optional(string, null) # null => diag-<target>-<site_name>-<map key><br/>    logs = optional(set(object({  # null => the target's default categories<br/>      category       = optional(string, null)<br/>      category_group = optional(string, null)<br/>      enabled        = optional(bool, true) # false entries are dropped<br/>    })))<br/>    metrics = optional(set(object({ # null => the target's default metrics<br/>      category = optional(string, "AllMetrics")<br/>      enabled  = optional(bool, true)<br/>    })))<br/>    log_analytics_destination_type           = optional(string, null) # AVM defaults to "Dedicated"; null leaves Azure's default<br/>    workspace_resource_id                    = optional(string, null) # null, with no other destination => the site workspace<br/>    storage_account_resource_id              = optional(string, null)<br/>    event_hub_authorization_rule_resource_id = optional(string, null)<br/>    event_hub_name                           = optional(string, null)<br/>    marketplace_partner_resource_id          = optional(string, null)<br/>  }))</pre> | `{}` | no |
 | <a name="input_storage"></a> [storage](#input\_storage) | Storage account configuration | <pre>object({<br/>    additional_containers           = optional(map(object({ access_type = optional(string, "private") })), {})<br/>    versioning_enabled              = optional(bool, true)<br/>    blob_delete_retention_days      = optional(number, 30)<br/>    container_delete_retention_days = optional(number, 30)<br/>    lifecycle_policy_enabled        = optional(bool, true)<br/>    lifecycle_cool_tier_days        = optional(number, 30)<br/>    lifecycle_version_delete_days   = optional(number, 90)<br/>    lifecycle_snapshot_delete_days  = optional(number, 90)<br/>    lifecycle_prefix_match          = optional(list(string), ["uploads/"])<br/>  })</pre> | `{}` | no |
 | <a name="input_storage_blob_diagnostic_settings"></a> [storage\_blob\_diagnostic\_settings](#input\_storage\_blob\_diagnostic\_settings) | Diagnostic settings for the storage account's blob service, AVM diagnostic\_settings shape, one setting per map entry. Empty (the default) creates none. logs = null sends StorageRead, StorageWrite and StorageDelete; metrics = null sends Transaction. AllMetrics is rejected: the API expands it into Capacity and Transaction, which plans a change on every run. With no destination set, it sends to the site workspace. | <pre>map(object({<br/>    name = optional(string, null) # null => diag-<target>-<site_name>-<map key><br/>    logs = optional(set(object({  # null => the target's default categories<br/>      category       = optional(string, null)<br/>      category_group = optional(string, null)<br/>      enabled        = optional(bool, true) # false entries are dropped<br/>    })))<br/>    metrics = optional(set(object({ # null => the target's default metrics<br/>      category = optional(string, "AllMetrics")<br/>      enabled  = optional(bool, true)<br/>    })))<br/>    log_analytics_destination_type           = optional(string, null) # AVM defaults to "Dedicated"; null leaves Azure's default<br/>    workspace_resource_id                    = optional(string, null) # null, with no other destination => the site workspace<br/>    storage_account_resource_id              = optional(string, null)<br/>    event_hub_authorization_rule_resource_id = optional(string, null)<br/>    event_hub_name                           = optional(string, null)<br/>    marketplace_partner_resource_id          = optional(string, null)<br/>  }))</pre> | `{}` | no |
 | <a name="input_storage_network_rules_bypass"></a> [storage\_network\_rules\_bypass](#input\_storage\_network\_rules\_bypass) | Traffic permitted to bypass the storage network rules. Valid values: AzureServices, Logging, Metrics, None. | `set(string)` | <pre>[<br/>  "AzureServices"<br/>]</pre> | no |
@@ -494,6 +526,7 @@ the shared plan, fail in the same way.
 | <a name="output_resource_group_id"></a> [resource\_group\_id](#output\_resource\_group\_id) | ID of the resource group |
 | <a name="output_resource_group_name"></a> [resource\_group\_name](#output\_resource\_group\_name) | Name of the resource group |
 | <a name="output_site_name"></a> [site\_name](#output\_site\_name) | The site name |
+| <a name="output_staging_slot_enabled"></a> [staging\_slot\_enabled](#output\_staging\_slot\_enabled) | Whether the staging slot is created: app\_service.staging\_slot\_enabled is true and the SKU is S* or P*. Known at plan time; staging\_slot\_hostname and staging\_slot\_principal\_id are null when this is false. |
 | <a name="output_staging_slot_hostname"></a> [staging\_slot\_hostname](#output\_staging\_slot\_hostname) | Staging slot hostname |
 | <a name="output_staging_slot_principal_id"></a> [staging\_slot\_principal\_id](#output\_staging\_slot\_principal\_id) | Staging slot managed identity principal ID |
 | <a name="output_storage_account_name"></a> [storage\_account\_name](#output\_storage\_account\_name) | Storage Account name |
