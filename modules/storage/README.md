@@ -52,7 +52,7 @@ Instead, we use:
 
 ```hcl
 module "storage" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/storage?ref=v4.1.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/storage?ref=v4.3.0"
 
   project_name        = "example"
   site_name           = "examplewp01"

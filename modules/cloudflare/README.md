@@ -32,7 +32,7 @@ This module configures Cloudflare as the DNS provider and optionally as the CDN/
 
 ```hcl
 module "cloudflare" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/cloudflare?ref=v4.1.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/cloudflare?ref=v4.3.0"
 
   cloudflare_account_id = var.cloudflare_account_id
   domain                = "example.com"

@@ -1,6 +1,6 @@
 # Upgrade guide
 
-Latest release: **v4.1.1** (2026-10-02). Pin module sources with `?ref=v4.1.1`. Releases are listed on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page.
+Latest release: **v4.3.0**. Pin module sources with `?ref=v4.3.0`. Releases are listed on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page.
 
 These pages hold the upgrade notes that were in the repository README, in `modules/wordpress-site/README.md`, and in the changelog's upgrade-path sections. Changelog text is copied unchanged. A statement about what a release changed is cited to [`CHANGELOG.md`](../../CHANGELOG.md) or to that version's [release notes](https://github.com/agenticcodingops/azure-wordpress/releases). Where neither states a plan diff, or whether anything is replaced or destroyed, the page says **UNKNOWN**.
 

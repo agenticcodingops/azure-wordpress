@@ -334,7 +334,7 @@ terraform {
 
 module "wordpress_sites" {
   # A release tag. For an immutable reference, use the tag's commit SHA instead.
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.0"
   # ...
 }
 ```
@@ -786,7 +786,7 @@ storage account and network.
 
 ```hcl
 module "shared" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.1.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.3.0"
 
   project_name    = "example"
   environment     = "nonprod"
@@ -796,7 +796,7 @@ module "shared" {
 
 module "wordpress_sites" {
   for_each = local.sites
-  source   = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.1"
+  source   = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.0"
   # ...
 
   app_service = {
