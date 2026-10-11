@@ -14,7 +14,9 @@ jobs:
   claude-review:
     # Skip PRs a bot opened, such as dependency updates. The action refuses a non-human
     # actor, so without this every such PR shows a failed check.
-    if: github.event.pull_request.user.type != 'Bot'
+    # A bot's push to a PR (a worker's fix commit) also starts this job, and the action then fails red on a
+    # non-human actor. Skip those runs too (the sender check); a human push still runs it.
+    if: github.event.pull_request.user.type != 'Bot' && github.event.sender.type != 'Bot'
     # One run per PR at a time, so a push during a review cannot start a second review before
     # the first has posted. The later run waits, then the plugin sees the review and stops.
     # Not cancel-in-progress: cancelling could cut a review off part-way through posting.
