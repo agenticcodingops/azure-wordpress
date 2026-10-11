@@ -42,6 +42,11 @@ output "database_server_fqdn" {
   value       = module.database.server_fqdn
 }
 
+output "mysql_entra_stage" {
+  description = "How far the passwordless database path has gone, 0 to 4: 0 none, 1 identity and administrator, 2 app switched to the token login, 3 DATABASE_PASSWORD dropped from the production app, 4 aad_auth_only ON. Known at plan time. The stage flags must be turned on in order, so this is also the number of flags that are on."
+  value       = local.mysql_entra_stage
+}
+
 output "database_name" {
   description = "WordPress database name"
   value       = module.database.database_name

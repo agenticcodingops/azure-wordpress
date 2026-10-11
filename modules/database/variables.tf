@@ -191,3 +191,52 @@ variable "long_query_time" {
     error_message = "long_query_time must be between 0 and 31536000 seconds."
   }
 }
+
+# Passwordless access with a managed identity. Everything below is off by default and the
+# two flags are flat top-level bools, like the other security-relevant switches. The module
+# creates no identity and grants no Microsoft Graph permission: the caller owns both.
+variable "entra_admin_enabled" {
+  description = "Attach entra_server_identity to the server and set entra_admin as its Microsoft Entra administrator. Off by default. Both are in-place changes in azurerm 5.x; neither replaces the server. Requires entra_server_identity and entra_admin."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "entra_server_identity" {
+  description = "The user-assigned identity the server uses to validate Microsoft Entra tokens: its resource ID, client ID and principal ID. Used only while entra_admin_enabled is true, and only its id is read. With Layout A it needs the Microsoft Graph permissions User.Read.All, GroupMember.Read.All and Application.Read.All, granted by the caller; with Layout B (the administrator is the app's own identity) it needs none."
+  type = object({
+    id           = string
+    client_id    = string
+    principal_id = string
+  })
+  default = null
+}
+
+variable "entra_admin" {
+  description = "The server's Microsoft Entra administrator: login (the MySQL user name, at most 32 characters), the principal's object ID and the tenant ID. Used only while entra_admin_enabled is true."
+  type = object({
+    login     = string
+    object_id = string
+    tenant_id = string
+  })
+  default = null
+
+  validation {
+    condition     = var.entra_admin == null ? true : length(var.entra_admin.login) >= 1 && length(var.entra_admin.login) <= 32
+    error_message = "entra_admin.login is a MySQL user name and must be 1 to 32 characters."
+  }
+}
+
+variable "aad_auth_only_enabled" {
+  description = "Set the aad_auth_only server parameter to ON, so only Microsoft Entra logins work and the password administrator can no longer connect. Off by default, which leaves the parameter unmanaged. Requires entra_admin_enabled. Turning it off again deletes the configuration resource, which resets the parameter to its server default (OFF)."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "require_secure_transport" {
+  description = "Set the require_secure_transport server parameter to ON, so the server refuses connections made without TLS, token logins included. The default, false, keeps the OFF every earlier release set. Changing it applies at once and refuses any client that does not use TLS."
+  type        = bool
+  default     = false
+  nullable    = false
+}

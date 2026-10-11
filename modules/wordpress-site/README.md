@@ -231,6 +231,126 @@ module "wordpress" {
 - Setting it back to `false` resets both parameters to their server defaults.
 - Audit logging is not offered, so `MySqlAuditLogs` stays enabled and empty.
 
+## Passwordless database access (managed identity)
+
+By default the app logs in to MySQL with the `wpadmin` password, which reaches it as a Key Vault reference in
+`DATABASE_PASSWORD`. This feature lets the production app log in with a Microsoft Entra token instead, one
+stage at a time, so each step can be applied, checked and rolled back on its own. **Everything is off by
+default**: a plan that sets none of the inputs below is unchanged, apart from the new `mysql_entra_stage`
+output (`0`).
+
+**The module does not create the identities, grant Microsoft Graph permissions or create MySQL users.** You
+create the user-assigned identities, you grant any Graph permission (Layout A below), and you create the
+non-administrator MySQL user yourself (`CREATE AADUSER`, run as the Entra administrator). The module only
+attaches what you pass in, sets the administrator, and changes the app settings and the server parameter.
+
+### Two layouts
+
+- **Layout B (the simple one).** The app's own user-assigned identity is the server's Microsoft Entra
+  administrator, set by object ID. It needs **no Microsoft Graph permission**. The identity's `principal_id` is
+  the administrator's `object_id`, and the app's database user is the administrator's `login`. The server
+  identity (`mysql_entra_server_identity`) can be that same identity.
+- **Layout A (separate roles).** A separate server identity holds the Microsoft Graph application permissions
+  `User.Read.All`, `GroupMember.Read.All` and `Application.Read.All` (granted by you, outside the module). The
+  administrator is a person or a group, and the app's identity maps to a **non-administrator** MySQL user. A
+  rehearsal showed why: `CREATE AADUSER '<name>' IDENTIFIED BY '<client id>'` fails with error 9127 unless the
+  server identity holds those permissions, and a group as administrator also failed without them.
+
+```hcl
+# Layout B: the administrator is the app's own identity.
+module "wordpress" {
+  # ... existing configuration ...
+
+  mysql_entra_server_identity = { id = "<resource-id>", client_id = "<client-id>", principal_id = "<object-id>" }
+  mysql_entra_app_identity    = { id = "<resource-id>", client_id = "<client-id>", principal_id = "<object-id>" }
+  mysql_entra_admin           = { login = "wp-app", object_id = "<object-id>", tenant_id = "<tenant-id>" } # object_id = the app identity's principal_id
+  mysql_entra_app_database_user = "wp-app"                                                              # = mysql_entra_admin.login
+
+  mysql_entra_stage_identity_enabled = true # stage 1; add the later flags one apply at a time
+}
+```
+
+`mysql_entra_admin.login` and `mysql_entra_app_database_user` are MySQL user names, so each is at most 32
+characters (a longer value fails at plan).
+
+### The stages
+
+Four flat flags, each `false` by default, each requiring the one before it (turning on a later flag alone fails
+at plan). Apply, check the site, then turn on the next one.
+
+| Stage | Flag | What changes |
+| --- | --- | --- |
+| 1. Identity and administrator | `mysql_entra_stage_identity_enabled` | Attaches `mysql_entra_server_identity` to the MySQL server, creates the `azurerm_mysql_flexible_server_active_directory_administrator`, and attaches `mysql_entra_app_identity` to the **production app only** (it becomes `SystemAssigned, UserAssigned`). `key_vault_reference_identity_id` stays unset, so Key Vault references keep resolving with the system-assigned identity. **No app setting changes**, so the app still uses its password. |
+| 2. App switch | `mysql_entra_stage_app_switch_enabled` | Sets `ENABLE_MYSQL_MANAGED_IDENTITY=true`, `ENTRA_CLIENT_ID` (the app identity's client ID) and `DATABASE_USERNAME` (`mysql_entra_app_database_user`) on the production app. The container restarts; on the Microsoft image that was measured with no failed request. |
+| 3. Drop the password | `mysql_entra_stage_drop_password_enabled` | Removes `DATABASE_PASSWORD` from the production app. The `db-password` Key Vault secret is **still written**, because the way back needs it. |
+| 4. Entra only | `mysql_entra_stage_aad_only_enabled` | Creates an `azurerm_mysql_flexible_server_configuration` that sets `aad_auth_only = ON`, so password logins stop working for everyone, the `wpadmin` administrator included. |
+
+The `mysql_entra_stage` output reports `0` to `4` (the number of flags on), known at plan time.
+
+None of the stage changes replaces the MySQL server or the web app: the server's `identity` block, the
+administrator's `identity_id`, `login`, `object_id` and `tenant_id`, and the `aad_auth_only` value are all
+updated in place by azurerm 5.x, and the web app's `identity` block is too. Two things still need care.
+Turning the flags back off removes the identity and administrator again, and the deploying principal needs
+Managed Identity Operator on both identities.
+
+### The staging slot
+
+The slot is never given the app identity and **keeps its password settings at every stage**: it still
+reaches the database with `DATABASE_USERNAME` and `DATABASE_PASSWORD` as before.
+
+- **Stage 1:** nothing changes for the slot.
+- **Stage 2:** the production app gets the three new settings; the slot does not, so it keeps
+  `ENABLE_MYSQL_MANAGED_IDENTITY` unset. With a slot, the names `ENABLE_MYSQL_MANAGED_IDENTITY`,
+  `ENTRA_CLIENT_ID`, `DATABASE_USERNAME` and `DATABASE_PASSWORD` are added to the app's sticky settings, so a
+  swap leaves each side's own database login where it is. (`app_service.extra_sticky_app_setting_names` is
+  unchanged and still merged in.)
+- **Stage 3:** `DATABASE_PASSWORD` leaves the production app only; the slot keeps it.
+- **Stage 4:** `aad_auth_only` would lock the slot out, so stage 4 **fails at plan while a slot exists**
+  (`app_service.staging_slot_enabled` true on an S\* or P\* SKU). Set `app_service.staging_slot_enabled = false`
+  first, which destroys the slot (see [Staging Deployment Slots](#staging-deployment-slots)).
+
+### The token cache must stay off
+
+The image's token helper can cache the access token (`CACHE_MYSQL_ACCESS_TOKEN=true`). That makes it start a
+PHP session on every request: anonymous responses get a `PHPSESSID` cookie without `Secure` or `HttpOnly` and
+with no-cache headers, and each request writes a session file holding a token. Left unset, there is no
+session, and each request fetches a token from the local identity endpoint (about 60 ms at the median, 100 ms
+at the 95th percentile in the rehearsal). So with stage 2 on, `app_service.extra_app_settings` may not set
+`CACHE_MYSQL_ACCESS_TOKEN` to `true`; the plan fails if it does. A Key Vault value cannot be read at plan, so
+naming `CACHE_MYSQL_ACCESS_TOKEN` or `DB_SSL_CONNECTION` in `extra_secret_app_settings` is refused too.
+
+### TLS
+
+PHP connects with TLS by default (`DB_SSL_CONNECTION` defaults to true, which sets `MYSQLI_CLIENT_SSL`) but does
+**not verify the server certificate**; the image's MariaDB client verifies only when it is given
+`--ssl-verify-server-cert --ssl-ca=...`. With the server parameter `require_secure_transport = OFF`, which this
+module has always set, the server also accepts a token login without TLS. So with stage 2 on,
+`app_service.extra_app_settings` may not set `DB_SSL_CONNECTION` to `false` (the plan fails), and
+`mysql_require_secure_transport = true` sets the parameter to `ON`. That is a hardening input, not a stage: the
+default `false` keeps `OFF`, and turning it on refuses any client that does not use TLS, so check first.
+
+### WP-CLI
+
+WP-CLI reads the token through `wp-config.php`, so `wp db export` and `wp db import` work with no password
+setting. For a non-administrator MySQL user, `wp db export` needs `--no-tablespaces`, which WP-CLI rewrites if
+you pass it directly; load it from an option file with `--defaults` instead.
+
+### Rolling back
+
+Go in the reverse order, one apply per step, and re-add the password **before** switching the app back:
+
+1. Turn `mysql_entra_stage_aad_only_enabled` off first. This deletes the configuration resource, which resets
+   `aad_auth_only` to its server default (`OFF`).
+2. Turn `mysql_entra_stage_drop_password_enabled` off. `DATABASE_PASSWORD` returns to the production app, from
+   the Key Vault secret that was never removed.
+3. Turn `mysql_entra_stage_app_switch_enabled` off. The app is back on `DATABASE_USERNAME=wpadmin` and the
+   password, which now exists again.
+4. Turn `mysql_entra_stage_identity_enabled` off to remove the administrator, the server identity and the app
+   identity attachment.
+
+The flags enforce this order: switching a lower stage off while a higher one is on fails at plan. The MySQL
+users you created stay; drop them yourself when you no longer need them.
+
 ## Staging Deployment Slots
 
 On Standard (S\*) and Premium (P\*) SKUs the module creates a `staging` deployment slot with its own managed
@@ -612,6 +732,15 @@ the shared plan, fail in the same way.
 | <a name="input_location"></a> [location](#input\_location) | Azure region for all resources | `string` | n/a | yes |
 | <a name="input_lock"></a> [lock](#input\_lock) | Resource lock on the site resource group, in the Azure Verified Modules lock shape. null (the default) means no lock unless enable\_resource\_lock is true; do not set both. Only kind = "CanNotDelete" is accepted. name defaults to site-protection-lock and notes to the enable\_resource\_lock wording, so lock = { kind = "CanNotDelete" } plans no change against enable\_resource\_lock = true. Needs Microsoft.Authorization/locks/* (Owner or User Access Administrator; Contributor lacks it). While it exists, every removal or replacement in the group fails at apply: see the README's Resource locks section. | <pre>object({<br/>    kind  = string<br/>    name  = optional(string, null)<br/>    notes = optional(string, null) # in the current AVM lock spec; older AVM modules take only kind and name<br/>  })</pre> | `null` | no |
 | <a name="input_monitoring"></a> [monitoring](#input\_monitoring) | Monitoring configuration. alerts.mysql, alerts.http\_5xx\_rate, alerts.health\_check and alerts.resource\_health are opt-in alert families (enabled = false by default); enabling any of them needs alert\_recipients or extra\_action\_group\_ids. db\_failure\_threshold is the aborted-connections threshold of the MySQL family. log\_analytics\_workspace\_location is the region of an external log\_analytics\_workspace\_id: set it when that workspace is in another region and http\_5xx\_rate is enabled, because a log search alert rule must be in its workspace's region. See the README's Alerting section. | <pre>object({<br/>    log_analytics_workspace_id       = optional(string, null)<br/>    log_analytics_workspace_location = optional(string) # the external workspace's region; see http_5xx_rate<br/>    retention_days                   = optional(number)<br/>    alerts = optional(object({<br/>      http_5xx_threshold   = optional(number, 10)<br/>      high_cpu_threshold   = optional(number, 80)<br/>      db_failure_threshold = optional(number, 5)<br/>      alert_window_minutes = optional(number, 5)<br/>      mysql = optional(object({<br/>        enabled                         = optional(bool, false)<br/>        severity                        = optional(number, 2)<br/>        cpu_percent_threshold           = optional(number, 80)<br/>        memory_percent_threshold        = optional(number, 90)<br/>        storage_percent_threshold       = optional(number, 85)<br/>        active_connections_threshold    = optional(number)     # null => no active_connections alert (max_connections varies by SKU)<br/>        cpu_credits_remaining_threshold = optional(number, 30) # Burstable (B_) SKUs only<br/>      }), {})<br/>      http_5xx_rate = optional(object({<br/>        enabled              = optional(bool, false)<br/>        severity             = optional(number, 2)<br/>        threshold_percent    = optional(number, 5)<br/>        minimum_requests     = optional(number, 20)<br/>        window_duration      = optional(string, "PT15M")<br/>        evaluation_frequency = optional(string, "PT5M") # PT1M is not offered<br/>      }), {})<br/>      health_check = optional(object({<br/>        enabled     = optional(bool, false)<br/>        severity    = optional(number, 1)<br/>        threshold   = optional(number, 100)<br/>        window_size = optional(string, "PT15M")<br/>      }), {})<br/>      resource_health = optional(object({<br/>        enabled  = optional(bool, false)<br/>        current  = optional(list(string), ["Degraded", "Unavailable"])<br/>        previous = optional(list(string), ["Available", "Unknown"])<br/>        reasons  = optional(list(string), ["PlatformInitiated", "Unknown"])<br/>      }), {})<br/>    }), {})<br/>  })</pre> | `{}` | no |
+| <a name="input_mysql_entra_admin"></a> [mysql\_entra\_admin](#input\_mysql\_entra\_admin) | The MySQL server's Microsoft Entra administrator: login (the MySQL user name, at most 32 characters), object\_id (the principal's object ID) and tenant\_id. Used from stage 1. Layout B is object\_id equal to mysql\_entra\_app\_identity.principal\_id, with mysql\_entra\_app\_database\_user equal to login; Layout A uses different values. Null (the default) means unused. | <pre>object({<br/>    login     = string<br/>    object_id = string<br/>    tenant_id = string<br/>  })</pre> | `null` | no |
+| <a name="input_mysql_entra_app_database_user"></a> [mysql\_entra\_app\_database\_user](#input\_mysql\_entra\_app\_database\_user) | The MySQL user the app logs in as: its DATABASE\_USERNAME from stage 2, at most 32 characters. The caller creates it (CREATE AADUSER) unless it is the administrator's login. Null (the default) means unused. | `string` | `null` | no |
+| <a name="input_mysql_entra_app_identity"></a> [mysql\_entra\_app\_identity](#input\_mysql\_entra\_app\_identity) | The user-assigned identity the WordPress app uses to log in to MySQL: id (resource ID), client\_id and principal\_id. Created by the caller. Used from stage 1, where it is attached to the production app only, never the staging slot, which makes that app SystemAssigned, UserAssigned; the system-assigned identity stays and keeps resolving Key Vault references. From stage 2 its client\_id is the app's ENTRA\_CLIENT\_ID setting. The deploying principal needs Managed Identity Operator on it. Null (the default) means unused. | <pre>object({<br/>    id           = string<br/>    client_id    = string<br/>    principal_id = string<br/>  })</pre> | `null` | no |
+| <a name="input_mysql_entra_server_identity"></a> [mysql\_entra\_server\_identity](#input\_mysql\_entra\_server\_identity) | The user-assigned identity the MySQL server uses to validate Microsoft Entra tokens: id (resource ID), client\_id and principal\_id. Created by the caller. Used from stage 1 (mysql\_entra\_stage\_identity\_enabled), where it is attached to the server and named as the administrator resource's identity\_id; only id is read. Layout A (a separate server identity, an administrator that is a person or a group, and the app mapped to a non-admin MySQL user) needs the Microsoft Graph application permissions User.Read.All, GroupMember.Read.All and Application.Read.All granted to this identity by the caller. Layout B (the administrator is the app's own identity) needs no Graph permission. Null (the default) means unused. | <pre>object({<br/>    id           = string<br/>    client_id    = string<br/>    principal_id = string<br/>  })</pre> | `null` | no |
+| <a name="input_mysql_entra_stage_aad_only_enabled"></a> [mysql\_entra\_stage\_aad\_only\_enabled](#input\_mysql\_entra\_stage\_aad\_only\_enabled) | Stage 4, off by default; requires mysql\_entra\_stage\_drop\_password\_enabled. Sets the aad\_auth\_only server parameter to ON, so only Microsoft Entra logins work and the password administrator can no longer connect. Fails at plan while a staging slot exists, because the slot still logs in with a password: set app\_service.staging\_slot\_enabled = false first (the slot is then destroyed). Turn it off first when rolling back; that deletes the parameter's configuration resource, which resets it to OFF. | `bool` | `false` | no |
+| <a name="input_mysql_entra_stage_app_switch_enabled"></a> [mysql\_entra\_stage\_app\_switch\_enabled](#input\_mysql\_entra\_stage\_app\_switch\_enabled) | Stage 2, off by default; requires mysql\_entra\_stage\_identity\_enabled and mysql\_entra\_app\_database\_user. Sets ENABLE\_MYSQL\_MANAGED\_IDENTITY=true, ENTRA\_CLIENT\_ID and DATABASE\_USERNAME on the production app, so the image logs in with a token. The container restarts; on the Microsoft image that was measured with no failed request. With a staging slot, those names, and DATABASE\_PASSWORD, become sticky and the slot keeps its password settings. Rejects app\_service.extra\_app\_settings and extra\_secret\_app\_settings that set CACHE\_MYSQL\_ACCESS\_TOKEN=true (the token cache starts a PHP session on every request and writes the token to a file) or DB\_SSL\_CONNECTION=false (TLS off). To go back, switch stages 4 and 3 off first, then this one: the app needs its password setting back before the username does. | `bool` | `false` | no |
+| <a name="input_mysql_entra_stage_drop_password_enabled"></a> [mysql\_entra\_stage\_drop\_password\_enabled](#input\_mysql\_entra\_stage\_drop\_password\_enabled) | Stage 3, off by default; requires mysql\_entra\_stage\_app\_switch\_enabled. Removes DATABASE\_PASSWORD from the production app. The db-password Key Vault secret is still written, because the way back needs it, and the staging slot keeps its DATABASE\_PASSWORD. Turn it off again, and apply, before turning stage 2 off. | `bool` | `false` | no |
+| <a name="input_mysql_entra_stage_identity_enabled"></a> [mysql\_entra\_stage\_identity\_enabled](#input\_mysql\_entra\_stage\_identity\_enabled) | Stage 1 of the passwordless database path, off by default. Attaches mysql\_entra\_server\_identity to the MySQL server, sets mysql\_entra\_admin as its Microsoft Entra administrator, and attaches mysql\_entra\_app\_identity to the production app (SystemAssigned, UserAssigned). No app setting changes, so the app keeps using its password. Requires the three inputs. None of it replaces the server or the app, and turning it off removes the identity and the administrator again. | `bool` | `false` | no |
+| <a name="input_mysql_require_secure_transport"></a> [mysql\_require\_secure\_transport](#input\_mysql\_require\_secure\_transport) | Set the MySQL require\_secure\_transport server parameter to ON, so the server refuses connections made without TLS, token logins included. The default, false, keeps the OFF every earlier release set. PHP connects with TLS by default (DB\_SSL\_CONNECTION defaults to true) but the image does not verify the server certificate, so this closes the plain-text path without adding verification. Not one of the four stages; it applies at once and refuses any client that does not use TLS, so check the app and any other client first. | `bool` | `false` | no |
 | <a name="input_networking"></a> [networking](#input\_networking) | Networking configuration | <pre>object({<br/>    vnet_address_space           = optional(string, "10.0.0.0/16")<br/>    app_subnet_cidr              = optional(string, "10.0.0.0/24")<br/>    db_subnet_cidr               = optional(string, "10.0.1.0/24")<br/>    private_endpoint_subnet_cidr = optional(string, "10.0.2.0/24")<br/>  })</pre> | `{}` | no |
 | <a name="input_plan_density_limit"></a> [plan\_density\_limit](#input\_plan\_density\_limit) | DEPRECATED, and has no effect: nothing in this module reads it, so it enforces no limit on sites per App Service Plan. It is kept, with its validation, only so existing configurations that set it still plan, and will be removed in the next major release. Remove it from your configuration. | `number` | `10` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |
@@ -662,6 +791,7 @@ the shared plan, fail in the same way.
 | <a name="output_key_vault_secret_versionless_uris"></a> [key\_vault\_secret\_versionless\_uris](#output\_key\_vault\_secret\_versionless\_uris) | Map of Key Vault secret names to versionless URIs, including any supplied via extra\_secrets |
 | <a name="output_key_vault_uri"></a> [key\_vault\_uri](#output\_key\_vault\_uri) | Key Vault URI |
 | <a name="output_log_analytics_workspace_id"></a> [log\_analytics\_workspace\_id](#output\_log\_analytics\_workspace\_id) | Log Analytics Workspace ID |
+| <a name="output_mysql_entra_stage"></a> [mysql\_entra\_stage](#output\_mysql\_entra\_stage) | How far the passwordless database path has gone, 0 to 4: 0 none, 1 identity and administrator, 2 app switched to the token login, 3 DATABASE\_PASSWORD dropped from the production app, 4 aad\_auth\_only ON. Known at plan time. The stage flags must be turned on in order, so this is also the number of flags that are on. |
 | <a name="output_resource_group_id"></a> [resource\_group\_id](#output\_resource\_group\_id) | ID of the resource group |
 | <a name="output_resource_group_name"></a> [resource\_group\_name](#output\_resource\_group\_name) | Name of the resource group |
 | <a name="output_site_name"></a> [site\_name](#output\_site\_name) | The site name |

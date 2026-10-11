@@ -131,12 +131,47 @@ locals {
 
   app_settings = merge(local.app_settings_base, local.storage_plugin_app_settings)
 
+  # Passwordless database access, stages 2 and 3. These apply to the PRODUCTION app only:
+  # the staging slot keeps local.app_settings as it was, password settings included, so it
+  # still reaches the database with the password until a later release gives it an identity.
+  # The image reads ENABLE_MYSQL_MANAGED_IDENTITY at request time and swaps its password
+  # login for a token login; no file in the container changes. A filtered for expression
+  # rather than a conditional, whose two map shapes would not unify.
+  mysql_managed_identity_app_settings = {
+    for name, value in {
+      "ENABLE_MYSQL_MANAGED_IDENTITY" = "true"
+      "ENTRA_CLIENT_ID"               = var.mysql_managed_identity_client_id
+      "DATABASE_USERNAME"             = var.mysql_managed_identity_database_user
+    } : name => value if var.mysql_managed_identity_enabled
+  }
+
+  # Stage 3 removes DATABASE_PASSWORD from the production app. The Key Vault secret is
+  # untouched: the way back needs it.
+  production_app_settings = merge(
+    {
+      for name, value in local.app_settings : name => value
+      if name != "DATABASE_PASSWORD" || var.database_password_app_setting_enabled
+    },
+    local.mysql_managed_identity_app_settings
+  )
+
+  # With a slot, the managed-identity names are sticky so a swap leaves each side's own
+  # database login where it is: production keeps the token settings, the slot keeps the
+  # password settings. DATABASE_PASSWORD is listed too, because stage 3 leaves it only on the
+  # slot. Nothing is added while the switch is off or there is no slot.
+  mysql_managed_identity_sticky_names = var.mysql_managed_identity_enabled && local.create_staging_slot ? [
+    "ENABLE_MYSQL_MANAGED_IDENTITY",
+    "ENTRA_CLIENT_ID",
+    "DATABASE_USERNAME",
+    "DATABASE_PASSWORD"
+  ] : []
+
   # Sticky settings - these stay with the slot, not swapped
   sticky_settings = distinct(concat([
     "WP_HOME",
     "WP_SITEURL",
     "WP_DEBUG"
-  ], var.extra_sticky_app_setting_names))
+  ], local.mysql_managed_identity_sticky_names, var.extra_sticky_app_setting_names))
 }
 
 # App Service Plan (created if not using shared plan)
@@ -185,9 +220,12 @@ resource "azurerm_linux_web_app" "main" {
   # backup is byte-for-byte what it was.
   virtual_network_backup_restore_enabled = var.backup_enabled ? true : null
 
-  # Managed identity for Key Vault access
+  # Managed identity for Key Vault access. The system-assigned identity stays: it resolves
+  # the Key Vault references, because key_vault_reference_identity_id is left unset. A
+  # user-assigned identity (the database login, stage 1) is attached to this app only.
   identity {
-    type = "SystemAssigned"
+    type         = length(var.user_assigned_identity_ids) > 0 ? "SystemAssigned, UserAssigned" : "SystemAssigned"
+    identity_ids = length(var.user_assigned_identity_ids) > 0 ? var.user_assigned_identity_ids : null
   }
 
   # Site configuration
@@ -308,7 +346,7 @@ resource "azurerm_linux_web_app" "main" {
   }
 
   # App settings (default WordPress settings merged with extra settings from consumer)
-  app_settings = merge(local.app_settings, var.extra_app_settings)
+  app_settings = merge(local.production_app_settings, var.extra_app_settings)
 
   # Sticky settings for deployment slots
   sticky_settings {
@@ -381,6 +419,20 @@ resource "azurerm_linux_web_app" "main" {
     precondition {
       condition     = var.backup_frequency_unit == "Hour" ? var.backup_frequency_interval >= 2 : true
       error_message = "backup_frequency_interval must be at least 2 when backup_frequency_unit is \"Hour\": App Service allows one custom backup every 2 hours at most."
+    }
+
+    # Stage 2 sets a client ID and a user for the token login, and the app needs the identity
+    # that owns that client ID.
+    precondition {
+      condition     = !var.mysql_managed_identity_enabled || (var.mysql_managed_identity_client_id != null && var.mysql_managed_identity_database_user != null && length(var.user_assigned_identity_ids) > 0)
+      error_message = "mysql_managed_identity_enabled is true, so mysql_managed_identity_client_id, mysql_managed_identity_database_user and user_assigned_identity_ids must all be set."
+    }
+
+    # Leaving the password off with the token login still off would leave the app with no
+    # way to reach the database.
+    precondition {
+      condition     = var.database_password_app_setting_enabled || var.mysql_managed_identity_enabled
+      error_message = "database_password_app_setting_enabled = false requires mysql_managed_identity_enabled = true: without the token login the app would have no database credentials."
     }
 
     ignore_changes = [
