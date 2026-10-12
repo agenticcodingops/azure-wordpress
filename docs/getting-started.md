@@ -305,7 +305,7 @@ The job sets `ARM_USE_OIDC`, `ARM_USE_AZUREAD`, `ARM_CLIENT_ID`, `ARM_TENANT_ID`
    v4.1.1.
 2. `module.wordpress.module.key_vault.azurerm_key_vault.main` shows `default_action = "Allow"` under
    `network_acls`.
-3. `module.wordpress.module.storage.azurerm_storage_account.main` shows `default_action = "Allow"` under
+3. `module.wordpress.module.storage.azurerm_storage_account.main` shows `default_action = "Deny"` under
    `network_rules`.
 4. The resource names match the ones you checked in step 1.
 
@@ -380,14 +380,14 @@ is needed, except for the optional `terraform output` in item 1.
 
    Expect `200`. This file answers `200` on a site that has no administrator yet, so it does not prove the
    installer is closed; item 4 does.
-3. Both firewalls are open as configured:
+3. The Key Vault firewall is open and the storage firewall is closed, as configured:
 
    ```bash
    az keyvault show --subscription <nonprod-subscription-id> --name kv-examplewp01-np9 --query properties.networkAcls.defaultAction -o tsv
    az storage account show --subscription <nonprod-subscription-id> --name sttrexamplewp01np --query networkRuleSet.defaultAction -o tsv
    ```
 
-   Expect `Allow` from both.
+   Expect `Allow` from the Key Vault command and `Deny` from the storage command.
 4. The installer is closed on both hosts. Fetch the body, not just the status:
 
    ```bash
@@ -406,8 +406,9 @@ is needed, except for the optional `terraform output` in item 1.
 
 The configuration above was planned offline with `terraform test` and a mocked `azurerm` provider, on
 Terraform 1.9.8, with the module fetched from the `v4.1.1` tag. The plan succeeded with 34 resources to add,
-including the staging slot, its Key Vault access policy and the administrator password. Both network rules planned as `Allow`. Without the two
-inputs they planned as `Deny`. A mocked plan proves that the configuration is valid and shows what it creates. It
+including the staging slot, its Key Vault access policy and the administrator password. The Key Vault network rule
+planned as `Allow` and the storage rule as `Deny`. Without the Key Vault input both planned as `Deny`; the storage
+input keeps the default, so it does not change the plan. A mocked plan proves that the configuration is valid and shows what it creates. It
 does not prove that Azure accepts it: it never calls Azure.
 
 ## Rollback
