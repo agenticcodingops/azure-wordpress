@@ -11,11 +11,12 @@ Run this module the way a consumer should in production:
   a reviewer approves.
 
 The guide also covers what the module needs from its caller: the deployer-ID inputs, no `depends_on` on the
-module call, resource locks, staging slots, shared plans, and adding and removing sites.
+module call, resource locks, staging slots, shared plans, adding and removing sites, and the v4.3.0 opt-ins
+(step 13).
 
 Code references are `file:line` at commit
-[`54c19c6`](https://github.com/agenticcodingops/azure-wordpress/tree/54c19c66f834243f2ba8c142ab0a457ac13127c8),
-which is release v4.1.1 plus documentation commits. Every name, ID and host name below is a placeholder.
+[`b592e13`](https://github.com/agenticcodingops/azure-wordpress/tree/b592e13ad09938075b0e8f7a1dd51cfbe007320b),
+which is release v4.3.0. Every name, ID and host name below is a placeholder.
 
 ## When to use
 
@@ -30,7 +31,7 @@ which is release v4.1.1 plus documentation commits. Every name, ID and host name
 - **Three subscriptions:** one for nonprod, one for production, and a management subscription for the state account
   and the CI identities (steps 1 and 2). No CI identity holds a role on the management subscription itself.
   - **Why one per environment.** The module creates its own resource groups
-    (`modules/wordpress-site/main.tf:185-188`), so each CI identity needs Contributor on a whole subscription.
+    (`modules/wordpress-site/main.tf:229-232`), so each CI identity needs Contributor on a whole subscription.
     If nonprod and production shared one, pull-request code running as the nonprod identity could change
     production.
   - **Why a management subscription.** A role on a subscription applies to every resource group in it
@@ -116,8 +117,8 @@ pause also needs a repository and plan where required reviewers are available (s
 **Who:** Azure administrator. **STOP:** yes. Every command creates or changes an Azure resource.
 
 Terraform state for this module holds secrets in plain text: the generated database password
-(`modules/wordpress-site/main.tf:209-213`), the storage account key and the Application Insights connection string
-(`modules/wordpress-site/main.tf:377-381`). Terraform's own documentation warns that state can contain sensitive
+(`modules/wordpress-site/main.tf:320-324`), the storage account key and the Application Insights connection string
+(`modules/wordpress-site/main.tf:511-517`). Terraform's own documentation warns that state can contain sensitive
 data. Protect the state account like the secrets it holds.
 
 ```bash
@@ -502,9 +503,9 @@ jobs:
   production job. The production job plans and applies after its approval, so the reviewer approves before the
   production plan exists. The nonprod plan shows what the module creates for a change, but not production's
   values. Production resolves different defaults for the MySQL SKU, backups, Key Vault purge protection and
-  retention, and log retention (`modules/wordpress-site/main.tf:97-116`, `:168`), and for the app's `WP_DEBUG`
-  setting, `false` rather than `true` (`modules/app-service/main.tf:112`). With `cdn_provider = "azure_front_door"`,
-  production's WAF policy runs in `Prevention` mode rather than `Detection` (`modules/wordpress-site/main.tf:143`),
+  retention, and log retention (`modules/wordpress-site/main.tf:97-155`, `:212`), and for the app's `WP_DEBUG`
+  setting, `false` rather than `true` (`modules/app-service/main.tf:116`). With `cdn_provider = "azure_front_door"`,
+  production's WAF policy runs in `Prevention` mode rather than `Detection` (`modules/wordpress-site/main.tf:187`),
   so it acts on requests that the nonprod WAF only logs.
 - **If reviewers must read the production plan first,** split `apply-production` into a plan job and an apply job
   that `needs` it. Both set `environment: production`, because the production identity trusts only that subject,
@@ -557,7 +558,7 @@ That read returns **whoever runs the plan**. If plan and apply run as different 
 separate identity that plans pull requests, the plan shows the Terraform access policy being replaced. The
 planning identity also needs `Get` and `List` on each vault's secrets, granted outside the module, or the refresh
 fails: the module gives secret access only to the deployer and the app identities
-(`modules/key-vault/main.tf:70-101`, `modules/wordpress-site/main.tf:530-568`).
+(`modules/key-vault/main.tf:70-101`, `modules/wordpress-site/main.tf:688-745`).
 
 Set `deployer_object_id` and `deployer_tenant_id` when either of these is true
 (`modules/wordpress-site/variables.tf:46-66`):
@@ -568,7 +569,7 @@ Set `deployer_object_id` and `deployer_tenant_id` when either of these is true
 In the pipeline above, each environment plans and applies as one identity, so you do not need them. If you set
 them:
 
-- **Set both, or neither.** A precondition fails the plan otherwise (`modules/wordpress-site/main.tf:193-196`).
+- **Set both, or neither.** A precondition fails the plan otherwise (`modules/wordpress-site/main.tf:237-240`).
 - **Use the apply identity's object ID,** in lower case. Validation rejects upper case
   (`modules/wordpress-site/variables.tf:51-54`, `:62-65`).
 
@@ -596,7 +597,7 @@ Terraform defers every data source inside a module that has `depends_on` until a
   (`modules/wordpress-site/main.tf:56-66`; see "Upgrading to v4.0.2" in
   [the upgrade guide](upgrading/v4.0-to-v4.1.md#upgrading-to-v402)).
 - **Cloudflare rulesets.** With `cdn_provider = "cloudflare"`, the zone lookup becomes unknown, and `zone_id`
-  forces replacement on `cloudflare_ruleset` (`modules/wordpress-site/main.tf:907-912`).
+  forces replacement on `cloudflare_ruleset` (`modules/wordpress-site/main.tf:1091-1096`).
 
 Setting the deployer-ID inputs fixes only the first. If the module needs a value from another resource, pass it
 in an input. The reference orders the work, with no `depends_on`.
@@ -605,30 +606,36 @@ in an input. The reference orders the work, with no `depends_on`.
 
 **Who:** operator. **STOP:** no.
 
-The SKU decides whether the site gets a staging slot.
+The SKU decides whether the site can have a staging slot; `app_service.staging_slot_enabled` (default `true`) decides
+whether it does.
 
 | Plan tier | Staging slot | Notes |
 |---|---|---|
-| Basic (`B1`-`B3`) | No | On a dedicated plan the module still creates an autoscale setting (`modules/app-service/main.tf:449-450`). Microsoft documents autoscale for Standard and up. Whether Azure accepts it on Basic is **UNKNOWN**. Use Basic through a shared plan (step 11). |
+| Basic (`B1`-`B3`) | No | On a dedicated plan the module still creates an autoscale setting (`modules/app-service/main.tf:598-599`). Microsoft documents autoscale for Standard and up. Whether Azure accepts it on Basic is **UNKNOWN**. Use Basic through a shared plan (step 11). |
 | Standard (`S1`-`S3`) | Yes | The cheapest tier with slots and autoscale. |
-| Premium v2 and v3 (`P1v2`, `P1v3`, …) | Yes | `P1v3` is the default for a dedicated plan (`modules/wordpress-site/variables.tf:281`). |
+| Premium v2 and v3 (`P1v2`, `P1v3`, …) | Yes | `P1v3` is the default for a dedicated plan (`modules/wordpress-site/variables.tf:410`). |
 
-The rule is `can(regex("^(S|P)[0-9]", sku))` (`modules/app-service/main.tf:24`), applied to the effective SKU
-(`modules/wordpress-site/monitoring.tf:436`). The effective SKU is `shared_plan_sku` when
+The rule is `can(regex("^(S|P)[0-9]", sku))` (`modules/app-service/main.tf:24`), applied to the effective SKU and
+combined with `app_service.staging_slot_enabled` (`modules/wordpress-site/main.tf:173`, `modules/app-service/main.tf:28`). The effective SKU is `shared_plan_sku` when
 `app_service.use_shared_plan = true` and `shared_plan_sku` is set. Otherwise it is `app_service.sku_name`, which
-defaults to `P1v3` (`modules/wordpress-site/main.tf:121`).
+defaults to `P1v3` (`modules/wordpress-site/main.tf:160`).
 
 When a slot exists:
 
-- it is named `staging` and has its own system-assigned identity (`modules/app-service/main.tf:331-353`);
-- that identity gets `Get` and `List` on the site's Key Vault secrets (`modules/wordpress-site/main.tf:548-568`);
+- it is named `staging` and has its own system-assigned identity (`modules/app-service/main.tf:460-488`);
+- that identity gets `Get` and `List` on the site's Key Vault secrets (`modules/wordpress-site/main.tf:706-745`);
 - `WP_HOME` and `WP_SITEURL` point at `https://app-<project>-<site>-<np|prod>-staging.azurewebsites.net`, and
-  `WP_DEBUG` is `true` (`modules/app-service/main.tf:7`, `:436-440`);
-- `always_on` is off on the slot unless you set `app_service.staging_always_on` (`modules/wordpress-site/variables.tf:289`).
+  `WP_DEBUG` is `true` (`modules/app-service/main.tf:7`, `:585-589`);
+- `always_on` is off on the slot unless you set `app_service.staging_always_on` (`modules/wordpress-site/variables.tf:418`).
 
 Slots cost nothing extra. They exist on Standard, Premium and Isolated plans only
 ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/app-service/deploy-staging-slots)). Moving a site from
-S or P to B deletes its slot, and a resource lock blocks that (step 9).
+S or P to B deletes its slot, and so does `app_service.staging_slot_enabled = false`: the slot, its managed identity,
+its Key Vault access policy and its diagnostic settings are destroyed, whatever is deployed to it is lost, and turning
+the flag back on creates a slot with a new `staging_slot_principal_id`. A resource lock blocks those deletes (step 9).
+The `staging_slot_enabled` output is known at plan time; `staging_slot_hostname` and `staging_slot_principal_id` are
+`null` without a slot, so do not drive a `count` from them. See
+[Staging Deployment Slots](../modules/wordpress-site/README.md#staging-deployment-slots).
 
 ### Step 9: Add resource locks
 
@@ -649,16 +656,16 @@ module "shared" {
 }
 ```
 
-- **Only `CanNotDelete` is accepted** (`modules/wordpress-site/variables.tf:855-858`). ReadOnly would block the
+- **Only `CanNotDelete` is accepted** (`modules/wordpress-site/variables.tf:1063-1066`). ReadOnly would block the
   list operations every refresh needs.
 - **The deploying identity needs `Microsoft.Authorization/locks/*`.** Owner and User Access Administrator have it,
-  Contributor does not (`modules/wordpress-site/variables.tf:836`, `modules/wordpress-site/main.tf:977-978`).
+  Contributor does not (`modules/wordpress-site/variables.tf:1044`, `modules/wordpress-site/main.tf:1161-1162`).
   Grant it to each identity whose environment sets a lock, for example as a custom role with only that action,
   scoped to that environment's subscription.
 - **A lock blocks every delete in its resource group,** including on diagnostic settings and alert rules. While it
   exists, these fail at apply:
   - removing a site (step 12 also covers the alert resources that Azure creates outside Terraform);
-  - removing its staging slot;
+  - removing its staging slot (a move to B\*, or `app_service.staging_slot_enabled = false`);
   - any change that forces replacement, such as a new `key_vault_name_suffix` or a change to
     `geo_redundant_backup`.
 
@@ -704,10 +711,10 @@ flowchart TD
 2. **Prepare DNS, unless Cloudflare does it.** **STOP:** yes for every DNS change.
    - With `cdn_provider = "cloudflare"` and `cloudflare.enabled = true`, the module creates the site's records and
      the `asuid` verification record in your existing zone. It waits 120 seconds, then binds the custom domain to
-     the app (`modules/wordpress-site/main.tf:878-969`). You create no DNS records by hand, but every plan and
+     the app (`modules/wordpress-site/main.tf:1062-1153`). You create no DNS records by hand, but every plan and
      apply needs the Cloudflare token from step 5. Page rules are another matter.
      - The module also creates three page rules in the zone, on by default (`cloudflare.enable_page_rules`,
-       `modules/wordpress-site/variables.tf:345`; `modules/cloudflare/page-rules.tf:17-86`). Their targets are built
+       `modules/wordpress-site/variables.tf:553`; `modules/cloudflare/page-rules.tf:17-86`). Their targets are built
        from the zone name: `*<cloudflare.domain>/wp-admin/*`, `*<cloudflare.domain>/wp-login.php*` and
        `*<cloudflare.domain>/wp-content/*`. They therefore match every host in the zone and are the same for every
        site in it ([wildcard matching](https://developers.cloudflare.com/rules/page-rules/reference/wildcard-matching/)).
@@ -722,8 +729,8 @@ flowchart TD
        site in the zone, so turn them on for another site first.
    - In every other case with a custom domain that does not end in `.azurewebsites.net`, the module creates no DNS
      records. That covers `azure_front_door`, `direct`, and `cloudflare` with `cloudflare.enabled` left at its
-     default, `false` (`modules/wordpress-site/variables.tf:339`, `modules/wordpress-site/main.tf:153`). It still
-     creates the App Service hostname binding, in the same apply (`modules/wordpress-site/main.tf:942-944`).
+     default, `false` (`modules/wordpress-site/variables.tf:547`, `modules/wordpress-site/main.tf:197`). It still
+     creates the App Service hostname binding, in the same apply (`modules/wordpress-site/main.tf:1126-1128`).
      - Create the TXT record `asuid.<subdomain>` = the app's domain verification ID in every case, for each
        environment's domain, before the first apply. It alone passes the binding check
        ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/app-service/app-service-web-tutorial-custom-domain)).
@@ -745,7 +752,7 @@ flowchart TD
 
      For a site on a shared plan (step 11), the app is not in the site's own resource group. It is in the group you
      pass as `shared_resource_group_name`: `rg-<project_name>-shared-np`, or `rg-<project_name>-shared-prod` in
-     production (`modules/wordpress-site/main.tf:135`, `modules/shared-infrastructure/main.tf:35-44`). Pass that
+     production (`modules/wordpress-site/main.tf:179`, `modules/shared-infrastructure/main.tf:35-44`). Pass that
      group as `--resource-group`. Do not take it from the module's `resource_group_name` output, which is always
      the site's group. For either layout, `az webapp show --ids <the module's app_service_id output> --query
      customDomainVerificationId -o tsv` also works.
@@ -759,7 +766,7 @@ flowchart TD
      name must later hold the Front Door CNAME. Before the first apply, create only the `asuid` TXT record.
      After the apply has created the Front Door custom domain, create TXT `_dnsauth.<subdomain>` = the
      `custom_domain_validation_token` output, then CNAME `<subdomain>` = the `front_door_endpoint_hostname` output
-     (`modules/wordpress-site/outputs.tf:146-149`, `:161-164`, `modules/front-door/README.md:79-89`). An apex domain
+     (`modules/wordpress-site/outputs.tf:168-171`, `:183-186`, `modules/front-door/README.md:80-90`). An apex domain
      cannot hold a CNAME: use an alias record (Azure DNS) or your provider's CNAME flattening. Do this for each
      environment's domain.
    - With `direct` and a custom domain ending in `.azurewebsites.net`, as in
@@ -812,21 +819,21 @@ module "wordpress_sites" {
   (`modules/app-service/main.tf:13-17`).
 - **Set `shared_plan_sku` from the same value as `app_service_sku`.** Slot detection reads it. If you leave it
   unset, detection falls back to `app_service.sku_name`, which defaults to `P1v3`, and plans a slot even on a Basic
-  plan (`modules/wordpress-site/main.tf:121`).
+  plan (`modules/wordpress-site/main.tf:160`).
 - **For a new site, the web app and its slot are created in the shared resource group,** because Azure requires an
-  app and its plan to share a resource group (`modules/wordpress-site/main.tf:132-135`). The shared lock (step 9)
+  app and its plan to share a resource group (`modules/wordpress-site/main.tf:176-179`). The shared lock (step 9)
   therefore covers them.
 - **Do not switch an existing site to `use_shared_plan = true`. STOP.** Its web app would change resource group
-  (`modules/wordpress-site/main.tf:135`), and a new resource group forces a new web app
+  (`modules/wordpress-site/main.tf:179`), and a new resource group forces a new web app
   ([azurerm `azurerm_linux_web_app`](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/linux_web_app)).
   The staging slot belongs to the app, so it is replaced with it. What happens next is read from the code and has
   not been run:
   - **With a custom-domain binding,** the binding sets `create_before_destroy = true`
-    (`modules/wordpress-site/main.tf:962-968`). Terraform is expected to try to create the new app first, and Azure
+    (`modules/wordpress-site/main.tf:1146-1152`). Terraform is expected to try to create the new app first, and Azure
     rejects the duplicate name because the old app still holds it.
   - **Without a binding** (a custom domain ending in `.azurewebsites.net`, so the binding has `count = 0`,
-    `modules/wordpress-site/main.tf:944`), nothing in the module sets `create_before_destroy` to true, and the app
-    resource sets it to `false` (`modules/app-service/main.tf:320`). Read that case as destroy, then create: the
+    `modules/wordpress-site/main.tf:1128`), nothing in the module sets `create_before_destroy` to true, and the app
+    resource sets it to `false` (`modules/app-service/main.tf:401`). Read that case as destroy, then create: the
     app and its `/home` content are deleted.
   - **Either way,** read the plan for `must be replaced` on the web app and its slot, and do not apply it. Revert
     the change if the plan shows it.
@@ -836,7 +843,7 @@ module "wordpress_sites" {
 - **No autoscale setting by default.** `shared-infrastructure` creates one only with `enable_autoscale = true`
   (`modules/shared-infrastructure/variables.tf:50-53`). Keep it off on Basic.
 - **PHP memory.** The module sets `PHP_MEMORY_LIMIT = 256M` on every site and its staging slot, on a dedicated
-  plan as well as a shared one (`modules/app-service/main.tf:87-94`, `:287`, `:436`). The container's default and
+  plan as well as a shared one (`modules/app-service/main.tf:91-98`, `:349`, `:585`). The container's default and
   maximum is 512M
   ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/app-service/reference-app-settings#wordpress)). To
   raise it, add `PHP_MEMORY_LIMIT = "512M"` to `app_service.extra_app_settings`, which reaches the slot too.
@@ -862,7 +869,8 @@ files.
      `wp-config.php`, themes and plugins. It also holds the uploads unless you installed a Blob offload plugin
      yourself (the module installs none). It is deleted with the web app.
    - **Download** both files through the SCM (Kudu) site.
-   - **Blob containers:** copy every container in the account, not only uploads, for example
+   - **Blob containers:** copy every container in the account, not only uploads (with `app_service_backup_enabled`, the backup container
+     too), for example
      `az storage blob download-batch --auth-mode key ...`. `--auth-mode login` needs Storage Blob Data Reader, which
      Owner and Contributor do not include. If `storage_network_rules_default_action` is `Deny`, first add your
      public IPv4 address (a plain address, not a /32) to `storage_network_rules_ip_rules`, and apply.
@@ -942,10 +950,10 @@ files.
 After removal:
 
 - **Production Key Vault names stay reserved.** Production vaults have purge protection on, with 90-day soft-delete
-  retention (`modules/wordpress-site/main.tf:113-116`). A soft-deleted vault's name cannot be reused until the
+  retention (`modules/wordpress-site/main.tf:152-155`). A soft-deleted vault's name cannot be reused until the
   retention period ends, and with purge protection on it cannot be purged early
   ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/key-vault/general/soft-delete-overview)). To reuse
-  the `site_name` sooner, set a new `key_vault_name_suffix` (`modules/wordpress-site/variables.tf:825-829`).
+  the `site_name` sooner, set a new `key_vault_name_suffix` (`modules/wordpress-site/variables.tf:1033-1037`).
 - **Nonprod vault names are free at once.** Purge protection is off there, and the azurerm provider purges a vault
   on destroy by default.
 - **The site's resource group is gone.** `az group exists -n rg-<project>-<site>-<np|prod>` prints `false`, and the
@@ -961,6 +969,50 @@ After removal:
 
   The last two require you to recreate the resource group with its original name first.
 
+### Step 13: Turn on the v4.3.0 opt-ins, one at a time
+
+**Who:** operator, and a reviewer for production. **STOP:** yes, at each merge: every opt-in below changes Azure, and
+three of them destroy something.
+
+v4.3.0 adds four opt-ins, all off by default, so a pin bump alone plans no resource change (see
+[4.1.1 to 4.3.0](upgrading/v4.1.1-to-v4.3.0.md)). Turn them on in separate pull requests and read each plan.
+
+- **Scheduled App Service backup** (`app_service_backup_enabled = true`, settings in `app_service_backup`). Declare
+  the target container first, as a private entry of `storage.additional_containers` (default name `wp-backups`); the
+  plan fails without it, and removing that entry later destroys the container and every backup in it. The first plan
+  adds the `backup` block and `virtual_network_backup_restore_enabled` to the web app in place, creates the three
+  `time` resources that schedule the SAS (`modules/wordpress-site/backup.tf`), and reads the SAS at apply that once
+  (`storage_account_url` is known after apply: noise, not a replacement). The SAS is signed from the account key, is
+  never an output, and is re-issued by the first plan after `sas_rotation_days` (default 180) of a `sas_validity_days`
+  (default 365) window: schedule the weekly plan-only run of Verify item 1, read the dates with `terraform output`
+  (Verify item 7) and act on `app_service_backup_sas_rotation_rfc3339`, because the backup fails after
+  `app_service_backup_sas_expiry_rfc3339` if no plan has been applied since the rotation date. The backup travels over the VNet integration, so
+  `storage_network_rules_default_action` stays `"Deny"`. Only the production app is backed up, each backup is capped
+  at 10 GB and the database is not included. See
+  [Backup & Recovery](../modules/wordpress-site/README.md#backup--recovery) and
+  [The SAS: source, rotation and trade-off](../modules/wordpress-site/README.md#the-sas-source-rotation-and-trade-off).
+- **Retire the `storage-key` secret** (`storage_key_secret_enabled = false`), only if you run no Blob offload plugin.
+  Order matters: set `app_service_storage_plugin_app_settings_enabled = false` first (or in the same change), remove
+  any `extra_secret_app_settings` entry that points at `"storage-key"`, and stop indexing
+  `key_vault_secret_versionless_uris["storage-key"]`; the plan fails otherwise. The apply destroys the secret, a
+  data-plane delete that a `CanNotDelete` lock does not block, and the provider purges it when the vault has no purge
+  protection (the nonprod default). The backup SAS does not use this secret. See
+  [Retiring the `storage-key` secret](../README.md#retiring-the-storage-key-secret).
+- **Passwordless database access** (`mysql_entra_stage_identity_enabled`, then `mysql_entra_stage_app_switch_enabled`,
+  `mysql_entra_stage_drop_password_enabled` and `mysql_entra_stage_aad_only_enabled`). One stage per apply: each flag
+  requires the one before it, and turning a lower one off while a higher one is on fails at plan. You create the
+  user-assigned identities and any non-administrator MySQL user yourself; the module creates no identity, no Microsoft
+  Graph permission and no MySQL user, and the deploying principal needs Managed Identity Operator on both identities.
+  Before stage 2, confirm that the site's `wp-config.php` carries the image's managed-identity block
+  (`grep -c ENABLE_MYSQL_MANAGED_IDENTITY /home/site/wwwroot/wp-config.php` in the app's SSH console must not print
+  `0`), or the app loses database access. Stage 4 fails at plan while a staging slot exists: set
+  `app_service.staging_slot_enabled = false` first. Roll back in reverse order, one apply per step. See
+  [Passwordless database access (managed identity)](../modules/wordpress-site/README.md#passwordless-database-access-managed-identity).
+- **Opt out of the staging slot** (`app_service.staging_slot_enabled = false`): step 8 says what the apply destroys.
+- **`mysql_require_secure_transport = true`** is a hardening input, not a stage: it sets `require_secure_transport = ON`
+  at once and refuses any client that does not use TLS, so check the app and any other client first
+  ([TLS](../modules/wordpress-site/README.md#tls)).
+
 ## Verify
 
 **Who:** operator, after every apply. **STOP:** no, except where an item says otherwise.
@@ -969,15 +1021,20 @@ After removal:
    - **Nonprod:** read the nonprod plan of a pull request that changes nothing under `infra/nonprod/`. The
      production pull request in step 10 is one. It must report no changes.
    - **Production.** **STOP:** yes, because dispatching a production job is a STOP. The step 5 pipeline has no
-     plan-only job, and re-running `apply-production` applies whatever it plans. Add `workflow_dispatch:` to `on:`,
-     and add a job with `environment: production` that runs only
-     `terraform init -input=false -backend-config=backend.hcl` and
-     `terraform plan -input=false -lock-timeout=10m -detailed-exitcode`.
+     plan-only job, and re-running `apply-production` applies whatever it plans. Add `workflow_dispatch:` and a
+     weekly `schedule:` (for example `cron: "0 6 * * 1"`) to `on:`, and add a job with `environment: production`
+     that runs only `terraform init -input=false -backend-config=backend.hcl`, with the backup on, the two
+     `terraform output` commands of item 7, and then
+     `terraform plan -input=false -lock-timeout=10m -detailed-exitcode`. The outputs come first: a plan that finds
+     changes fails the job, and the steps after it would not run.
      - Exit code 0 means no changes, and 2 means changes. Set `terraform_wrapper: false` on
        `hashicorp/setup-terraform`, because its wrapper treats exit code 2 as success, so the job would pass with
-       changes present.
+       changes present. A scheduled run that finds changes therefore fails, and that failure is the notification:
+       route the workflow's failure notifications to an operator, who reads the plan and applies it through a pull
+       request.
      - Give the job its own concurrency group, not `production`, so that it cannot replace a pending apply.
-     - Dispatch it from `main`. It waits for the production reviewers, like the apply job.
+     - Dispatch it from `main`, or let the schedule start it. Either way it waits for the production reviewers,
+       like the apply job; approving the weekly run is part of the check.
      - A nonprod dispatch job must also reference `environment: nonprod`. Without an environment, the token subject
        is `PREFIX:ref:refs/heads/main`, which neither identity trusts.
    - **Not under your own identity.** Such a plan cannot pass. The guide gives you no role on the state container
@@ -1056,6 +1113,20 @@ After removal:
    az lock list --subscription <management-subscription-id> --resource-group rg-tfstate-example -o table
    ```
 
+7. **The backup SAS is current**, where `app_service_backup_enabled` is on. Expose
+   `app_service_backup_sas_rotation_rfc3339` and `app_service_backup_sas_expiry_rfc3339` as outputs of your root. A plan
+   that changes nothing prints no outputs, so the plan-only job of item 1 reads them from state, before its plan step:
+
+   ```bash
+   terraform output app_service_backup_sas_rotation_rfc3339
+   terraform output app_service_backup_sas_expiry_rfc3339
+   ```
+
+   The weekly run keeps both dates in the job log, also in the run that the plan then fails. A plan after the rotation date replaces the three `time` resources
+   and updates the web app's backup block in place, which fails that run with exit code 2: apply it before the expiry,
+   or the backup stops
+   ([The SAS: source, rotation and trade-off](../modules/wordpress-site/README.md#the-sas-source-rotation-and-trade-off)).
+
 ## Rollback
 
 **Who:** operator. **STOP:** yes.
@@ -1106,11 +1177,15 @@ After removal:
     reverting. Any rollback from v4.x to v3.x is this case. From azurerm 5.6 on, `azurerm_storage_container` is at
     schema version 2, and every site has one. The last 4.x release, 4.81.0, reads only version 1.
 - **Changes that cannot be undone:**
-  - turning Key Vault purge protection on (`modules/wordpress-site/variables.tf:152`);
-  - the soft-delete retention period, which is fixed when the vault is created (`modules/wordpress-site/variables.tf:158`);
+  - turning Key Vault purge protection on (`modules/wordpress-site/variables.tf:253`);
+  - the soft-delete retention period, which is fixed when the vault is created (`modules/wordpress-site/variables.tf:259`);
   - `geo_redundant_backup`, which replaces the MySQL server;
   - a MySQL major-version upgrade (`database.mysql_version`);
   - removing a site (step 12);
+  - `app_service.staging_slot_enabled = false` on a site that has a slot: what was deployed to the slot is gone, and
+    turning the flag back on creates a slot with a new identity;
+  - `storage_key_secret_enabled = false` where the vault has no purge protection: the secret is purged, not kept
+    soft-deleted;
   - a provider upgrade, once an apply has run with it, if the new version raised the schema version of a resource
     in state. For this module that includes the move from azurerm 4.x to 5.x in v4.0.0.
 
@@ -1140,7 +1215,7 @@ After removal:
      - Continue only when the plan creates nothing that already exists and destroys or replaces nothing you did not
        intend.
      - The plan must also not create `random_password.db`. A new value would reach Key Vault, while MySQL keeps the
-       old password (`modules/database/main.tf:81-82`).
+       old password (`modules/database/main.tf:100-101`).
   6. **Re-enable the workflow** (`gh workflow enable <workflow>`) and remove the temporary role.
 - **A deleted state container (STOP):** restore it within 30 days. Find its version with
   `az storage container list --account-name sttfstateexample --include-deleted --auth-mode login`. Then run
