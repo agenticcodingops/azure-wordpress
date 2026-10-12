@@ -252,18 +252,23 @@ what breaks when you turn basic auth off.
 - Anonymous public access to blobs is off for the whole account:
   `allow_nested_items_to_be_public = false` (`modules/storage/main.tf:28`). The uploads container is private
   (`modules/storage/main.tf:91`).
-- Shared-key access stays on, because the WordPress storage plugin needs it
-  (`modules/storage/main.tf:29`).
+- Shared-key access stays on (`modules/storage/main.tf:29`), because the module-generated SAS of the
+  scheduled App Service backup (from v4.3.0) and the optional `MICROSOFT_AZURE_ACCOUNT_KEY` app
+  setting both use the account key. `storage_key_secret_enabled = false` (from v4.3.0) stops
+  writing that key to Key Vault; it needs `app_service_storage_plugin_app_settings_enabled = false`
+  first.
 - Infrastructure (double) encryption is on (`modules/storage/main.tf:32`).
 - The SAS expiry policy is 7 days with action `Log` (`modules/storage/main.tf:46-49`).
   With `Log`, "requests made with out-of-policy SAS are allowed"; they are only logged, and
   only if blob logs go to Azure Monitor
   ([SAS expiration policy](https://learn.microsoft.com/en-us/azure/storage/common/sas-expiration-policy#define-the-sas-expiration-action)).
-  The policy does not limit the account key itself, which the storage plugin uses
-  (`modules/app-service/main.tf:124`).
+  The policy does not limit the account key itself, which the backup SAS is signed with and which
+  the optional `MICROSOFT_AZURE_ACCOUNT_KEY` setting carries (`modules/app-service/main.tf:124`).
 
-The firewall is only one of two gates on media that browsers fetch from the blob endpoint.
-`Deny` refuses those browsers, so that design needs `Allow`. `Allow` is not enough on its
+By default no browser reads the blob endpoint: media stays on the web app's `/home` storage, the
+module installs no plugin, and the backup uses the VNet path, so `Deny` is viable. Only a Blob
+offload plugin you install points media URLs at the blob endpoint, and then the firewall is one of
+two gates on media that browsers fetch from it. `Deny` refuses those browsers, so that design needs `Allow`. `Allow` is not enough on its
 own: the account disallows anonymous blob access (`modules/storage/main.tf:28`) and the
 uploads container is private (`modules/storage/main.tf:91`). Microsoft states that once
 anonymous access is disallowed for the account, "any future anonymous requests to that
@@ -646,7 +651,7 @@ These could not be confirmed from the code or from vendor documentation:
    (`modules/wordpress-site/main.tf:541-544`).
 7. A tested procedure for rotating the database password, the storage key or the
    Application Insights connection string.
-8. Whether any storage plugin serves SAS-signed media URLs. The account disallows anonymous
+8. Whether any Blob offload plugin, should you install one, serves SAS-signed media URLs. The account disallows anonymous
    blob access and the uploads container is private (`modules/storage/main.tf:28`, `:91`), so
    unsigned URLs, which the Microsoft Azure Storage for WordPress plugin 4.5.2 writes, fail.
 

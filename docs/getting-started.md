@@ -91,7 +91,7 @@ resource "random_password" "wp_admin" {
 }
 
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.1.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.0"
 
   project_name = local.project_name
   site_name    = local.site_name
@@ -155,7 +155,7 @@ different ways.
 | Input | Default | What fails with the default | Why this guide sets it | Tighter option |
 |---|---|---|---|---|
 | `key_vault_public_network_access_enabled = true` | `false` (`modules/wordpress-site/variables.tf:130-134`), which sets the vault firewall's `default_action` to `Deny` (`modules/key-vault/main.tf:54-59`) | **The apply.** Terraform writes three secrets into the vault (`modules/wordpress-site/main.tf:377-381`, `modules/key-vault/main.tf:105-123`). Terraform is not a trusted Azure service, so the vault refuses those calls with a 403 unless the runner can reach it. | Hosted CI runners do not have one fixed egress address you can allow-list. | On a runner with a stable egress IP, leave this `false` and set `key_vault_network_acls_ip_rules = ["<runner IP>"]` (`modules/wordpress-site/variables.tf:136-140`). |
-| `storage_network_rules_default_action = "Allow"` | `"Deny"` (`modules/wordpress-site/variables.tf:172-181`) | **Media that browsers fetch from the blob endpoint.** A storage plugin that rewrites media URLs to the account's own blob endpoint makes browsers fetch media from Azure directly (`modules/wordpress-site/variables.tf:168-171`). Browser addresses cannot be allow-listed, so with `Deny` each image returns 403. Nothing in this configuration does that by default: the module does not install the plugin, so uploads stay on the app's `/home` storage. | It removes the firewall gate for browsers that fetch from the blob endpoint. It is only half of the fix; see the paragraph below the table. | Keep `"Deny"`, the default, while uploads stay on `/home`. Do not rely on a CDN custom domain and `storage_network_rules_ip_rules` for media: see [Media](architecture.md#media). |
+| `storage_network_rules_default_action = "Allow"` | `"Deny"` (`modules/wordpress-site/variables.tf:172-181`) | **Nothing, by default.** Media stays on the app's `/home` storage (the module installs no plugin) and the scheduled App Service backup reaches the account over the VNet integration, so `Deny` is viable whenever no browser reads the blob endpoint. `Allow` is needed only if you install a Blob offload plugin that points media URLs at the account's own blob endpoint: browsers then fetch media from Azure directly (`modules/wordpress-site/variables.tf:168-171`), browser addresses cannot be allow-listed, and with `Deny` each image returns 403. | So that a Blob offload plugin installed later works without a second network change: it removes the firewall gate for browsers that fetch from the blob endpoint. It is only half of the fix; see the paragraph below the table. | Keep `"Deny"`, the default, while uploads stay on `/home`; the backup does not need `Allow`. Do not rely on a CDN custom domain and `storage_network_rules_ip_rules` for media: see [Media](architecture.md#media). |
 
 Neither input affects how the site itself reads secrets. The App Service subnet is always allowed through both
 firewalls (`modules/wordpress-site/main.tf:363-366` and `:419-422`), so Key Vault references and media uploads
@@ -421,7 +421,8 @@ does not prove that Azure accepts it: it never calls Azure.
    `mkdir -p /home/backups && wp db export /home/backups/wordpress.sql --path=/home/site/wwwroot --allow-root`,
    archive the site files with `tar -czf /home/backups/wwwroot.tar.gz -C /home/site wwwroot`, and download both
    through the SCM (Kudu) site. Never write the dump under `/home/site/wwwroot`, the public web root. Uploads stay in
-   `/home` unless you installed a storage plugin, so copy the blob account's containers too if you did. Opening the
+   `/home` unless you installed a Blob offload plugin yourself (the module installs none), so copy the blob account's
+   containers too if you did. Opening the
    SCM or storage firewall to your address first is an Azure change. The
    [deployment guide's step 12](deployment-guide.md#step-12-remove-a-site) has the full procedure.
 2. In a pull request, delete the `module "wordpress"` block, the `random_password` resource and the three `output`

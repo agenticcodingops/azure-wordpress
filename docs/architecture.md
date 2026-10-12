@@ -27,18 +27,19 @@ code nor Microsoft's documentation settles a question, the text says **UNKNOWN**
 - `cdn_provider` chooses the edge: `cloudflare`, `azure_front_door` or `direct`. The default is `direct`. Only one
   edge is created.
 - WordPress runs as a Linux web app from the `mcr.microsoft.com/appsvc/wordpress-debian-php` image. A staging slot
-  exists only on S\* and P\* SKUs.
+  exists on S\* and P\* SKUs unless `app_service.staging_slot_enabled = false` (from v4.3.0).
 - MySQL Flexible Server uses private access (virtual network integration): a delegated subnet and a private DNS
   zone. No module in this repository creates a private endpoint.
 - Key Vault holds the database password, the storage account key and the Application Insights connection string.
   The web app reads them through Key Vault references, as its managed identity.
 - Key Vault and Storage deny public data-plane access by default. The App Service subnet reaches both through
   service endpoints.
-- With the storage plugin, media URLs point at the storage account's blob endpoint, so browsers fetch media from
-  Azure directly, not through the CDN. Those requests must pass the storage firewall (`Deny` by default) and carry
-  their own authorization, because the account disallows anonymous blob reads and no input changes that. The
-  Microsoft Azure Storage for WordPress plugin writes unsigned URLs, so media does not load with it. See
-  [Media](#media).
+- Media stays on the web app's `/home` storage by default; the module installs no plugin. The `MICROSOFT_AZURE_*`
+  app settings are optional and exist so you can configure a Blob offload plugin yourself. Only if you install one
+  that points media URLs at the storage account's blob endpoint do browsers fetch media from Azure directly, not
+  through the CDN. Those requests must then pass the storage firewall (`Deny` by default) and carry their own
+  authorization, because the account disallows anonymous blob reads and no input changes that. The Microsoft
+  Azure Storage for WordPress plugin writes unsigned URLs, so media does not load with it. See [Media](#media).
 - The composition creates Log Analytics and Application Insights itself. It never calls `modules/monitoring`.
 
 Sources: `modules/wordpress-site/variables.tf:324-333` (`cdn_provider`), `modules/app-service/main.tf:24`,
@@ -59,7 +60,7 @@ flowchart TB
         subgraph web["App Service"]
             plan["App Service plan<br/>the site's own, or a shared plan"]
             app["Linux web app<br/>WordPress container"]
-            slot["Staging slot<br/>S* and P* SKUs only"]
+            slot["Staging slot<br/>S* and P* SKUs, opt-out"]
         end
         mysql[("MySQL Flexible Server<br/>delegated subnet and private DNS zone")]
         kv["Key Vault"]
@@ -77,7 +78,7 @@ flowchart TB
     browser -.->|"HTTPS, cdn_provider = direct"| app
     cf -->|"to the origin"| app
     afd -->|"HTTPS to the origin"| app
-    browser -.->|"media URLs written by the storage plugin"| st
+    browser -.->|"media, only with a Blob offload plugin you install"| st
     plan --- app
     app --- slot
     app -->|"MySQL over the virtual network"| mysql
@@ -91,6 +92,11 @@ flowchart TB
     alerts --> ag
 ```
 
+The slot's "same database settings" edge holds until the passwordless database path (from v4.3.0) reaches stage 2. From
+stage 2 the production app logs in with its Entra identity and the settings that stage sets, while the slot keeps its
+password settings; stage 3 removes `DATABASE_PASSWORD` from the app only. See the composition README's
+[Passwordless database access (managed identity)](../modules/wordpress-site/README.md#passwordless-database-access-managed-identity).
+
 What each part is:
 
 | Part | Created by | Notes |
@@ -99,7 +105,7 @@ What each part is:
 | Front Door | `modules/front-door`, only when `cdn_provider = "azure_front_door"` and `front_door.enabled` is true (the default) | Premium SKU by default. |
 | App Service plan | `modules/app-service`, unless you pass `plan_id` or `use_shared_plan = true` | Its own plan gets an autoscale setting of 1 to 5 instances. |
 | Linux web app | `modules/app-service` | System-assigned managed identity. Outbound virtual network integration. |
-| Staging slot | `modules/app-service`, only on S\* and P\* SKUs | Its own managed identity. The same database and storage settings as the web app. |
+| Staging slot | `modules/app-service`, on S\* and P\* SKUs unless `app_service.staging_slot_enabled = false` (from v4.3.0) | Its own managed identity. The same database and storage settings as the web app, until passwordless stage 2 (from v4.3.0): from then the app logs in with its Entra identity while the slot keeps its password settings. |
 | MySQL Flexible Server | `modules/database` | One `wordpress` database. Administrator login `wpadmin`. |
 | Key Vault | `modules/key-vault` | Access policies, not Azure RBAC. |
 | Storage account | `modules/storage` | StorageV2 with a private `wp-uploads` container by default. |
@@ -360,26 +366,30 @@ Sources: `modules/wordpress-site/main.tf:140-146`, `:501-502`, `:775-797`, `:833
   same apply, and Azure checks domain ownership then. Create the CNAME (or the `asuid` TXT record) before the first
   apply; see [step 10 of the deployment guide](deployment-guide.md#step-10-onboard-a-site). The module binds no
   certificate; bind one yourself.
-- With the storage plugin, media comes from the blob endpoint. See [Media](#media).
+- Media comes from the web app's `/home` storage, like every other response. Only a Blob offload plugin you install
+  makes browsers fetch it from the blob endpoint instead. See [Media](#media).
 
 Sources: `modules/wordpress-site/variables.tf:324-333`; `modules/wordpress-site/main.tf:942-969`;
 `modules/app-service/main.tf:214-219`, `:258`, `:414`.
 
 ## Media
 
-Media goes to Blob Storage only after you install the Microsoft Azure Storage for WordPress plugin and turn on its
-"Use Microsoft Azure Storage for default upload" option (`MICROSOFT_AZURE_USE_FOR_DEFAULT_UPLOAD`, which defaults to
-`false`). This module does neither. Until then, WordPress writes uploads to `wp-content/uploads` on the web app's
+Media goes to Blob Storage only after you install a Blob offload plugin yourself, for example Microsoft Azure Storage
+for WordPress, and turn on its "Use Microsoft Azure Storage for default upload" option
+(`MICROSOFT_AZURE_USE_FOR_DEFAULT_UPLOAD`, which defaults to `false`). This module installs no plugin and sets no
+such option. Until then, WordPress writes uploads to `wp-content/uploads` on the web app's
 persistent App Service storage (`WEBSITES_ENABLE_APP_SERVICE_STORAGE = "true"`, `modules/app-service/main.tf:81`).
 The storage account's blob versioning and soft delete do not cover files stored there. The web app has no
 `storage_account` block, so there is no Azure Files mount either way.
 
-With the plugin installed and set as the default upload target:
+With such a plugin installed and set as the default upload target:
 
 1. **Configuration.** When `app_service_storage_plugin_app_settings_enabled` is `true` (the default), the web app
    and the slot get `MICROSOFT_AZURE_ACCOUNT_NAME`, `MICROSOFT_AZURE_CONTAINER` and `MICROSOFT_AZURE_ACCOUNT_KEY`.
-   The key is a Key Vault reference to the `storage-key` secret. Only the Microsoft Azure Storage for WordPress
-   plugin reads these settings. The container image does not, and this module does not install the plugin.
+   The key is a Key Vault reference to the `storage-key` secret. The settings are optional: they exist so you can
+   configure such a plugin (Microsoft Azure Storage for WordPress reads them as `wp-config.php` constants). The
+   container image does not read them, and this module installs no plugin. With the settings off,
+   `storage_key_secret_enabled = false` (from v4.3.0) also stops writing the `storage-key` secret.
 2. **Uploads.** The web app writes to the account through the App Service subnet, which carries the
    `Microsoft.Storage` service endpoint and is always on the account's allow-list.
 3. **Reads.** The plugin rewrites media URLs to the account's own blob endpoint,
@@ -402,7 +412,8 @@ covers Cloudflare origin pulls only if you put the blob endpoint behind a Cloudf
 module does not create. Those pulls are anonymous, so the account rejects them as well (item 4). Cloudflare's IPv6
 ranges are left out, because Azure Storage IP rules accept IPv4 only.
 
-**Media from the blob endpoint does not load with the Microsoft Azure Storage for WordPress plugin.** The account
+**If you install the Microsoft Azure Storage for WordPress plugin, media from the blob endpoint does not load with
+it.** The account
 hard-codes `allow_nested_items_to_be_public = false` (`modules/storage/main.tf:28`) and the uploads container is
 `private` (`modules/storage/main.tf:91`). Azure rejects every anonymous read on such an account. That plugin
 (version 4.5.2) writes plain URLs, the CNAME or `https://ACCOUNT.blob.core.windows.net/CONTAINER` followed by the
@@ -684,7 +695,8 @@ Sources: `modules/shared-infrastructure/main.tf:43-71`, `:160-167`; `modules/wor
   `cloudflare.enabled = true`.
 - **A certificate for the custom domain on App Service.** The hostname binding ignores `ssl_state` and
   `thumbprint`.
-- **The storage plugin.** The module sets its app settings but does not install it.
+- **A Blob offload plugin.** The module installs none, so media stays on `/home`. The optional `MICROSOFT_AZURE_*` app
+  settings exist so you can configure one yourself.
 - **A NAT gateway or route table.** Outbound traffic uses the platform defaults.
 
 Sources: `modules/networking/main.tf:76-84`; `modules/cloudflare/main.tf:16-26`;
