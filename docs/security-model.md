@@ -302,10 +302,13 @@ see [Architecture: Media](architecture.md#media).
 
 ### Managed identities resolve Key Vault references
 
-The module stores three secrets of its own in the site's vault: `db-password`,
-`storage-key` and `appinsights-connection` (`modules/wordpress-site/main.tf:511-517`).
-Consumer secrets from `extra_secrets` are stored beside them, and cannot overwrite them
-(`modules/wordpress-site/main.tf:563`).
+The module stores up to three secrets of its own in the site's vault: `db-password`,
+`appinsights-connection` and, unless `storage_key_secret_enabled = false`, `storage-key`
+(`modules/wordpress-site/main.tf:511-517`). Consumer secrets from `extra_secrets` are stored
+beside them and cannot overwrite a module-owned name (`modules/wordpress-site/main.tf:563`).
+With the opt-out, `storage-key` is no longer module-owned, so a consumer
+`extra_secrets["storage-key"]` is written as given, and the vault then holds two module
+secrets. See [Retiring the `storage-key` secret](../README.md#retiring-the-storage-key-secret).
 
 By default, Terraform does not write these values into the app's settings. It writes Key
 Vault references, which App Service resolves at run time:
