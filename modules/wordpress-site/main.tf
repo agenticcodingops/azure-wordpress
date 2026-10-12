@@ -104,6 +104,45 @@ locals {
     mysql_version          = var.database.mysql_version # optional() supplies 8.0.21; "" reaches the database module's validation
   }
 
+  # Passwordless database access. How many of the four stages are on: each flag must need
+  # the one before (preconditions on the resource group), so the highest one on is the
+  # count. Known at plan time, since it reads only booleans.
+  mysql_entra_stage = (
+    var.mysql_entra_stage_aad_only_enabled ? 4 :
+    var.mysql_entra_stage_drop_password_enabled ? 3 :
+    var.mysql_entra_stage_app_switch_enabled ? 2 :
+    var.mysql_entra_stage_identity_enabled ? 1 : 0
+  )
+
+  # The app identity ID goes to the production app only. A list whose length is known at
+  # plan time even when the ID is not, because the caller's identity may be created in the
+  # same apply. Empty, never null, so nothing is attached while stage 1 is off.
+  mysql_entra_app_identity_ids = var.mysql_entra_stage_identity_enabled && var.mysql_entra_app_identity != null ? [var.mysql_entra_app_identity.id] : []
+
+  # Settings that stage 2 cannot coexist with. CACHE_MYSQL_ACCESS_TOKEN=true starts a PHP
+  # session on every request, which sets a cookie without Secure or HttpOnly and writes a
+  # token to a session file; DB_SSL_CONNECTION=false turns TLS off. A literal value is read;
+  # a Key Vault reference cannot be, so naming either setting in extra_secret_app_settings is
+  # refused outright. Both names are matched exactly, as the container reads them.
+  mysql_entra_blocked_settings = concat(
+    [for name, value in coalesce(var.app_service.extra_app_settings, {}) : name if name == "CACHE_MYSQL_ACCESS_TOKEN" && lower(trimspace(value)) == "true"],
+    [for name, value in coalesce(var.app_service.extra_app_settings, {}) : name if name == "DB_SSL_CONNECTION" && lower(trimspace(value)) == "false"],
+    [for name, secret_name in var.extra_secret_app_settings : name if contains(["CACHE_MYSQL_ACCESS_TOKEN", "DB_SSL_CONNECTION"], name)]
+  )
+
+  # Settings the stages own. extra_app_settings is merged last in the app-service module, so a
+  # caller's value for one of these names would win over the staged value. Checked in both
+  # extra maps, because a Key Vault reference would win just the same. Stage 2 owns the three
+  # login settings; stage 3 owns DATABASE_PASSWORD.
+  mysql_entra_stage2_owned_overrides = distinct(concat(
+    [for name in keys(coalesce(var.app_service.extra_app_settings, {})) : name if contains(["ENABLE_MYSQL_MANAGED_IDENTITY", "ENTRA_CLIENT_ID", "DATABASE_USERNAME"], name)],
+    [for name in keys(var.extra_secret_app_settings) : name if contains(["ENABLE_MYSQL_MANAGED_IDENTITY", "ENTRA_CLIENT_ID", "DATABASE_USERNAME"], name)]
+  ))
+  mysql_entra_stage3_owned_overrides = distinct(concat(
+    [for name in keys(coalesce(var.app_service.extra_app_settings, {})) : name if name == "DATABASE_PASSWORD"],
+    [for name in keys(var.extra_secret_app_settings) : name if name == "DATABASE_PASSWORD"]
+  ))
+
   # Key Vault lifecycle defaults with environment-aware settings.
   # Purge protection is a production control: on nonprod, which is destroyed and rebuilt
   # deliberately, it buys nothing and locks the vault name for the full retention window
@@ -215,6 +254,55 @@ resource "azurerm_resource_group" "main" {
     precondition {
       condition     = var.app_service_backup_enabled ? try(var.storage.additional_containers[var.app_service_backup.container_name].access_type == "private", false) : true
       error_message = "app_service_backup.container_name must be a private container declared in storage.additional_containers, for example storage = { additional_containers = { \"wp-backups\" = {} } }."
+    }
+
+    # Passwordless database access. Each stage needs the one before it, and the inputs it
+    # reads. Preconditions, not variable validations, for the reason given on the
+    # first precondition on this resource (the deployer IDs).
+    precondition {
+      condition     = !var.mysql_entra_stage_app_switch_enabled || var.mysql_entra_stage_identity_enabled
+      error_message = "mysql_entra_stage_app_switch_enabled (stage 2) requires mysql_entra_stage_identity_enabled (stage 1)."
+    }
+
+    precondition {
+      condition     = !var.mysql_entra_stage_drop_password_enabled || var.mysql_entra_stage_app_switch_enabled
+      error_message = "mysql_entra_stage_drop_password_enabled (stage 3) requires mysql_entra_stage_app_switch_enabled (stage 2)."
+    }
+
+    precondition {
+      condition     = !var.mysql_entra_stage_aad_only_enabled || var.mysql_entra_stage_drop_password_enabled
+      error_message = "mysql_entra_stage_aad_only_enabled (stage 4) requires mysql_entra_stage_drop_password_enabled (stage 3)."
+    }
+
+    precondition {
+      condition     = !var.mysql_entra_stage_identity_enabled || (var.mysql_entra_server_identity != null && var.mysql_entra_admin != null && var.mysql_entra_app_identity != null)
+      error_message = "mysql_entra_stage_identity_enabled (stage 1) requires mysql_entra_server_identity, mysql_entra_admin and mysql_entra_app_identity."
+    }
+
+    precondition {
+      condition     = !var.mysql_entra_stage_app_switch_enabled || var.mysql_entra_app_database_user != null
+      error_message = "mysql_entra_stage_app_switch_enabled (stage 2) requires mysql_entra_app_database_user: it becomes DATABASE_USERNAME."
+    }
+
+    precondition {
+      condition     = !var.mysql_entra_stage_app_switch_enabled || length(local.mysql_entra_blocked_settings) == 0
+      error_message = "mysql_entra_stage_app_switch_enabled (stage 2) cannot be combined with these app settings: CACHE_MYSQL_ACCESS_TOKEN=true (the token cache starts a PHP session on every request and writes the token to a file), DB_SSL_CONNECTION=false (TLS off), or either name in extra_secret_app_settings (a Key Vault value cannot be checked). Remove them from app_service.extra_app_settings or extra_secret_app_settings."
+    }
+
+    precondition {
+      condition     = !var.mysql_entra_stage_app_switch_enabled || length(local.mysql_entra_stage2_owned_overrides) == 0
+      error_message = "mysql_entra_stage_app_switch_enabled (stage 2) sets ENABLE_MYSQL_MANAGED_IDENTITY, ENTRA_CLIENT_ID and DATABASE_USERNAME itself, and app_service.extra_app_settings or extra_secret_app_settings would override the staged value. Remove: ${join(", ", local.mysql_entra_stage2_owned_overrides)}."
+    }
+
+    precondition {
+      condition     = !var.mysql_entra_stage_drop_password_enabled || length(local.mysql_entra_stage3_owned_overrides) == 0
+      error_message = "mysql_entra_stage_drop_password_enabled (stage 3) removes DATABASE_PASSWORD from the production app, and app_service.extra_app_settings or extra_secret_app_settings would put it back. Remove: ${join(", ", local.mysql_entra_stage3_owned_overrides)}."
+    }
+
+    # The slot always logs in with the password, so it still needs password logins.
+    precondition {
+      condition     = !var.mysql_entra_stage_aad_only_enabled || !local.app_config.staging_slot_enabled
+      error_message = "mysql_entra_stage_aad_only_enabled (stage 4) cannot be used while a staging slot exists: the slot still logs in to MySQL with a password. Set app_service.staging_slot_enabled = false (or use a plan below S*) first."
     }
 
     # The MICROSOFT_AZURE_ACCOUNT_KEY app setting is a Key Vault reference to the
@@ -333,6 +421,15 @@ module "database" {
   mysql_version             = local.db_config.mysql_version
   slow_query_log_enabled    = var.database.slow_query_log_enabled
   long_query_time           = var.database.long_query_time
+
+  # Passwordless access: the Entra administrator and the server identity (stage 1) and the TLS
+  # requirement. All off by default. The aad_auth_only parameter (stage 4) is the resource below
+  # module.app_service, so it is applied after the app switch.
+  entra_admin_enabled      = var.mysql_entra_stage_identity_enabled
+  entra_server_identity    = var.mysql_entra_server_identity
+  entra_admin              = var.mysql_entra_admin
+  entra_admin_wait_seconds = var.mysql_entra_admin_wait_seconds
+  require_secure_transport = var.mysql_require_secure_transport
 
   # Allow burstable SKUs for cost optimization (user choice)
   enforce_production_sku = false
@@ -535,6 +632,15 @@ module "app_service" {
   staging_always_on              = coalesce(var.app_service.staging_always_on, false)
   staging_slot_enabled           = coalesce(var.app_service.staging_slot_enabled, true)
 
+  # Passwordless database access. The identity is attached to the production app only
+  # (stage 1); the three settings follow at stage 2 and DATABASE_PASSWORD goes at stage 3.
+  # The staging slot keeps its password settings throughout.
+  user_assigned_identity_ids            = local.mysql_entra_app_identity_ids
+  mysql_managed_identity_enabled        = var.mysql_entra_stage_app_switch_enabled
+  mysql_managed_identity_client_id      = try(var.mysql_entra_app_identity.client_id, null)
+  mysql_managed_identity_database_user  = var.mysql_entra_app_database_user
+  database_password_app_setting_enabled = !var.mysql_entra_stage_drop_password_enabled
+
   # CDN provider configuration - controls IP restrictions
   # NOTE: front_door_id is NOT passed here to avoid circular dependency
   # The azapi_update_resource below updates IP restrictions after Front Door is created
@@ -617,6 +723,25 @@ resource "azurerm_key_vault_access_policy" "staging_slot" {
     module.key_vault,
     module.app_service
   ]
+}
+
+# Stage 4 of the passwordless database path: password logins stop working. Created only when the
+# flag is true; deleting it resets the parameter to the server default (OFF), which is the way
+# back. It lives here, not in modules/database, so that it can wait for module.app_service:
+# module.app_service depends on module.database, and a resource inside the database module would
+# be applied first, turning password logins off before the app had its token login when stages
+# 2 to 4 are enabled in one apply. The administrator it relies on is in module.database, which
+# module.app_service already waits for. Stage ordering and the slot are checked by the
+# preconditions on azurerm_resource_group.main.
+resource "azurerm_mysql_flexible_server_configuration" "aad_auth_only" {
+  count = var.mysql_entra_stage_aad_only_enabled ? 1 : 0
+
+  name                = "aad_auth_only"
+  resource_group_name = azurerm_resource_group.main.name
+  server_name         = module.database.server_name
+  value               = "ON"
+
+  depends_on = [module.app_service]
 }
 
 # ============================================================================

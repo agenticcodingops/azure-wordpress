@@ -402,3 +402,43 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# Passwordless database access with a managed identity, stages 1 to 3. All off by default.
+# The flags are flat top-level bools. The module creates no identity: the caller supplies it.
+variable "user_assigned_identity_ids" {
+  description = "Resource IDs of user-assigned identities to attach to the production app, which then runs as SystemAssigned, UserAssigned. Never attached to the staging slot. The system-assigned identity is kept because it resolves the Key Vault references (key_vault_reference_identity_id stays unset). A list, so its length is known at plan time even when an ID is not."
+  type        = list(string)
+  default     = []
+  nullable    = false
+}
+
+variable "mysql_managed_identity_enabled" {
+  description = "Stage 2: set ENABLE_MYSQL_MANAGED_IDENTITY=true, ENTRA_CLIENT_ID and DATABASE_USERNAME on the production app, so the image logs in to MySQL with a token. Needs mysql_managed_identity_client_id and mysql_managed_identity_database_user, and an identity from user_assigned_identity_ids. The staging slot keeps its password settings, and with a slot these names, and DATABASE_PASSWORD, become sticky. Off by default."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "mysql_managed_identity_client_id" {
+  description = "Client ID of the identity the app uses for the database login (ENTRA_CLIENT_ID). Used only while mysql_managed_identity_enabled is true."
+  type        = string
+  default     = null
+}
+
+variable "mysql_managed_identity_database_user" {
+  description = "MySQL user the app logs in as (DATABASE_USERNAME), at most 32 characters. Used only while mysql_managed_identity_enabled is true."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.mysql_managed_identity_database_user == null ? true : length(var.mysql_managed_identity_database_user) >= 1 && length(var.mysql_managed_identity_database_user) <= 32
+    error_message = "mysql_managed_identity_database_user is a MySQL user name and must be 1 to 32 characters."
+  }
+}
+
+variable "database_password_app_setting_enabled" {
+  description = "Stage 3 when false: leave DATABASE_PASSWORD off the production app. Defaults to true, which keeps the behaviour of every earlier release. The staging slot always keeps it. Set false only once mysql_managed_identity_enabled is true; the Key Vault secret is not removed."
+  type        = bool
+  default     = true
+  nullable    = false
+}

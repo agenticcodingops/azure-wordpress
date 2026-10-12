@@ -65,6 +65,18 @@ resource "azurerm_mysql_flexible_server" "main" {
   delegated_subnet_id = var.db_subnet_id
   private_dns_zone_id = var.private_dns_zone_id
 
+  # Microsoft Entra ID authentication, stage 1 of the passwordless access path. The server
+  # needs a user-assigned identity before it can validate Entra tokens. Added and removed in
+  # place: the identity block is not ForceNew in azurerm 5.x. The module neither creates the
+  # identity nor grants it Microsoft Graph permissions.
+  dynamic "identity" {
+    for_each = var.entra_admin_enabled ? [1] : []
+    content {
+      type         = "UserAssigned"
+      identity_ids = [var.entra_server_identity.id]
+    }
+  }
+
   # Security settings
   # ssl_enforcement_enabled is deprecated - use require_secure_transport parameter
   version = var.mysql_version
@@ -77,6 +89,13 @@ resource "azurerm_mysql_flexible_server" "main" {
     # Prevent accidental destruction of database
     prevent_destroy = false # Set to true in production
 
+    # Checked on the server, which reads entra_server_identity first, so a missing input
+    # fails here with this message and not with an error about a null object.
+    precondition {
+      condition     = !var.entra_admin_enabled || (var.entra_server_identity != null && var.entra_admin != null)
+      error_message = "entra_admin_enabled is true, so entra_server_identity and entra_admin must both be set."
+    }
+
     # Ignore changes to password (managed externally)
     ignore_changes = [
       administrator_password
@@ -85,15 +104,56 @@ resource "azurerm_mysql_flexible_server" "main" {
 }
 
 # MySQL Server Parameter: Require secure transport (TLS)
-# NOTE: Set to OFF because traffic is already encrypted at the network layer
-# when using VNet integration with delegated subnet. The Microsoft WordPress
-# container doesn't configure TLS for MySQL connections by default.
+# OFF by default, as in every earlier release: traffic is already confined to the VNet
+# with a delegated subnet, and the Microsoft WordPress container does not verify the
+# server certificate. require_secure_transport = true sets ON, which also stops the
+# server accepting a token login without TLS once the app uses a managed identity.
 resource "azurerm_mysql_flexible_server_configuration" "require_secure_transport" {
   name                = "require_secure_transport"
   resource_group_name = var.resource_group_name
   server_name         = azurerm_mysql_flexible_server.main.name
-  value               = "OFF"
+  value               = var.require_secure_transport ? "ON" : "OFF"
 }
+
+# Microsoft Entra administrator, stage 1. Layout B points object_id at the app's own
+# identity, so no Microsoft Graph permission is needed; Layout A uses a separate server
+# identity that holds the Graph permissions. AVM check: the avm-res-dbformysql-flexibleserver
+# module (0.x) carries this resource only inside the whole-server module and caps azurerm at
+# ~> 4.0, so it cannot be called here; the azurerm resource is used directly.
+resource "azurerm_mysql_flexible_server_active_directory_administrator" "main" {
+  count = var.entra_admin_enabled ? 1 : 0
+
+  server_id = azurerm_mysql_flexible_server.main.id
+  # Passed on exactly as given: the module does not translate it. See the entra_admin input.
+  identity_id = var.entra_server_identity.id
+  login       = var.entra_admin.login
+  object_id   = var.entra_admin.object_id
+  tenant_id   = var.entra_admin.tenant_id
+
+  depends_on = [time_sleep.entra_admin_identity]
+}
+
+# A pause between attaching the identity to the server and creating the administrator. On a
+# first apply the identity can still be propagating when the administrator is created, and the
+# API then fails transiently; the AVM MySQL module has active_directory_administrator_wait_seconds
+# for the same reason. Exists only with the administrator, and only when the wait is above 0.
+# Its one trigger is the server identity's ID: the delay runs when the sleep is created and
+# again when the identity is swapped for another, and never delays a plan that changes neither.
+resource "time_sleep" "entra_admin_identity" {
+  count = var.entra_admin_enabled && var.entra_admin_wait_seconds > 0 ? 1 : 0
+
+  create_duration = "${var.entra_admin_wait_seconds}s"
+
+  triggers = {
+    identity_id = try(var.entra_server_identity.id, "")
+  }
+
+  depends_on = [azurerm_mysql_flexible_server.main]
+}
+
+# The aad_auth_only parameter (stage 4) is deliberately NOT here. It lives in the composition,
+# which orders it after the app update: this module is applied before module.app_service, so a
+# resource here would switch password logins off before the app had its token login.
 
 # MySQL Server Parameters: slow query log (opt-in).
 # Both parameters are dynamic, so no restart. Deleting a configuration resource resets

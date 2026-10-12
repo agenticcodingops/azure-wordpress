@@ -101,6 +101,107 @@ variable "database" {
   default = {}
 }
 
+# Passwordless database access with a managed identity. Off by default; nothing here
+# changes a plan until a stage flag is set. The identities and the MySQL users are the
+# caller's: this module creates neither, grants no Microsoft Graph permission and runs no
+# CREATE AADUSER. The four stage flags are flat top-level bools, like the other
+# security-relevant switches, and each needs the one before it (checked by preconditions on
+# the resource group in main.tf: this module supports Terraform >= 1.6, and a validation that
+# reads another variable needs 1.9). Each name says what its stage does, and mysql_entra_stage
+# reports how many are on.
+variable "mysql_entra_server_identity" {
+  description = "The user-assigned identity the MySQL server uses to validate Microsoft Entra tokens: id (resource ID), client_id and principal_id. Created by the caller. Used from stage 1 (mysql_entra_stage_identity_enabled), where it is attached to the server and named as the administrator resource's identity_id; only id is read. Layout A (a separate server identity, an administrator that is a person or a group, and the app mapped to a non-admin MySQL user) needs the Microsoft Graph application permissions User.Read.All, GroupMember.Read.All and Application.Read.All granted to this identity by the caller. Layout B (the administrator is the app's own identity) needs no Graph permission. Null (the default) means unused."
+  type = object({
+    id           = string
+    client_id    = string
+    principal_id = string
+  })
+  default = null
+}
+
+variable "mysql_entra_admin" {
+  description = "The MySQL server's Microsoft Entra administrator: login (the MySQL user name, at most 32 characters), object_id and tenant_id. Used from stage 1. The module passes object_id to the provider exactly as given and does not translate it. The azurerm documentation says that for a managed identity it should be the identity's client ID; the design rehearsal on a real server set the administrator by the identity's principal (object) ID and it worked. Confirm on the first stage-1 apply on a non-production server, and use the value that proves out for you. Layout B is the administrator and the app being the same identity: object_id equal to mysql_entra_app_identity.principal_id when the principal ID is the proven value, or mysql_entra_app_identity.client_id when the client ID is, with mysql_entra_app_database_user equal to login. Layout A uses different values. Null (the default) means unused."
+  type = object({
+    login     = string
+    object_id = string
+    tenant_id = string
+  })
+  default = null
+
+  validation {
+    condition     = var.mysql_entra_admin == null ? true : length(var.mysql_entra_admin.login) >= 1 && length(var.mysql_entra_admin.login) <= 32
+    error_message = "mysql_entra_admin.login is a MySQL user name and must be 1 to 32 characters."
+  }
+}
+
+variable "mysql_entra_app_identity" {
+  description = "The user-assigned identity the WordPress app uses to log in to MySQL: id (resource ID), client_id and principal_id. Created by the caller. Used from stage 1, where it is attached to the production app only, never the staging slot, which makes that app SystemAssigned, UserAssigned; the system-assigned identity stays and keeps resolving Key Vault references. From stage 2 its client_id is the app's ENTRA_CLIENT_ID setting. The deploying principal needs Managed Identity Operator on it. Null (the default) means unused."
+  type = object({
+    id           = string
+    client_id    = string
+    principal_id = string
+  })
+  default = null
+}
+
+variable "mysql_entra_app_database_user" {
+  description = "The MySQL user the app logs in as: its DATABASE_USERNAME from stage 2, at most 32 characters. The caller creates it (CREATE AADUSER) unless it is the administrator's login. Null (the default) means unused."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.mysql_entra_app_database_user == null ? true : length(var.mysql_entra_app_database_user) >= 1 && length(var.mysql_entra_app_database_user) <= 32
+    error_message = "mysql_entra_app_database_user is a MySQL user name and must be 1 to 32 characters."
+  }
+}
+
+variable "mysql_entra_stage_identity_enabled" {
+  description = "Stage 1 of the passwordless database path, off by default. Attaches mysql_entra_server_identity to the MySQL server, sets mysql_entra_admin as its Microsoft Entra administrator, and attaches mysql_entra_app_identity to the production app (SystemAssigned, UserAssigned). No app setting changes, so the app keeps using its password. Requires the three inputs. None of it replaces the server or the app, and turning it off removes the identity and the administrator again."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "mysql_entra_admin_wait_seconds" {
+  description = "Seconds to wait between attaching the server identity and creating the Entra administrator at stage 1, because a freshly attached identity can still be propagating and the API then fails transiently. Applies only while mysql_entra_stage_identity_enabled is true, and once, when the administrator is first created. 0 skips the wait. The default is 30."
+  type        = number
+  default     = 30
+  nullable    = false
+
+  validation {
+    condition     = var.mysql_entra_admin_wait_seconds >= 0 && var.mysql_entra_admin_wait_seconds <= 300 && floor(var.mysql_entra_admin_wait_seconds) == var.mysql_entra_admin_wait_seconds
+    error_message = "mysql_entra_admin_wait_seconds must be a whole number from 0 to 300."
+  }
+}
+
+variable "mysql_entra_stage_app_switch_enabled" {
+  description = "Stage 2, off by default; requires mysql_entra_stage_identity_enabled and mysql_entra_app_database_user. Sets ENABLE_MYSQL_MANAGED_IDENTITY=true, ENTRA_CLIENT_ID and DATABASE_USERNAME on the production app, so the image logs in with a token. The container restarts; on the Microsoft image that was measured with no failed request. With a staging slot, those names, and DATABASE_PASSWORD, become sticky and the slot keeps its password settings. Rejects app_service.extra_app_settings and extra_secret_app_settings that set CACHE_MYSQL_ACCESS_TOKEN=true (the token cache starts a PHP session on every request and writes the token to a file) or DB_SSL_CONNECTION=false (TLS off), and any that name ENABLE_MYSQL_MANAGED_IDENTITY, ENTRA_CLIENT_ID or DATABASE_USERNAME, which would override the staged value. Before turning it on, check that the site's wp-config.php carries the image's managed-identity block (see the README). To go back, switch stages 4 and 3 off first, then this one: the app needs its password setting back before the username does."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "mysql_entra_stage_drop_password_enabled" {
+  description = "Stage 3, off by default; requires mysql_entra_stage_app_switch_enabled. Removes DATABASE_PASSWORD from the production app, and rejects extra settings that name DATABASE_PASSWORD, which would put it back. The db-password Key Vault secret is still written, because the way back needs it, and the staging slot keeps its DATABASE_PASSWORD. Turn it off again, and apply, before turning stage 2 off."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "mysql_entra_stage_aad_only_enabled" {
+  description = "Stage 4, off by default; requires mysql_entra_stage_drop_password_enabled. Sets the aad_auth_only server parameter to ON, so only Microsoft Entra logins work and the password administrator can no longer connect. It is applied after the app update, so enabling stages 2 to 4 in one apply switches the app first. Fails at plan while a staging slot exists, because the slot still logs in with a password: set app_service.staging_slot_enabled = false first (the slot is then destroyed). Turn it off first when rolling back; that deletes the parameter's configuration resource, which resets it to OFF."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "mysql_require_secure_transport" {
+  description = "Set the MySQL require_secure_transport server parameter to ON, so the server refuses connections made without TLS, token logins included. The default, false, keeps the OFF every earlier release set. PHP connects with TLS by default (DB_SSL_CONNECTION defaults to true) but the image does not verify the server certificate, so this closes the plain-text path without adding verification. Not one of the four stages; it applies at once and refuses any client that does not use TLS, so check the app and any other client first."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 # Storage configuration
 variable "storage" {
   description = "Storage account configuration"
