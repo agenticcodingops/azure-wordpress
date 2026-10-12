@@ -8,8 +8,8 @@ docs/cost.md:128 modules/app-service/main.tf:349  # app_settings merge of the we
 docs/cost.md:128 modules/app-service/main.tf:585  # app_settings merge of the staging slot, which carries PHP_MEMORY_LIMIT
 docs/getting-started.md:18 modules/app-service/main.tf:320  # ip_restriction_default_action: Allow with cdn_provider = direct, so the origin admits everyone
 docs/getting-started.md:24 modules/wordpress-site/main.tf:15  # required_version = ">= 1.6.0"
-docs/getting-started.md:164 modules/storage/main.tf:28  # allow_nested_items_to_be_public = false: anonymous blob access is disallowed
-docs/getting-started.md:180 modules/app-service/main.tf:585  # the slot's app_settings merge, which inherits the WORDPRESS_ADMIN_* settings
+docs/getting-started.md:165 modules/storage/main.tf:28  # allow_nested_items_to_be_public = false: anonymous blob access is disallowed
+docs/getting-started.md:181 modules/app-service/main.tf:585  # the slot's app_settings merge, which inherits the WORDPRESS_ADMIN_* settings
 docs/security-model.md:197 modules/app-service/main.tf:332-345  # the web app's scm_ip_restriction block and scm_ip_restriction_default_action
 docs/security-model.md:197 modules/app-service/main.tf:568-581  # the slot's scm_ip_restriction block and scm_ip_restriction_default_action
 docs/security-model.md:271 modules/storage/main.tf:28  # allow_nested_items_to_be_public = false: anonymous blob access is disallowed

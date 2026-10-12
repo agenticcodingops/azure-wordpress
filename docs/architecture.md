@@ -362,7 +362,7 @@ Sources: `modules/wordpress-site/main.tf:184-190`, `:647-648`, `:959-981`, `:101
 `modules/wordpress-site/outputs.tf:168-186`; `modules/front-door/main.tf:17-201`, `:204-289` (route `:85-104`);
 `modules/front-door/outputs.tf:14-17`; `modules/wordpress-site/variables.tf:519-529`;
 `modules/app-service/main.tf:32`, `:262-267`, `:306-320`, `:450-453`, `:503-508`, `:544-563`;
-`examples/basic-site/main.tf:111`; `examples/multi-site/main.tf:110`. Microsoft:
+`examples/basic-site/main.tf:112`; `examples/multi-site/main.tf:110`. Microsoft:
 [Secure traffic to origins](https://learn.microsoft.com/azure/frontdoor/origin-security),
 [What is a rule set?](https://learn.microsoft.com/azure/frontdoor/front-door-rules-engine).
 

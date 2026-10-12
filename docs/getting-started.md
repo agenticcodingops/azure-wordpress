@@ -103,9 +103,10 @@ module "wordpress" {
   cdn_provider  = "direct"
   custom_domain = "app-${local.project_name}-${local.site_name}-np.azurewebsites.net"
 
-  # The two network inputs a first apply from a hosted CI runner needs.
+  # The two network inputs: the first is what a first apply from a hosted CI runner needs,
+  # the second keeps its default. See "The two network inputs" below.
   key_vault_public_network_access_enabled = true
-  storage_network_rules_default_action    = "Allow"
+  storage_network_rules_default_action    = "Deny"
 
   app_service = {
     sku_name = "S1"
@@ -149,13 +150,13 @@ the state account in the deployment guide has shared-key access turned off.
 
 ### The two network inputs
 
-Key Vault and Storage deny public data-plane access by default. Both defaults break a first deployment, in
-different ways.
+Key Vault and Storage deny public data-plane access by default. The Key Vault default breaks a first deployment;
+the storage default does not, and this guide keeps it. Both are written out so the choice is visible.
 
 | Input | Default | What fails with the default | Why this guide sets it | Tighter option |
 |---|---|---|---|---|
 | `key_vault_public_network_access_enabled = true` | `false` (`modules/wordpress-site/variables.tf:231-235`), which sets the vault firewall's `default_action` to `Deny` (`modules/key-vault/main.tf:54-59`) | **The apply.** Terraform writes three secrets into the vault (`modules/wordpress-site/main.tf:511-517`, `modules/key-vault/main.tf:105-123`). Terraform is not a trusted Azure service, so the vault refuses those calls with a 403 unless the runner can reach it. | Hosted CI runners do not have one fixed egress address you can allow-list. | On a runner with a stable egress IP, leave this `false` and set `key_vault_network_acls_ip_rules = ["<runner IP>"]` (`modules/wordpress-site/variables.tf:237-241`). |
-| `storage_network_rules_default_action = "Allow"` | `"Deny"` (`modules/wordpress-site/variables.tf:273-282`) | **Nothing, by default.** Media stays on the app's `/home` storage (the module installs no plugin) and the scheduled App Service backup reaches the account over the VNet integration, so `Deny` is viable whenever no browser reads the blob endpoint. `Allow` is needed only if you install a Blob offload plugin that points media URLs at the account's own blob endpoint: browsers then fetch media from Azure directly (`modules/wordpress-site/variables.tf:269-272`), browser addresses cannot be allow-listed, and with `Deny` each image returns 403. | So that a Blob offload plugin installed later works without a second network change: it removes the firewall gate for browsers that fetch from the blob endpoint. It is only half of the fix; see the paragraph below the table. | Keep `"Deny"`, the default, while uploads stay on `/home`; the backup does not need `Allow`. Do not rely on a CDN custom domain and `storage_network_rules_ip_rules` for media: see [Media](architecture.md#media). |
+| `storage_network_rules_default_action = "Deny"` | `"Deny"` (`modules/wordpress-site/variables.tf:273-282`) | **Nothing, by default.** Media stays on the app's `/home` storage (the module installs no plugin) and the scheduled App Service backup reaches the account over the VNet integration, so `Deny` is viable whenever no browser reads the blob endpoint. `Allow` is needed only if you install a Blob offload plugin that points media URLs at the account's own blob endpoint: browsers then fetch media from Azure directly (`modules/wordpress-site/variables.tf:269-272`), browser addresses cannot be allow-listed, and with `Deny` each image returns 403. | This guide keeps the default `"Deny"` and writes it out so the choice is visible. Set `"Allow"` only if you install such a plugin: it removes the firewall gate for browsers that fetch from the blob endpoint, and it is only half of the fix; see the paragraph below the table. | `"Deny"` is already the tighter option. Do not rely on a CDN custom domain and `storage_network_rules_ip_rules` for media instead of `"Allow"`: see [Media](architecture.md#media). |
 
 Neither input affects how the site itself reads secrets. The App Service subnet is always allowed through both
 firewalls (`modules/wordpress-site/main.tf:492-495` and `:555-558`), so Key Vault references and media uploads
@@ -307,7 +308,7 @@ The job sets `ARM_USE_OIDC`, `ARM_USE_AZUREAD`, `ARM_CLIENT_ID`, `ARM_TENANT_ID`
    [How this configuration was tested](#how-this-configuration-was-tested)).
 2. `module.wordpress.module.key_vault.azurerm_key_vault.main` shows `default_action = "Allow"` under
    `network_acls`.
-3. `module.wordpress.module.storage.azurerm_storage_account.main` shows `default_action = "Allow"` under
+3. `module.wordpress.module.storage.azurerm_storage_account.main` shows `default_action = "Deny"` under
    `network_rules`.
 4. The resource names match the ones you checked in step 1.
 
@@ -382,14 +383,14 @@ is needed, except for the optional `terraform output` in item 1.
 
    Expect `200`. This file answers `200` on a site that has no administrator yet, so it does not prove the
    installer is closed; item 4 does.
-3. Both firewalls are open as configured:
+3. The Key Vault firewall is open and the storage firewall is closed, as configured:
 
    ```bash
    az keyvault show --subscription <nonprod-subscription-id> --name kv-examplewp01-np9 --query properties.networkAcls.defaultAction -o tsv
    az storage account show --subscription <nonprod-subscription-id> --name sttrexamplewp01np --query networkRuleSet.defaultAction -o tsv
    ```
 
-   Expect `Allow` from both.
+   Expect `Allow` from the Key Vault command and `Deny` from the storage command.
 4. The installer is closed on both hosts. Fetch the body, not just the status:
 
    ```bash
@@ -408,8 +409,9 @@ is needed, except for the optional `terraform output` in item 1.
 
 The configuration above was planned offline with `terraform test` and a mocked `azurerm` provider, on
 Terraform 1.9.8, with the module fetched from the `v4.1.1` tag. The plan succeeded with 34 resources to add,
-including the staging slot, its Key Vault access policy and the administrator password. Both network rules planned as `Allow`. Without the two
-inputs they planned as `Deny`. A mocked plan proves that the configuration is valid and shows what it creates. It
+including the staging slot, its Key Vault access policy and the administrator password. The Key Vault network rule
+planned as `Allow` and the storage rule as `Deny`. Without the Key Vault input both planned as `Deny`; the storage
+input keeps the default, so it does not change the plan. A mocked plan proves that the configuration is valid and shows what it creates. It
 does not prove that Azure accepts it: it never calls Azure. It has not been re-run at v4.3.0; that release's four
 opt-ins are off by default and add no resource until you turn one on
 ([4.1.1 to 4.3.0](upgrading/v4.1.1-to-v4.3.0.md)), so the count is expected to stay 34.

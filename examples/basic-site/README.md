@@ -18,13 +18,14 @@ This example pins module sources to a specific release tag (`?ref=v4.3.0`). To u
 
 ## Network Access Defaults
 
-From v2.0.0 both Key Vault and Storage **deny public data-plane access by default**, so this
-example sets two inputs explicitly that a minimal config would otherwise omit:
+From v2.0.0 both Key Vault and Storage **deny public data-plane access by default**. This
+example sets both inputs explicitly: the first changes its default, the second keeps it so the
+choice is visible rather than implied:
 
 | Input | Why it is set | Tighter alternative |
 |---|---|---|
 | `key_vault_public_network_access_enabled = true` | Terraform is not a trusted Azure service, so creating the vault's secrets 403s unless the deploying principal can reach it. Hosted CI runners have a rotating egress range that cannot be allow-listed. | `key_vault_network_acls_ip_rules = ["<runner IP>"]` on a self-hosted runner with a stable IP |
-| `storage_network_rules_default_action = "Allow"` | The firewall defaults to `Deny`. Media stays on `/home` by default; if you install a Blob offload plugin that points media URLs at the blob endpoint, **visitors' browsers** fetch media directly from Azure, and with `Deny` those requests 403. `Allow` removes only that firewall gate: the account also disallows anonymous blob access and the uploads container is private, so an anonymous browser still cannot read a blob. See [Media](../../docs/architecture.md#media) and the [security model](../../docs/security-model.md#key-vault-and-storage-deny-public-access-by-default). | Keep `Deny`, the default, while media stays on the app's `/home` storage, which it does unless you install a Blob offload plugin; the scheduled backup also works under `Deny` |
+| `storage_network_rules_default_action = "Deny"` | The example keeps the default `Deny`. Media stays on the app's `/home` storage by default and the scheduled backup reaches the account over the VNet integration, so nothing in the default setup meets the firewall. Set `Allow` only if you install a Blob offload plugin that points media URLs at the account's own blob endpoint: **visitors' browsers** then fetch media directly from Azure, from addresses that cannot be allow-listed, and with `Deny` those requests 403. `Allow` removes only that firewall gate: the account also disallows anonymous blob access and the uploads container is private, so an anonymous browser still cannot read a blob. See [Media](../../docs/architecture.md#media) and the [security model](../../docs/security-model.md#key-vault-and-storage-deny-public-access-by-default). | None: `Deny` is the tighter setting. If you add such a plugin, do not rely on a CDN custom domain and `storage_network_rules_ip_rules` instead of `Allow`; see [Media](../../docs/architecture.md#media) |
 
 From v3.0.0, Key Vault purge protection and soft-delete retention default by environment —
 `true`/90 in production, `false`/7 in nonprod, so a destroyed nonprod vault's name is
