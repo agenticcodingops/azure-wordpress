@@ -7,8 +7,8 @@ cleanly. It needs no CDN account and no DNS changes: the site is served on the A
 `*.azurewebsites.net` name.
 
 Code references are `file:line` at commit
-[`9cf59db`](https://github.com/agenticcodingops/azure-wordpress/tree/9cf59dbf1f984a2e043cd7b6180187dda8cfcd5a),
-which is release v4.1.1.
+[`b592e13`](https://github.com/agenticcodingops/azure-wordpress/tree/b592e13ad09938075b0e8f7a1dd51cfbe007320b),
+which is release v4.3.0.
 
 ## When to use
 
@@ -16,14 +16,14 @@ which is release v4.1.1.
 - An evaluation or test site.
 
 Do **not** use this configuration for production as it stands. It has no CDN, so the origin accepts traffic from
-anywhere (`modules/app-service/main.tf:258`). For production, read the [deployment guide](deployment-guide.md)
+anywhere (`modules/app-service/main.tf:320`). For production, read the [deployment guide](deployment-guide.md)
 and choose a CDN; [`examples/basic-site`](../examples/basic-site/) shows Cloudflare.
 
 ## Prerequisites
 
 - **Two Azure subscriptions:**
   - a nonprod subscription, where the CI identity gets **Contributor** at subscription scope. The module creates
-    its own resource group (`modules/wordpress-site/main.tf:185-188`), so a role scoped to one resource group is
+    its own resource group (`modules/wordpress-site/main.tf:229-232`), so a role scoped to one resource group is
     not enough.
   - a management subscription that holds the state account and the CI identity. There, the identity gets only a
     data role on its own state container. The [deployment guide's prerequisites](deployment-guide.md#prerequisites)
@@ -154,11 +154,11 @@ different ways.
 
 | Input | Default | What fails with the default | Why this guide sets it | Tighter option |
 |---|---|---|---|---|
-| `key_vault_public_network_access_enabled = true` | `false` (`modules/wordpress-site/variables.tf:130-134`), which sets the vault firewall's `default_action` to `Deny` (`modules/key-vault/main.tf:54-59`) | **The apply.** Terraform writes three secrets into the vault (`modules/wordpress-site/main.tf:377-381`, `modules/key-vault/main.tf:105-123`). Terraform is not a trusted Azure service, so the vault refuses those calls with a 403 unless the runner can reach it. | Hosted CI runners do not have one fixed egress address you can allow-list. | On a runner with a stable egress IP, leave this `false` and set `key_vault_network_acls_ip_rules = ["<runner IP>"]` (`modules/wordpress-site/variables.tf:136-140`). |
-| `storage_network_rules_default_action = "Allow"` | `"Deny"` (`modules/wordpress-site/variables.tf:172-181`) | **Nothing, by default.** Media stays on the app's `/home` storage (the module installs no plugin) and the scheduled App Service backup reaches the account over the VNet integration, so `Deny` is viable whenever no browser reads the blob endpoint. `Allow` is needed only if you install a Blob offload plugin that points media URLs at the account's own blob endpoint: browsers then fetch media from Azure directly (`modules/wordpress-site/variables.tf:168-171`), browser addresses cannot be allow-listed, and with `Deny` each image returns 403. | So that a Blob offload plugin installed later works without a second network change: it removes the firewall gate for browsers that fetch from the blob endpoint. It is only half of the fix; see the paragraph below the table. | Keep `"Deny"`, the default, while uploads stay on `/home`; the backup does not need `Allow`. Do not rely on a CDN custom domain and `storage_network_rules_ip_rules` for media: see [Media](architecture.md#media). |
+| `key_vault_public_network_access_enabled = true` | `false` (`modules/wordpress-site/variables.tf:231-235`), which sets the vault firewall's `default_action` to `Deny` (`modules/key-vault/main.tf:54-59`) | **The apply.** Terraform writes three secrets into the vault (`modules/wordpress-site/main.tf:511-517`, `modules/key-vault/main.tf:105-123`). Terraform is not a trusted Azure service, so the vault refuses those calls with a 403 unless the runner can reach it. | Hosted CI runners do not have one fixed egress address you can allow-list. | On a runner with a stable egress IP, leave this `false` and set `key_vault_network_acls_ip_rules = ["<runner IP>"]` (`modules/wordpress-site/variables.tf:237-241`). |
+| `storage_network_rules_default_action = "Allow"` | `"Deny"` (`modules/wordpress-site/variables.tf:273-282`) | **Nothing, by default.** Media stays on the app's `/home` storage (the module installs no plugin) and the scheduled App Service backup reaches the account over the VNet integration, so `Deny` is viable whenever no browser reads the blob endpoint. `Allow` is needed only if you install a Blob offload plugin that points media URLs at the account's own blob endpoint: browsers then fetch media from Azure directly (`modules/wordpress-site/variables.tf:269-272`), browser addresses cannot be allow-listed, and with `Deny` each image returns 403. | So that a Blob offload plugin installed later works without a second network change: it removes the firewall gate for browsers that fetch from the blob endpoint. It is only half of the fix; see the paragraph below the table. | Keep `"Deny"`, the default, while uploads stay on `/home`; the backup does not need `Allow`. Do not rely on a CDN custom domain and `storage_network_rules_ip_rules` for media: see [Media](architecture.md#media). |
 
 Neither input affects how the site itself reads secrets. The App Service subnet is always allowed through both
-firewalls (`modules/wordpress-site/main.tf:363-366` and `:419-422`), so Key Vault references and media uploads
+firewalls (`modules/wordpress-site/main.tf:492-495` and `:555-558`), so Key Vault references and media uploads
 from WordPress keep working with either setting.
 
 The storage firewall is one of two gates on media that browsers fetch from the blob endpoint, and `Allow` removes
@@ -174,13 +174,14 @@ not load from the blob endpoint with it. Whether another plugin serves SAS-signe
 This configuration sits on a public `*.azurewebsites.net` name from the moment the apply finishes. A fresh
 WordPress shows its installer to whoever reaches it first, and whoever completes the installer becomes the
 administrator and can run code in the app. The app's environment holds the resolved database password and storage
-key, and its identity can read the vault's secrets (`modules/wordpress-site/main.tf:531-545`). So the
+key, and its identity can read the vault's secrets (`modules/wordpress-site/main.tf:689-703`). So the
 configuration removes that window instead of asking you to win a race.
 
 The `WORDPRESS_ADMIN_USER`, `WORDPRESS_ADMIN_EMAIL` and `WORDPRESS_ADMIN_PASSWORD` app settings make the container
 run `wp core install` with those values on its first start, behind a static holding page and before it serves
-WordPress, so `/wp-admin/install.php` is never public. The staging slot inherits the settings
-(`modules/app-service/main.tf:436`) and shares the database. The container does not read a title setting: the
+WordPress, so `/wp-admin/install.php` is never public. The staging slot (S1 has one unless you set
+`app_service.staging_slot_enabled = false`) inherits the settings
+(`modules/app-service/main.tf:585`) and shares the database. The container does not read a title setting: the
 site title starts as "WordPress on Azure".
 
 The password is generated by Terraform and kept in state and in the app's settings, so change it after you sign in
@@ -192,22 +193,23 @@ The password is generated by Terraform and kept in state and in the app's settin
   `azapi` providers are still downloaded at `terraform init`, because the module declares them
   (`modules/wordpress-site/main.tf:17-46`), but they need no configuration here.
 - **`custom_domain` ends in `.azurewebsites.net`**, so the module creates no custom-hostname binding
-  (`modules/wordpress-site/main.tf:942-944`) and needs no DNS record. WordPress's `WP_HOME` and `WP_SITEURL` are
-  `https://<custom_domain>` (`modules/app-service/main.tf:74-75`). The app is named
-  `app-<project_name>-<site_name>-np` (`modules/app-service/main.tf:10`, `:159`), so the value above is the app's
+  (`modules/wordpress-site/main.tf:1126-1128`) and needs no DNS record. WordPress's `WP_HOME` and `WP_SITEURL` are
+  `https://<custom_domain>` (`modules/app-service/main.tf:78-79`). The app is named
+  `app-<project_name>-<site_name>-np` (`modules/app-service/main.tf:10`, `:198`), so the value above is the app's
   own host name. The Verify step checks that.
 - **`sku_name = "S1"`, not `B1`.** With a dedicated plan, the app-service module always creates an autoscale
-  setting on the plan (`modules/app-service/main.tf:449-450`). Microsoft documents autoscale for Standard tier and
+  setting on the plan (`modules/app-service/main.tf:598-599`). Microsoft documents autoscale for Standard tier and
   up ([Automatic scaling, "Scale-out options"](https://learn.microsoft.com/en-us/azure/app-service/manage-automatic-scaling)).
   Whether Azure rejects that autoscale setting on a Basic plan is **UNKNOWN**: it has not been tested. S1 also
-  gets a staging slot (`modules/app-service/main.tf:24`, `:331-332`). To run on B1, use a shared plan, which
+  gets a staging slot unless `app_service.staging_slot_enabled = false` (`modules/app-service/main.tf:24`, `:28`,
+  `:460-461`). To run on B1, use a shared plan, which
   creates no autoscale setting by default; see
   [step 11 of the deployment guide](deployment-guide.md#step-11-host-several-sites-on-a-shared-plan).
 - **`environment = "nonprod"`** selects the nonprod defaults:
   - MySQL `B_Standard_B2s`, 7-day backups, no geo-redundant backup (`modules/wordpress-site/main.tf:97-105`);
-  - Key Vault purge protection off and 7-day soft-delete retention (`modules/wordpress-site/main.tf:113-116`), so
+  - Key Vault purge protection off and 7-day soft-delete retention (`modules/wordpress-site/main.tf:152-155`), so
     a destroyed vault frees its name at once;
-  - `WP_DEBUG` on (`modules/app-service/main.tf:112`).
+  - `WP_DEBUG` on (`modules/app-service/main.tf:116`).
 - **`resource_provider_registrations = "legacy"`** keeps the azurerm 4.x behaviour of registering resource
   providers automatically; azurerm 5.x defaults to `none`
   ([provider docs](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs#resource_provider_registrations)).
@@ -220,9 +222,9 @@ Four of the names the module builds are global across all of Azure, not just you
 
 | Resource | Name pattern | Source |
 |---|---|---|
-| App Service | `app-<project_name>-<site_name>-np` | `modules/app-service/main.tf:10`, `:159` |
+| App Service | `app-<project_name>-<site_name>-np` | `modules/app-service/main.tf:10`, `:198` |
 | MySQL server | `mysql-<project_name>-<site_name>-np` | `modules/database/main.tf:36` |
-| Key Vault | `kv-<site_name with its hyphens removed, then cut to 14 characters>-np<key_vault_name_suffix>` (the suffix defaults to `9`) | `modules/key-vault/main.tf:25`, `modules/wordpress-site/variables.tf:825-829` |
+| Key Vault | `kv-<site_name with its hyphens removed, then cut to 14 characters>-np<key_vault_name_suffix>` (the suffix defaults to `9`) | `modules/key-vault/main.tf:25`, `modules/wordpress-site/variables.tf:1033-1037` |
 | Storage account | `sttr<site_name with its hyphens removed, then cut to 12 characters>np` | `modules/storage/main.tf:11` |
 
 The Key Vault and storage names do **not** include `project_name`. A short, common `site_name` such as `blog`
@@ -249,7 +251,7 @@ az keyvault check-name --subscription <nonprod-subscription-id> --name kv-exampl
 
 A clash on the other names shows up as a "name already in use" error at apply. If that happens, change `site_name`
 and run again. Expect that run to stop while it deletes the first resource group: Application Insights is created
-before the vault and the app (`modules/wordpress-site/main.tf:273-282`), so that group already holds the two
+before the vault and the app (`modules/wordpress-site/main.tf:384-393`), so that group already holds the two
 resources Azure created with it, and changing `site_name` replaces the group. When the run stops on
 `the Resource Group still contains Resources`, delete the two resources it lists, as in Rollback, then run again.
 
@@ -301,7 +303,8 @@ The job sets `ARM_USE_OIDC`, `ARM_USE_AZUREAD`, `ARM_CLIENT_ID`, `ARM_TENANT_ID`
 **Who:** operator. **STOP:** yes. Do not merge until all four checks pass in the pull request's plan.
 
 1. The summary reads `Plan: 34 to add, 0 to change, 0 to destroy.` That is the count for this configuration at
-   v4.1.1.
+   v4.1.1, and v4.3.0 adds no resource to a configuration that sets none of its new inputs (see
+   [How this configuration was tested](#how-this-configuration-was-tested)).
 2. `module.wordpress.module.key_vault.azurerm_key_vault.main` shows `default_action = "Allow"` under
    `network_acls`.
 3. `module.wordpress.module.storage.azurerm_storage_account.main` shows `default_action = "Allow"` under
@@ -371,7 +374,7 @@ is needed, except for the optional `terraform output` in item 1.
    that role only to people allowed to read those secrets. If a `terraform output` command errors, the comparison
    proves nothing.
 2. The health-check file answers. The module probes `/wp-includes/images/blank.gif`
-   (`modules/wordpress-site/main.tf:128`):
+   (`modules/wordpress-site/main.tf:167`):
 
    ```bash
    curl -sS -o /dev/null -w '%{http_code}\n' "https://app-example-examplewp01-np.azurewebsites.net/wp-includes/images/blank.gif"
@@ -407,7 +410,9 @@ The configuration above was planned offline with `terraform test` and a mocked `
 Terraform 1.9.8, with the module fetched from the `v4.1.1` tag. The plan succeeded with 34 resources to add,
 including the staging slot, its Key Vault access policy and the administrator password. Both network rules planned as `Allow`. Without the two
 inputs they planned as `Deny`. A mocked plan proves that the configuration is valid and shows what it creates. It
-does not prove that Azure accepts it: it never calls Azure.
+does not prove that Azure accepts it: it never calls Azure. It has not been re-run at v4.3.0; that release's four
+opt-ins are off by default and add no resource until you turn one on
+([4.1.1 to 4.3.0](upgrading/v4.1.1-to-v4.3.0.md)), so the count is expected to stay 34.
 
 ## Rollback
 
@@ -422,13 +427,13 @@ does not prove that Azure accepts it: it never calls Azure.
    archive the site files with `tar -czf /home/backups/wwwroot.tar.gz -C /home/site wwwroot`, and download both
    through the SCM (Kudu) site. Never write the dump under `/home/site/wwwroot`, the public web root. Uploads stay in
    `/home` unless you installed a Blob offload plugin yourself (the module installs none), so copy the blob account's
-   containers too if you did. Opening the
+   containers too if you did, and the backup container if you turned on `app_service_backup_enabled`. Opening the
    SCM or storage firewall to your address first is an Azure change. The
    [deployment guide's step 12](deployment-guide.md#step-12-remove-a-site) has the full procedure.
 2. In a pull request, delete the `module "wordpress"` block, the `random_password` resource and the three `output`
    blocks from `main.tf`. Keep the provider block, `backend.hcl` and `.terraform.lock.hcl`. The plan job signs in
    as the nonprod identity, which is the identity that applied. No other identity has an access policy on the vault
-   (`modules/key-vault/main.tf:70-101`, `modules/wordpress-site/main.tf:530-568`), so no other identity could read
+   (`modules/key-vault/main.tf:70-101`, `modules/wordpress-site/main.tf:688-745`), so no other identity could read
    the secrets during the refresh.
 3. The pull request's plan must read `Plan: 0 to add, 0 to change, 34 to destroy.`, and every resource it lists
    must be `random_password.wp_admin` or start with `module.wordpress.`. Do not merge until it does.
@@ -486,6 +491,11 @@ Once the destroy has finished, including the resource group, you can reuse the s
 - Estimate the bill: [cost guide](cost.md).
 - Put a CDN in front of the site: the README's "CDN Options" section and [`examples/basic-site`](../examples/basic-site/).
 - Harden the SCM (Kudu) endpoint and publishing credentials: [`modules/app-service/README.md`](../modules/app-service/README.md).
+- Schedule a backup of the app, retire the `storage-key` secret, or move the app to a passwordless database login:
+  [Backup & Recovery](../modules/wordpress-site/README.md#backup--recovery),
+  [Retiring the `storage-key` secret](../README.md#retiring-the-storage-key-secret) and
+  [Passwordless database access (managed identity)](../modules/wordpress-site/README.md#passwordless-database-access-managed-identity),
+  with the deployment guide's [step 13](deployment-guide.md#step-13-turn-on-the-v430-opt-ins-one-at-a-time).
 
 ## References
 
