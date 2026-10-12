@@ -1023,9 +1023,10 @@ v4.3.0 adds four opt-ins, all off by default, so a pin bump alone plans no resou
    - **Production.** **STOP:** yes, because dispatching a production job is a STOP. The step 5 pipeline has no
      plan-only job, and re-running `apply-production` applies whatever it plans. Add `workflow_dispatch:` and a
      weekly `schedule:` (for example `cron: "0 6 * * 1"`) to `on:`, and add a job with `environment: production`
-     that runs only `terraform init -input=false -backend-config=backend.hcl`,
-     `terraform plan -input=false -lock-timeout=10m -detailed-exitcode` and, with the backup on, the two
-     `terraform output` commands of item 7.
+     that runs only `terraform init -input=false -backend-config=backend.hcl`, with the backup on, the two
+     `terraform output` commands of item 7, and then
+     `terraform plan -input=false -lock-timeout=10m -detailed-exitcode`. The outputs come first: a plan that finds
+     changes fails the job, and the steps after it would not run.
      - Exit code 0 means no changes, and 2 means changes. Set `terraform_wrapper: false` on
        `hashicorp/setup-terraform`, because its wrapper treats exit code 2 as success, so the job would pass with
        changes present. A scheduled run that finds changes therefore fails, and that failure is the notification:
@@ -1114,14 +1115,14 @@ v4.3.0 adds four opt-ins, all off by default, so a pin bump alone plans no resou
 
 7. **The backup SAS is current**, where `app_service_backup_enabled` is on. Expose
    `app_service_backup_sas_rotation_rfc3339` and `app_service_backup_sas_expiry_rfc3339` as outputs of your root. A plan
-   that changes nothing prints no outputs, so the plan-only job of item 1 reads them from state after its plan step:
+   that changes nothing prints no outputs, so the plan-only job of item 1 reads them from state, before its plan step:
 
    ```bash
    terraform output app_service_backup_sas_rotation_rfc3339
    terraform output app_service_backup_sas_expiry_rfc3339
    ```
 
-   The weekly run keeps both dates in the job log. A plan after the rotation date replaces the three `time` resources
+   The weekly run keeps both dates in the job log, also in the run that the plan then fails. A plan after the rotation date replaces the three `time` resources
    and updates the web app's backup block in place, which fails that run with exit code 2: apply it before the expiry,
    or the backup stops
    ([The SAS: source, rotation and trade-off](../modules/wordpress-site/README.md#the-sas-source-rotation-and-trade-off)).
