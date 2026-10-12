@@ -92,6 +92,11 @@ flowchart TB
     alerts --> ag
 ```
 
+The slot's "same database settings" edge holds until the passwordless database path (from v4.3.0) reaches stage 2. From
+stage 2 the production app logs in with its Entra identity and the settings that stage sets, while the slot keeps its
+password settings; stage 3 removes `DATABASE_PASSWORD` from the app only. See the composition README's
+[Passwordless database access (managed identity)](../modules/wordpress-site/README.md#passwordless-database-access-managed-identity).
+
 What each part is:
 
 | Part | Created by | Notes |
@@ -100,7 +105,7 @@ What each part is:
 | Front Door | `modules/front-door`, only when `cdn_provider = "azure_front_door"` and `front_door.enabled` is true (the default) | Premium SKU by default. |
 | App Service plan | `modules/app-service`, unless you pass `plan_id` or `use_shared_plan = true` | Its own plan gets an autoscale setting of 1 to 5 instances. |
 | Linux web app | `modules/app-service` | System-assigned managed identity. Outbound virtual network integration. |
-| Staging slot | `modules/app-service`, on S\* and P\* SKUs unless `app_service.staging_slot_enabled = false` (from v4.3.0) | Its own managed identity. The same database and storage settings as the web app. |
+| Staging slot | `modules/app-service`, on S\* and P\* SKUs unless `app_service.staging_slot_enabled = false` (from v4.3.0) | Its own managed identity. The same database and storage settings as the web app, until passwordless stage 2 (from v4.3.0): from then the app logs in with its Entra identity while the slot keeps its password settings. |
 | MySQL Flexible Server | `modules/database` | One `wordpress` database. Administrator login `wpadmin`. |
 | Key Vault | `modules/key-vault` | Access policies, not Azure RBAC. |
 | Storage account | `modules/storage` | StorageV2 with a private `wp-uploads` container by default. |
