@@ -984,9 +984,9 @@ v4.3.0 adds four opt-ins, all off by default, so a pin bump alone plans no resou
   `time` resources that schedule the SAS (`modules/wordpress-site/backup.tf`), and reads the SAS at apply that once
   (`storage_account_url` is known after apply: noise, not a replacement). The SAS is signed from the account key, is
   never an output, and is re-issued by the first plan after `sas_rotation_days` (default 180) of a `sas_validity_days`
-  (default 365) window: add a scheduled plan-only run (Verify item 1) and act on
-  `app_service_backup_sas_rotation_rfc3339`, because the backup fails after `app_service_backup_sas_expiry_rfc3339`
-  if no plan has been applied since the rotation date. The backup travels over the VNet integration, so
+  (default 365) window: schedule the weekly plan-only run of Verify item 1, read the dates with `terraform output`
+  (Verify item 7) and act on `app_service_backup_sas_rotation_rfc3339`, because the backup fails after
+  `app_service_backup_sas_expiry_rfc3339` if no plan has been applied since the rotation date. The backup travels over the VNet integration, so
   `storage_network_rules_default_action` stays `"Deny"`. Only the production app is backed up, each backup is capped
   at 10 GB and the database is not included. See
   [Backup & Recovery](../modules/wordpress-site/README.md#backup--recovery) and
@@ -1021,15 +1021,19 @@ v4.3.0 adds four opt-ins, all off by default, so a pin bump alone plans no resou
    - **Nonprod:** read the nonprod plan of a pull request that changes nothing under `infra/nonprod/`. The
      production pull request in step 10 is one. It must report no changes.
    - **Production.** **STOP:** yes, because dispatching a production job is a STOP. The step 5 pipeline has no
-     plan-only job, and re-running `apply-production` applies whatever it plans. Add `workflow_dispatch:` to `on:`,
-     and add a job with `environment: production` that runs only
-     `terraform init -input=false -backend-config=backend.hcl` and
-     `terraform plan -input=false -lock-timeout=10m -detailed-exitcode`.
+     plan-only job, and re-running `apply-production` applies whatever it plans. Add `workflow_dispatch:` and a
+     weekly `schedule:` (for example `cron: "0 6 * * 1"`) to `on:`, and add a job with `environment: production`
+     that runs only `terraform init -input=false -backend-config=backend.hcl`,
+     `terraform plan -input=false -lock-timeout=10m -detailed-exitcode` and, with the backup on, the two
+     `terraform output` commands of item 7.
      - Exit code 0 means no changes, and 2 means changes. Set `terraform_wrapper: false` on
        `hashicorp/setup-terraform`, because its wrapper treats exit code 2 as success, so the job would pass with
-       changes present.
+       changes present. A scheduled run that finds changes therefore fails, and that failure is the notification:
+       route the workflow's failure notifications to an operator, who reads the plan and applies it through a pull
+       request.
      - Give the job its own concurrency group, not `production`, so that it cannot replace a pending apply.
-     - Dispatch it from `main`. It waits for the production reviewers, like the apply job.
+     - Dispatch it from `main`, or let the schedule start it. Either way it waits for the production reviewers,
+       like the apply job; approving the weekly run is part of the check.
      - A nonprod dispatch job must also reference `environment: nonprod`. Without an environment, the token subject
        is `PREFIX:ref:refs/heads/main`, which neither identity trusts.
    - **Not under your own identity.** Such a plan cannot pass. The guide gives you no role on the state container
@@ -1109,9 +1113,17 @@ v4.3.0 adds four opt-ins, all off by default, so a pin bump alone plans no resou
    ```
 
 7. **The backup SAS is current**, where `app_service_backup_enabled` is on. Expose
-   `app_service_backup_sas_rotation_rfc3339` and `app_service_backup_sas_expiry_rfc3339` as outputs of your root and read
-   them from the plan-only run of item 1. A plan after the rotation date replaces the three `time` resources and updates
-   the web app's backup block in place; apply it before the expiry, or the backup stops
+   `app_service_backup_sas_rotation_rfc3339` and `app_service_backup_sas_expiry_rfc3339` as outputs of your root. A plan
+   that changes nothing prints no outputs, so the plan-only job of item 1 reads them from state after its plan step:
+
+   ```bash
+   terraform output app_service_backup_sas_rotation_rfc3339
+   terraform output app_service_backup_sas_expiry_rfc3339
+   ```
+
+   The weekly run keeps both dates in the job log. A plan after the rotation date replaces the three `time` resources
+   and updates the web app's backup block in place, which fails that run with exit code 2: apply it before the expiry,
+   or the backup stops
    ([The SAS: source, rotation and trade-off](../modules/wordpress-site/README.md#the-sas-source-rotation-and-trade-off)).
 
 ## Rollback
