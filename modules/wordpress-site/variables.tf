@@ -381,7 +381,7 @@ variable "app_service_storage_plugin_app_settings_enabled" {
 # changed, and the scheduled backup's SAS comes from the account's connection string, not
 # from this secret.
 variable "storage_key_secret_enabled" {
-  description = "Write the storage account's primary access key to the site's Key Vault as the storage-key secret. Defaults to true, which keeps the behaviour of every earlier release. The only reader in this module is the MICROSOFT_AZURE_ACCOUNT_KEY app setting, so false requires app_service_storage_plugin_app_settings_enabled = false and fails at plan otherwise. On an existing site, false deletes the secret from the vault (a soft-delete, and a CanNotDelete lock must be lifted first); nothing else changes. The scheduled App Service backup does not use this secret, and the account's shared-key access setting is unchanged."
+  description = "Write the storage account's primary access key to the site's Key Vault as the storage-key secret. Defaults to true, which keeps the behaviour of every earlier release. The only reader in this module is the MICROSOFT_AZURE_ACCOUNT_KEY app setting, so false requires app_service_storage_plugin_app_settings_enabled = false and fails at plan otherwise. On an existing site, false deletes the secret from the vault (a data-plane delete, which a CanNotDelete lock does not block, so no lock change is needed; whether it stays recoverable depends on the vault's purge protection); nothing else changes. The scheduled App Service backup does not use this secret, and the account's shared-key access setting is unchanged."
   type        = bool
   default     = true
   nullable    = false
