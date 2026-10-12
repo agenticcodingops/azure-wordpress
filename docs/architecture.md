@@ -4,8 +4,8 @@ This page shows what one call to `modules/wordpress-site` deploys, the order Ter
 requests, secrets and telemetry move between the parts. Read it before you choose a `cdn_provider` or change
 network settings.
 
-It describes release **v4.1.1**. Every section ends with its sources: file paths and line ranges at tag `v4.1.1`
-(commit `9cf59db`), relative to the repository root. Line numbers can move in later releases. Where neither the
+It describes release **v4.3.0**. Every section ends with its sources: file paths and line ranges at tag `v4.3.0`
+(commit `b592e13`), relative to the repository root. Line numbers can move in later releases. Where neither the
 code nor Microsoft's documentation settles a question, the text says **UNKNOWN**.
 
 - [At a glance](#at-a-glance)
@@ -27,11 +27,15 @@ code nor Microsoft's documentation settles a question, the text says **UNKNOWN**
 - `cdn_provider` chooses the edge: `cloudflare`, `azure_front_door` or `direct`. The default is `direct`. Only one
   edge is created.
 - WordPress runs as a Linux web app from the `mcr.microsoft.com/appsvc/wordpress-debian-php` image. A staging slot
-  exists on S\* and P\* SKUs unless `app_service.staging_slot_enabled = false` (from v4.3.0).
+  exists on S\* and P\* SKUs unless `app_service.staging_slot_enabled = false`.
 - MySQL Flexible Server uses private access (virtual network integration): a delegated subnet and a private DNS
   zone. No module in this repository creates a private endpoint.
-- Key Vault holds the database password, the storage account key and the Application Insights connection string.
-  The web app reads them through Key Vault references, as its managed identity.
+- Key Vault holds the database password, the storage account key (unless `storage_key_secret_enabled = false`) and
+  the Application Insights connection string. The web app reads them through Key Vault references, as its managed
+  identity. By default WordPress logs in to MySQL as `wpadmin` with that password; the opt-in passwordless path
+  replaces the login with the app's managed identity, one stage per apply.
+- `app_service_backup_enabled` schedules a custom App Service backup of the production app to a private container in
+  the site's storage account, with a container SAS the module generates and rotates. Off by default.
 - Key Vault and Storage deny public data-plane access by default. The App Service subnet reaches both through
   service endpoints.
 - Media stays on the web app's `/home` storage by default; the module installs no plugin. The `MICROSOFT_AZURE_*`
@@ -42,8 +46,8 @@ code nor Microsoft's documentation settles a question, the text says **UNKNOWN**
   Azure Storage for WordPress plugin writes unsigned URLs, so media does not load with it. See [Media](#media).
 - The composition creates Log Analytics and Application Insights itself. It never calls `modules/monitoring`.
 
-Sources: `modules/wordpress-site/variables.tf:324-333` (`cdn_provider`), `modules/app-service/main.tf:24`,
-`:194-197`, `:331-332`, `modules/database/main.tf:64-66`, `modules/wordpress-site/main.tf:260-282`, `:377-381`.
+Sources: `modules/wordpress-site/variables.tf:532-541` (`cdn_provider`), `modules/app-service/main.tf:24`,
+`:242-245`, `:460-461`, `modules/database/main.tf:64-66`, `modules/wordpress-site/main.tf:371-393`, `:511-517`.
 
 ## Container view
 
@@ -92,7 +96,7 @@ flowchart TB
     alerts --> ag
 ```
 
-The slot's "same database settings" edge holds until the passwordless database path (from v4.3.0) reaches stage 2. From
+The slot's "same database settings" edge holds until the passwordless database path reaches stage 2. From
 stage 2 the production app logs in with its Entra identity and the settings that stage sets, while the slot keeps its
 password settings; stage 3 removes `DATABASE_PASSWORD` from the app only. See the composition README's
 [Passwordless database access (managed identity)](../modules/wordpress-site/README.md#passwordless-database-access-managed-identity).
@@ -105,10 +109,11 @@ What each part is:
 | Front Door | `modules/front-door`, only when `cdn_provider = "azure_front_door"` and `front_door.enabled` is true (the default) | Premium SKU by default. |
 | App Service plan | `modules/app-service`, unless you pass `plan_id` or `use_shared_plan = true` | Its own plan gets an autoscale setting of 1 to 5 instances. |
 | Linux web app | `modules/app-service` | System-assigned managed identity. Outbound virtual network integration. |
-| Staging slot | `modules/app-service`, on S\* and P\* SKUs unless `app_service.staging_slot_enabled = false` (from v4.3.0) | Its own managed identity. The same database and storage settings as the web app, until passwordless stage 2 (from v4.3.0): from then the app logs in with its Entra identity while the slot keeps its password settings. |
+| Staging slot | `modules/app-service`, on S\* and P\* SKUs unless `app_service.staging_slot_enabled = false` | Its own managed identity. The same database and storage settings as the web app, until passwordless stage 2: from then the app logs in with its Entra identity while the slot keeps its password settings. |
 | MySQL Flexible Server | `modules/database` | One `wordpress` database. Administrator login `wpadmin`. |
 | Key Vault | `modules/key-vault` | Access policies, not Azure RBAC. |
 | Storage account | `modules/storage` | StorageV2 with a private `wp-uploads` container by default. |
+| Scheduled App Service backup | `modules/app-service`, only when `app_service_backup_enabled = true` | Production app only, never the slot. Writes to a private container you declare in `storage.additional_containers`; the module signs the container SAS from the account key and re-issues it on the cadence `app_service_backup` sets. See [Backup & Recovery](../modules/wordpress-site/README.md#backup--recovery). |
 | Log Analytics, Application Insights | `modules/wordpress-site` itself | The workspace is skipped when you pass `monitoring.log_analytics_workspace_id`. |
 | Alert rules, action group | `modules/wordpress-site` itself | See [Monitoring](#monitoring). |
 
@@ -117,9 +122,9 @@ one case. With
 `use_shared_plan = true`, the web app and its slot live in the shared plan's resource group, because Azure needs a
 web app and its plan in the same group.
 
-Sources: `modules/wordpress-site/main.tf:79`, `:135`, `:141-142`, `:153`, `:185-188`, `:260-282`, `:291-327`, `:330-372`,
-`:387-437`, `:452-528`, `:652-668`, `:775-797`, `:878-913`; `modules/app-service/main.tf:16`, `:139-152`,
-`:155-181`, `:331-351`, `:436-440`, `:449-464`; `modules/database/main.tf:35-85`, `:120-126`;
+Sources: `modules/wordpress-site/main.tf:79`, `:179`, `:185-186`, `:197`, `:229-232`, `:371-393`, `:402-447`, `:450-501`,
+`:523-573`, `:588-686`, `:836-852`, `:959-981`, `:1062-1097`; `modules/app-service/main.tf:16`, `:178-191`,
+`:194-229`, `:460-486`, `:585-589`, `:598-613`; `modules/database/main.tf:35-104`, `:180-186`;
 `modules/key-vault/main.tf:29-68`; `modules/storage/main.tf:15-24`, `:88-92`; `modules/storage/variables.tf:110-114`;
 `modules/front-door/main.tf:17-25`; `modules/cloudflare/main.tf:16-18`.
 
@@ -203,13 +208,18 @@ Other ordering facts, left out of the diagram:
 - The management lock depends only on the resource group. A `CanNotDelete` lock makes Azure refuse every delete in
   the group, so remove it in an earlier apply before any change that replaces or removes a resource. See
   [Resource locks](../modules/wordpress-site/README.md#resource-locks).
+- With `app_service_backup_enabled = true`, the web app's backup block takes a container SAS that the module reads
+  from the storage account at plan time. The plan that turns the backup on, and each plan that rotates the SAS, defers
+  that read to apply, so the app's `storage_account_url` is known after apply that once; it is an in-place update, not
+  a replacement. See
+  [The SAS: source, rotation and trade-off](../modules/wordpress-site/README.md#the-sas-source-rotation-and-trade-off).
 
-Sources: `modules/wordpress-site/main.tf:1-12`, `:185-213`, `:221-251`, `:260-282`, `:291-327`, `:330-372`,
-`:377-381`, `:387-437` (placeholder `:403`, `depends_on` `:432-436`), `:452-528` (`depends_on` `:522-527`),
-`:531-568`, `:581-632`, `:775-797`, `:833-871`, `:878-913`, `:924-969`, `:1003-1016`;
-`modules/wordpress-site/monitoring.tf:117`; `modules/app-service/main.tf:78`; `modules/key-vault/main.tf:72-84`;
-`modules/monitoring/main.tf:43-54`, `:57-59`; `modules/monitoring/variables.tf:63-66`; `modules/wordpress-site/main.tf:253-257`, `:265`,
-`:277`, `:947`, `:956-960`; site module README, [Resource locks](../modules/wordpress-site/README.md#resource-locks).
+Sources: `modules/wordpress-site/main.tf:1-12`, `:229-324`, `:332-362`, `:371-393`, `:402-447`, `:450-501`,
+`:511-517`, `:523-573` (placeholder `:539`, `depends_on` `:568-572`), `:588-686` (`depends_on` `:680-685`),
+`:689-745`, `:758-816`, `:959-981`, `:1017-1055`, `:1062-1097`, `:1108-1153`, `:1187-1200`;
+`modules/wordpress-site/monitoring.tf:117`; `modules/app-service/main.tf:82`; `modules/key-vault/main.tf:72-84`;
+`modules/monitoring/main.tf:43-54`, `:57-59`; `modules/monitoring/variables.tf:63-66`; `modules/wordpress-site/main.tf:364-368`, `:376`,
+`:388`, `:1131`, `:1140-1144`; site module README, [Resource locks](../modules/wordpress-site/README.md#resource-locks).
 
 ## Request flow: Cloudflare
 
@@ -273,10 +283,10 @@ What the code sets up for this flow:
   origin lock-down and the storage allow-list still apply, but no DNS record, wait or Cloudflare rule is created.
   The hostname binding is still created, so you must create the DNS records yourself.
 
-Sources: `modules/wordpress-site/main.tf:52-54`, `:152-163`, `:504-508`, `:878-913`, `:924-969`;
-`modules/wordpress-site/variables.tf:336-351`; `modules/cloudflare/main.tf:37-40`, `:48-87`, `:111-126`,
+Sources: `modules/wordpress-site/main.tf:52-54`, `:196-207`, `:652-656`, `:1062-1097`, `:1108-1153`;
+`modules/wordpress-site/variables.tf:544-559`; `modules/cloudflare/main.tf:37-40`, `:48-87`, `:111-126`,
 `:134-140`; `modules/cloudflare/variables.tf:68-72`; `modules/cloudflare/page-rules.tf:17-86` (`ssl` `:30`, `:57`, `:79`), `:97`; `modules/cloudflare/waf.tf:20`, `:83`, `:132`;
-`modules/wordpress-site/main.tf:161`; `modules/app-service/main.tf:28-61`, `:165`, `:214-241`, `:258`, `:368-393`, `:414`.
+`modules/wordpress-site/main.tf:205`; `modules/app-service/main.tf:32-65`, `:204`, `:262-303`, `:320`, `:503-542`, `:563`.
 
 ## Request flow: Azure Front Door
 
@@ -348,11 +358,11 @@ What the code sets up for this flow:
   app's domain verification ID. Both examples in this repository use `cloudflare`, so whether this mode applies
   cleanly on a first deploy is UNKNOWN.
 
-Sources: `modules/wordpress-site/main.tf:140-146`, `:501-502`, `:775-797`, `:833-871`, `:878-880`, `:942-969`;
-`modules/wordpress-site/outputs.tf:146-164`; `modules/front-door/main.tf:17-201`, `:204-289` (route `:85-104`);
-`modules/front-door/outputs.tf:14-17`; `modules/wordpress-site/variables.tf:311-321`;
-`modules/app-service/main.tf:28`, `:214-219`, `:244-258`, `:322-325`, `:368-373`, `:395-414`;
-`examples/basic-site/main.tf:109`; `examples/multi-site/main.tf:107`. Microsoft:
+Sources: `modules/wordpress-site/main.tf:184-190`, `:647-648`, `:959-981`, `:1017-1055`, `:1062-1064`, `:1126-1153`;
+`modules/wordpress-site/outputs.tf:168-186`; `modules/front-door/main.tf:17-201`, `:204-289` (route `:85-104`);
+`modules/front-door/outputs.tf:14-17`; `modules/wordpress-site/variables.tf:519-529`;
+`modules/app-service/main.tf:32`, `:262-267`, `:306-320`, `:450-453`, `:503-508`, `:544-563`;
+`examples/basic-site/main.tf:111`; `examples/multi-site/main.tf:110`. Microsoft:
 [Secure traffic to origins](https://learn.microsoft.com/azure/frontdoor/origin-security),
 [What is a rule set?](https://learn.microsoft.com/azure/frontdoor/front-door-rules-engine).
 
@@ -369,8 +379,8 @@ Sources: `modules/wordpress-site/main.tf:140-146`, `:501-502`, `:775-797`, `:833
 - Media comes from the web app's `/home` storage, like every other response. Only a Blob offload plugin you install
   makes browsers fetch it from the blob endpoint instead. See [Media](#media).
 
-Sources: `modules/wordpress-site/variables.tf:324-333`; `modules/wordpress-site/main.tf:942-969`;
-`modules/app-service/main.tf:214-219`, `:258`, `:414`.
+Sources: `modules/wordpress-site/variables.tf:532-541`; `modules/wordpress-site/main.tf:1126-1153`;
+`modules/app-service/main.tf:262-267`, `:320`, `:563`.
 
 ## Media
 
@@ -378,7 +388,7 @@ Media goes to Blob Storage only after you install a Blob offload plugin yourself
 for WordPress, and turn on its "Use Microsoft Azure Storage for default upload" option
 (`MICROSOFT_AZURE_USE_FOR_DEFAULT_UPLOAD`, which defaults to `false`). This module installs no plugin and sets no
 such option. Until then, WordPress writes uploads to `wp-content/uploads` on the web app's
-persistent App Service storage (`WEBSITES_ENABLE_APP_SERVICE_STORAGE = "true"`, `modules/app-service/main.tf:81`).
+persistent App Service storage (`WEBSITES_ENABLE_APP_SERVICE_STORAGE = "true"`, `modules/app-service/main.tf:85`).
 The storage account's blob versioning and soft delete do not cover files stored there. The web app has no
 `storage_account` block, so there is no Azure Files mount either way.
 
@@ -389,7 +399,8 @@ With such a plugin installed and set as the default upload target:
    The key is a Key Vault reference to the `storage-key` secret. The settings are optional: they exist so you can
    configure such a plugin (Microsoft Azure Storage for WordPress reads them as `wp-config.php` constants). The
    container image does not read them, and this module installs no plugin. With the settings off,
-   `storage_key_secret_enabled = false` (from v4.3.0) also stops writing the `storage-key` secret.
+   `storage_key_secret_enabled = false` also stops writing the `storage-key` secret (`modules/wordpress-site/main.tf:511-517`);
+   see [Retiring the `storage-key` secret](../README.md#retiring-the-storage-key-secret).
 2. **Uploads.** The web app writes to the account through the App Service subnet, which carries the
    `Microsoft.Storage` service endpoint and is always on the account's allow-list.
 3. **Reads.** The plugin rewrites media URLs to the account's own blob endpoint,
@@ -424,9 +435,9 @@ unsigned, at `windows-azure-storage.php:410`; both at tag 4.5.2, source at
 changes either side. **UNKNOWN:** whether another storage plugin serves SAS-signed media URLs. Check it before you
 go live.
 
-Sources: `modules/app-service/main.tf:81`, `:120-128`, `:295-297`;
-`modules/wordpress-site/variables.tf:172-181`, `:268-273`; `modules/wordpress-site/main.tf:357-366`;
-`modules/storage/main.tf:26-43`, `:88-92`; `CHANGELOG.md:136-142` (v2.0.0 notes); `modules/storage/README.md:76-89`;
+Sources: `modules/app-service/main.tf:85`, `:124-132`, `:376-378`;
+`modules/wordpress-site/variables.tf:273-282`, `:369-374`; `modules/wordpress-site/main.tf:486-495`;
+`modules/storage/main.tf:26-43`, `:88-92`; `docs/upgrading/v1-to-v2.md:116-141` (the v2.0.0 media note); `modules/storage/README.md:76-120`;
 plugin source: `plugins.svn.wordpress.org/windows-azure-storage/tags/4.5.2/`.
 
 ## Secrets
@@ -449,7 +460,7 @@ sequenceDiagram
     TF->>KV: Access policies with Get and List for the web app identity and the slot identity
     App->>KV: Resolve each reference as its own identity, through the VNet integration while the vault denies public traffic
     KV-->>App: Secret values, exposed to WordPress as app settings
-    App->>DB: Connect as wpadmin with DATABASE_PASSWORD
+    App->>DB: Connect as wpadmin with DATABASE_PASSWORD (the default; see the passwordless path below)
 ```
 
 How it fits together:
@@ -457,11 +468,21 @@ How it fits together:
 - **One password, two consumers.** The same `random_password.db` result sets the MySQL administrator password and
   the `db-password` secret.
 - **Module-owned secrets win.** The composition merges `extra_secrets` first and its own three secrets last, so a
-  consumer entry cannot overwrite `db-password`, `storage-key` or `appinsights-connection`.
+  consumer entry cannot overwrite `db-password`, `storage-key` or `appinsights-connection`. With
+  `storage_key_secret_enabled = false`, `storage-key` is filtered out of the module's map, so a consumer entry of that
+  name is then written as given.
 - **References are versionless.** Every reference uses the secret's versionless URI. Microsoft documents that App
   Service then uses the latest version and picks up a new one within 24 hours, or at once on a configuration change.
 - **The database ignores later password changes.** The server has `ignore_changes = [administrator_password]`. A
   new value in the `db-password` secret does not change the password MySQL accepts.
+- **Passwordless database access is opt-in and staged.** With the four `mysql_entra_stage_*` flags turned on one
+  apply at a time, the production app gets a user-assigned identity and the MySQL server a Microsoft Entra
+  administrator (stage 1), logs in with a token as `mysql_entra_app_database_user` (stage 2), loses its
+  `DATABASE_PASSWORD` setting while the `db-password` secret is still written (stage 3), and the server stops
+  accepting password logins (stage 4). The staging slot keeps its password settings throughout, so stage 4 needs
+  `app_service.staging_slot_enabled = false`. Key Vault references keep resolving with the system-assigned identity.
+  The module creates no identity and no MySQL user. See
+  [Passwordless database access (managed identity)](../modules/wordpress-site/README.md#passwordless-database-access-managed-identity).
 - **The deploying principal** gets `Get`, `List`, `Set`, `Delete`, `Purge` and `Recover` on secrets. Its object ID
   comes from `deployer_object_id`, or from `data.azurerm_client_config` read outside the Key Vault module.
 - **Network path.** The vault's `network_acls` default to `Deny`, with `bypass = "AzureServices"` and the App
@@ -475,11 +496,11 @@ How it fits together:
 - **Extra secrets as settings.** `extra_secret_app_settings` turns secret names into Key Vault references inside
   the module, and applies them to both the web app and the slot.
 
-Sources: `modules/wordpress-site/main.tf:66-75`, `:209-213`, `:317-318`, `:377-381`, `:387-437`, `:443-446`,
-`:480-492`, `:531-568`; `modules/wordpress-site/variables.tf:130-146`, `:808-822`;
-`modules/database/main.tf:39-40`, `:76-84`; `modules/key-vault/main.tf:29-123` (`network_acls` `:54-59`, policies
-`:72-101`, secrets `:105-123`); `modules/key-vault/outputs.tf:24-27`; `modules/app-service/main.tf:66-79`,
-`:120-126`, `:179-181`, `:191`, `:287`, `:349-351`, `:436-440`. Microsoft:
+Sources: `modules/wordpress-site/main.tf:66-75`, `:320-324`, `:437-438`, `:511-517`, `:523-573`, `:579-582`,
+`:616-628`, `:689-745`; `modules/wordpress-site/variables.tf:231-247`, `:1016-1030`;
+`modules/database/main.tf:39-40`, `:88-103`; `modules/key-vault/main.tf:29-123` (`network_acls` `:54-59`, policies
+`:72-101`, secrets `:105-123`); `modules/key-vault/outputs.tf:24-27`; `modules/app-service/main.tf:70-83`,
+`:124-130`, `:226-229`, `:239`, `:349`, `:484-486`, `:585-589`. Microsoft:
 [Use Key Vault references as app settings](https://learn.microsoft.com/azure/app-service/app-service-key-vault-references),
 [Virtual network integration routes](https://learn.microsoft.com/azure/app-service/overview-vnet-integration#routes).
 
@@ -536,9 +557,10 @@ private_endpoint_subnet_cidr }`.
 cannot have a public endpoint. The web app finds it by its FQDN (`DATABASE_HOST`), through the private DNS zone
 linked to the virtual network. The web app sets `WEBSITE_DNS_SERVER = 168.63.129.16`, Azure's DNS.
 
-**MySQL does not require TLS.** The module sets the server parameter `require_secure_transport = OFF`. Its comment
-says the Microsoft WordPress container does not configure TLS for MySQL by default. The connection runs over the
-virtual network.
+**MySQL does not require TLS by default.** The module sets the server parameter `require_secure_transport = OFF`
+unless `mysql_require_secure_transport = true`, which sets `ON` and refuses any client that does not use TLS. Its
+comment says the traffic is confined to the VNet and the Microsoft WordPress container does not verify the server
+certificate. See the README's [TLS](../modules/wordpress-site/README.md#tls).
 
 **Inbound filtering is the access restrictions, not the NSG.** The NSG on `snet-app` has inbound rules (allow 443
 from `AzureFrontDoor.Backend` and `AppServiceManagement`, deny the rest). Microsoft documents that inbound NSG rules
@@ -554,18 +576,23 @@ inbound requests is the web app's access restriction list:
 **The SCM (Kudu) endpoint is a separate gate.** The web app and the slot each have one. Their rules come from
 `app_service_scm_ip_restrictions`, which is empty by default, and the default action is `Allow`. The network gate
 and Kudu's authentication are independent, and both must pass. To restrict it, read
-[Hardening the SCM/Kudu endpoint](../modules/wordpress-site/README.md#hardening-the-scmkudu-endpoint) first: a
+[Hardening the SCM/Kudu endpoint](upgrading/v3-to-v4.md#hardening-the-scmkudu-endpoint) in the v3-to-v4 upgrade guide
+first: a
 `Deny` without an allow rule for your address also cuts off the Kudu SSH console.
 
 **Outbound.** `vnet_route_all_enabled = true` sends all of the app's outbound traffic into the virtual network.
-The module creates no NAT gateway or route table.
+The module creates no NAT gateway or route table. With `app_service_backup_enabled = true`, the app's
+`virtual_network_backup_restore_enabled` is set (`modules/app-service/main.tf:221`), so the backup reaches the storage
+account over the VNet integration and the account can keep `Deny`; see
+[Backup & Recovery](../modules/wordpress-site/README.md#backup--recovery).
 
 Sources: `modules/networking/main.tf:14-183` (app subnet `:27-52`, db subnet `:56-72`, PE subnet `:76-84`,
-NSGs `:87-171`); `modules/dns-zones/main.tf:7-27`; `modules/database/main.tf:64-66`, `:91-96`;
-`modules/wordpress-site/main.tf:173-178`, `:221-236`, `:357-366`, `:417-422`, `:513-517`, `:833-871`;
-`modules/wordpress-site/variables.tf:218-254`, `:788-797`; `modules/app-service/main.tf:85`, `:176`, `:191`,
-`:214-283`, `:416-432`; site module README,
-[Hardening the SCM/Kudu endpoint](../modules/wordpress-site/README.md#hardening-the-scmkudu-endpoint). Microsoft:
+NSGs `:87-171`); `modules/dns-zones/main.tf:7-27`; `modules/database/main.tf:64-66`, `:111-116`;
+`modules/wordpress-site/main.tf:217-222`, `:332-347`, `:486-495`, `:553-558`, `:661-665`, `:1017-1055`;
+`modules/wordpress-site/variables.tf:319-355`, `:996-1005`; `modules/app-service/main.tf:89`, `:215`, `:239`,
+`:262-345`, `:565-581`; v3-to-v4 upgrade guide,
+[Hardening the SCM/Kudu endpoint](upgrading/v3-to-v4.md#hardening-the-scmkudu-endpoint); app-service module README,
+[SCM/Kudu Network Posture](../modules/app-service/README.md#scmkudu-network-posture). Microsoft:
 [Integrate your app with an Azure virtual network](https://learn.microsoft.com/azure/app-service/overview-vnet-integration),
 [Private network access for Azure Database for MySQL](https://learn.microsoft.com/azure/mysql/flexible-server/concepts-networking-vnet).
 
@@ -623,7 +650,7 @@ flowchart TB
 | Front Door profile | `cdn_provider = "azure_front_door"` and `front_door.enabled` | `FrontDoorAccessLog`, `FrontDoorHealthProbeLog`, `FrontDoorWebApplicationFirewallLog` | `AllMetrics` |
 | Key Vault | `key_vault_diagnostic_settings` is set | `AuditEvent` by default | `AllMetrics` by default |
 | Blob service | `storage_blob_diagnostic_settings` is set | `StorageRead`, `StorageWrite`, `StorageDelete` by default | `Transaction` by default |
-| Staging slot | `staging_slot_diagnostic_settings` is set, on S\* and P\* only | The four App Service categories by default | `AllMetrics` by default |
+| Staging slot | `staging_slot_diagnostic_settings` is set and the slot exists (an S\* or P\* SKU with `app_service.staging_slot_enabled` true) | The four App Service categories by default | `AllMetrics` by default |
 
 The three opt-in targets send to the site workspace unless an entry names another destination: a workspace, a
 storage account, an event hub or a partner solution. `MySqlSlowLogs` carries rows only when
@@ -649,9 +676,9 @@ Terraform; see
 For thresholds and examples, see [Alerting](../modules/wordpress-site/README.md#alerting) and
 [Diagnostic settings](../modules/wordpress-site/README.md#diagnostic-settings) in the site module README.
 
-Sources: `modules/wordpress-site/main.tf:166-170`, `:181`, `:201-204`, `:260-282`, `:576-632`, `:642-772`,
-`:800-826`; `modules/wordpress-site/monitoring.tf:20-37`, `:41`, `:44-146`, `:152-274`, `:282-344`, `:351-380`,
-`:386-426`, `:433-658`; `modules/wordpress-site/variables.tf:360-496`; `modules/app-service/main.tf:78`;
+Sources: `modules/wordpress-site/main.tf:210-214`, `:225`, `:242-249`, `:371-393`, `:753-816`, `:826-956`,
+`:984-1010`; `modules/wordpress-site/monitoring.tf:20-37`, `:41`, `:44-146`, `:152-274`, `:282-344`, `:351-380`,
+`:386-426`, `:433-658`; `modules/wordpress-site/variables.tf:568-704`; `modules/app-service/main.tf:82`;
 site module README, [Failure Anomalies](../modules/wordpress-site/README.md#failure-anomalies-platform-created).
 Microsoft:
 [Set the data retention](https://learn.microsoft.com/azure/azure-monitor/app/create-workspace-resource#set-the-data-retention).
@@ -674,7 +701,8 @@ What changes for that site:
 
 - The web app and slot are created in the shared resource group. Everything else stays in the site resource group.
 - The site creates no plan and no autoscale setting of its own.
-- `shared_plan_sku` decides whether a staging slot exists, so set it to the shared plan's real SKU.
+- `shared_plan_sku`, with `app_service.staging_slot_enabled`, decides whether a staging slot exists, so set it to the
+  shared plan's real SKU.
 - The Resource Health alert leaves the shared plan out.
 
 Do not switch an existing site to `use_shared_plan = true`: its web app would change resource group, which replaces
@@ -682,8 +710,8 @@ it, and the module is expected to fail partway (read from the code, not run). Cr
 plan and migrate instead; see
 [step 11 of the deployment guide](deployment-guide.md#step-11-host-several-sites-on-a-shared-plan).
 
-Sources: `modules/shared-infrastructure/main.tf:43-71`, `:160-167`; `modules/wordpress-site/main.tf:121-135`, `:459`;
-`modules/wordpress-site/monitoring.tf:390`, `:403-406`; `modules/app-service/main.tf:16-17`, `:140`, `:450`.
+Sources: `modules/shared-infrastructure/main.tf:43-71`, `:160-167`; `modules/wordpress-site/main.tf:160-179`, `:595`;
+`modules/wordpress-site/monitoring.tf:390`, `:403-406`; `modules/app-service/main.tf:16-17`, `:179`, `:599`.
 
 ## What the composition does not create
 
@@ -698,6 +726,10 @@ Sources: `modules/shared-infrastructure/main.tf:43-71`, `:160-167`; `modules/wor
 - **A Blob offload plugin.** The module installs none, so media stays on `/home`. The optional `MICROSOFT_AZURE_*` app
   settings exist so you can configure one yourself.
 - **A NAT gateway or route table.** Outbound traffic uses the platform defaults.
+- **The backup container, a managed identity or a MySQL user.** The scheduled backup writes to a container you declare
+  in `storage.additional_containers`; the passwordless database path uses user-assigned identities and any
+  non-administrator MySQL user you create. See [Backup & Recovery](../modules/wordpress-site/README.md#backup--recovery)
+  and [Passwordless database access (managed identity)](../modules/wordpress-site/README.md#passwordless-database-access-managed-identity).
 
 Sources: `modules/networking/main.tf:76-84`; `modules/cloudflare/main.tf:16-26`;
-`modules/wordpress-site/main.tf:153`, `:878-880`, `:962-965`; `modules/app-service/main.tf:120-126`.
+`modules/wordpress-site/main.tf:197`, `:1062-1064`, `:1146-1149`; `modules/app-service/main.tf:124-130`.
