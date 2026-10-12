@@ -291,8 +291,10 @@ key out of the app's environment:
 
 `storage_key_secret_enabled` defaults to `true`, so an upgrade plans no change. Setting it to `false` while
 `app_service_storage_plugin_app_settings_enabled` is still `true` fails at plan, because that setting is a Key
-Vault reference to the secret. On an existing site, `false` deletes the secret from the vault (a soft-delete;
-lift a `CanNotDelete` lock first). The account's shared-key access is unchanged, and the scheduled backup SAS is
+Vault reference to the secret. On an existing site, `false` deletes the secret from the vault. That is a
+data-plane delete, which a `CanNotDelete` lock does not block, so no lock change is needed; whether the secret
+stays recoverable depends on the vault's purge protection (see the
+[upgrade guide](docs/upgrading/v4.1.1-to-v4.3.0.md)). The account's shared-key access is unchanged, and the scheduled backup SAS is
 derived from the account key directly, not from this secret.
 
 ## Outbound Email (SMTP relay)
