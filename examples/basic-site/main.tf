@@ -53,8 +53,9 @@ module "wordpress" {
 
   # ---------------------------------------------------------------------------
   # Data-plane network access. Both Key Vault and Storage DENY public access by
-  # default (v2.0.0+). Leaving these unset makes a first apply fail, so they are
-  # set explicitly here rather than left as an exercise.
+  # default (v2.0.0+). The Key Vault default makes a first apply fail, so it is
+  # changed explicitly here; the storage default works and is written out so the
+  # choice is visible rather than left as an exercise.
   # ---------------------------------------------------------------------------
 
   # Terraform is not a trusted Azure service: its calls to create the Key Vault
@@ -65,13 +66,13 @@ module "wordpress" {
   #   key_vault_network_acls_ip_rules = ["203.0.113.10"]
   key_vault_public_network_access_enabled = true
 
-  # Media stays on the app's /home storage by default, so the default "Deny" would also
-  # work here. "Allow" is set so that a Blob offload plugin you install later works: such a
-  # plugin rewrites media URLs to the account's own blob endpoint, so visitors fetch media
-  # straight from Azure, from arbitrary IPs, and with "Deny" every image 403s. Keep
-  # "Deny" if you install no such plugin, or if the blob endpoint is fronted by a CDN
-  # custom domain.
-  storage_network_rules_default_action = "Allow"
+  # Media stays on the app's /home storage by default and the scheduled backup reaches
+  # the account over the VNet integration, so the default "Deny" works. Set "Allow" only
+  # if you install a Blob offload plugin that points media URLs at the account's own blob
+  # endpoint: visitors then fetch media straight from Azure, from IPs that cannot be
+  # allow-listed, and with "Deny" every image 403s. "Allow" removes only the firewall
+  # gate; the README's "Network Access Defaults" table has the rest.
+  storage_network_rules_default_action = "Deny"
 
   # Key Vault lifecycle (v3.0.0). Unset, these default by environment:
   # production true/90, nonprod false/7. Nonprod defaults to purge protection OFF
