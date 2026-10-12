@@ -12,11 +12,21 @@ reports whether they contain at least one identifier that the citing paragraph n
 ``Sources:`` paragraph the identifiers of the whole section count. A miss means the anchor
 should be re-read: the line numbers may have moved since the page was anchored.
 
+A cited path that does not exist in the repository is a miss. The one exception is a bare
+file name (no ``/``) that is not in the repository root, which the pages use for plugin and
+provider source files; those are printed as ``skip`` and not counted.
+
+An anchor that is correct but cites a line in prose only (no shared identifier) can be
+recorded in ``scripts/check-doc-anchors.allow``, one entry per line in the form the miss
+report prints, ``docs/page.md:<paragraph line> path:line[-line]``, with a short reason after
+``#``. A listed anchor reports ``ok (allowed)``. An entry whose anchor no longer exists on
+that paragraph is reported as stale and fails the run, so the list cannot rot.
+
 With ``--links`` every relative Markdown link in the pages is also resolved against the
 working tree, and a ``#fragment`` is checked against the target file's headings using
 GitHub's slug rules.
 
-Exit status is 1 when any miss or broken link is found.
+Exit status is 1 when any unlisted miss, stale allow entry or broken link is found.
 """
 
 from __future__ import annotations
@@ -27,6 +37,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+ALLOW_FILE = Path(__file__).resolve().with_suffix(".allow")
 DEFAULT_PAGES = [
     "docs/architecture.md",
     "docs/cost.md",
@@ -127,9 +138,41 @@ def section_identifiers(lines: list[str], upto: int) -> tuple[set[str], set[str]
     return identifiers("\n".join(lines[start:upto]))
 
 
-def check_anchors(page: Path, files: dict[str, list[str] | None]) -> list[str]:
+def page_key(page: Path) -> str:
+    try:
+        return page.relative_to(ROOT).as_posix()
+    except ValueError:
+        return page.as_posix()
+
+
+def load_allow() -> tuple[dict[tuple[str, int, str], str], list[str]]:
+    """Read the allow-list: {(page, paragraph line, cite): reason}, plus malformed lines."""
+    allow: dict[tuple[str, int, str], str] = {}
+    bad: list[str] = []
+    if not ALLOW_FILE.is_file():
+        return allow, bad
+    for n, raw in enumerate(ALLOW_FILE.read_text(encoding="utf-8").splitlines(), 1):
+        entry, _, reason = raw.partition("#")
+        parts = entry.split()
+        if not parts:
+            continue
+        where, _, line_no = parts[0].rpartition(":")
+        if len(parts) != 2 or not line_no.isdigit() or not where:
+            bad.append(f"{ALLOW_FILE.name}:{n}: cannot parse {raw.strip()!r}")
+            continue
+        allow[(where, int(line_no), parts[1])] = reason.strip()
+    return allow, bad
+
+
+def check_anchors(
+    page: Path,
+    files: dict[str, list[str] | None],
+    allow: dict[tuple[str, int, str], str],
+    seen: set[tuple[str, int, str]],
+) -> list[str]:
     misses: list[str] = []
     lines = page.read_text(encoding="utf-8").splitlines()
+    key = page_key(page)
     total = 0
     for p_start, p_end, text in paragraphs(lines):
         is_sources = text.lstrip().lower().startswith("sources:")
@@ -153,12 +196,21 @@ def check_anchors(page: Path, files: dict[str, list[str] | None]) -> list[str]:
                     else None
                 )
             content = files[current]
-            if content is None:
-                continue  # a path outside this repository (plugin or provider source)
-            total += 1
             cite = f"{current}:{a}" + (f"-{b}" if b != a else "")
+            where = f"{key}:{p_start + 1}"
+            if content is None and "/" not in current:
+                # A bare file name that is not in the repository root: plugin or provider source.
+                print(f"skip  {where}  {cite}  (external file name)")
+                continue
+            total += 1
+            if content is None:
+                misses.append(f"{where}: {cite} cites a file that does not exist in the repository")
+                continue
+            entry = (key, p_start + 1, cite)
+            if entry in allow:
+                seen.add(entry)
             if b > len(content) or a < 1 or a > b:
-                misses.append(f"{page.as_posix()}:{p_start + 1}: {cite} is outside the file ({len(content)} lines)")
+                misses.append(f"{where}: {cite} is outside the file ({len(content)} lines)")
                 continue
             cited = "\n".join(content[a - 1:b])
             cited_idents = {t for t in IDENT_RE.findall(cited)} | set(
@@ -166,14 +218,16 @@ def check_anchors(page: Path, files: dict[str, list[str] | None]) -> list[str]:
             )
             hit = sorted(idents & cited_idents)
             if hit:
-                print(f"ok    {page.as_posix()}:{p_start + 1}  {cite}  ({hit[0]})")
+                print(f"ok    {where}  {cite}  ({hit[0]})")
                 continue
             weak = prose_hit(prose, fragments(cited))
             if weak:
-                print(f"ok~   {page.as_posix()}:{p_start + 1}  {cite}  (prose {weak})")
+                print(f"ok~   {where}  {cite}  (prose {weak})")
+            elif entry in allow:
+                print(f"ok    {where}  {cite}  (allowed: {allow[entry]})")
             else:
-                misses.append(f"{page.as_posix()}:{p_start + 1}: {cite} shares no identifier with its paragraph")
-    print(f"{page.as_posix()}: {total} anchors checked, {len(misses)} misses")
+                misses.append(f"{where} {cite}  # shares no identifier with its paragraph")
+    print(f"{key}: {total} anchors checked, {len(misses)} misses")
     return misses
 
 
@@ -233,21 +287,32 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--links", action="store_true", help="also check relative links and fragments")
     args = ap.parse_args(argv)
     files: dict[str, list[str] | None] = {}
+    allow, stale = load_allow()
+    seen: set[tuple[str, int, str]] = set()
     misses: list[str] = []
     broken: list[str] = []
     for p in args.pages:
         page = (ROOT / p) if not Path(p).is_absolute() else Path(p)
-        misses += check_anchors(page, files)
+        misses += check_anchors(page, files, allow, seen)
         if args.links:
             broken += check_links(page)
+    checked_pages = {page_key((ROOT / p) if not Path(p).is_absolute() else Path(p)) for p in args.pages}
+    stale += [
+        f"{ALLOW_FILE.name}: {where}:{n} {cite} has no such anchor on that paragraph any more"
+        for (where, n, cite) in sorted(allow)
+        if where in checked_pages and (where, n, cite) not in seen
+    ]
     if misses:
-        print("\nMISSES:")
+        print("\nMISSES (add a line to scripts/check-doc-anchors.allow once a miss is read and found correct):")
         print("\n".join(misses))
+    if stale:
+        print("\nSTALE ALLOW ENTRIES:")
+        print("\n".join(stale))
     if broken:
         print("\nBROKEN LINKS:")
         print("\n".join(broken))
-    print(f"\n{len(misses)} anchor misses, {len(broken)} broken links")
-    return 1 if misses or broken else 0
+    print(f"\n{len(misses)} anchor misses, {len(stale)} stale allow entries, {len(broken)} broken links")
+    return 1 if misses or stale or broken else 0
 
 
 if __name__ == "__main__":

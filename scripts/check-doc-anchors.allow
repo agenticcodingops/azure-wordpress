@@ -1,0 +1,19 @@
+# Anchors that scripts/check-doc-anchors.py cannot match on an identifier because the page
+# states the fact in prose. Each was read against the cited line and found correct.
+# Format: <page>:<paragraph line> <path>:<line>[-<line>]  # what the cited line holds
+# The checker reports an entry whose anchor is no longer on that paragraph, so keep the
+# paragraph line current when a page is edited above it.
+docs/architecture.md:217 modules/monitoring/variables.tf:63-66  # variable "app_service_id": the web app ID the monitoring module takes as an input
+docs/cost.md:128 modules/app-service/main.tf:349  # app_settings merge of the web app, which carries PHP_MEMORY_LIMIT
+docs/cost.md:128 modules/app-service/main.tf:585  # app_settings merge of the staging slot, which carries PHP_MEMORY_LIMIT
+docs/getting-started.md:18 modules/app-service/main.tf:320  # ip_restriction_default_action: Allow with cdn_provider = direct, so the origin admits everyone
+docs/getting-started.md:24 modules/wordpress-site/main.tf:15  # required_version = ">= 1.6.0"
+docs/getting-started.md:164 modules/storage/main.tf:28  # allow_nested_items_to_be_public = false: anonymous blob access is disallowed
+docs/getting-started.md:180 modules/app-service/main.tf:585  # the slot's app_settings merge, which inherits the WORDPRESS_ADMIN_* settings
+docs/security-model.md:197 modules/app-service/main.tf:332-345  # the web app's scm_ip_restriction block and scm_ip_restriction_default_action
+docs/security-model.md:197 modules/app-service/main.tf:568-581  # the slot's scm_ip_restriction block and scm_ip_restriction_default_action
+docs/security-model.md:271 modules/storage/main.tf:28  # allow_nested_items_to_be_public = false: anonymous blob access is disallowed
+docs/security-model.md:393 modules/app-service/main.tf:236  # ftps_state = "Disabled" on the web app
+docs/security-model.md:393 modules/app-service/main.tf:493  # ftps_state = "Disabled" on the staging slot
+docs/security-model.md:498 modules/front-door/main.tf:117  # sku_name = var.sku_name: the WAF policy takes the profile's SKU
+docs/security-model.md:666 modules/storage/main.tf:28  # allow_nested_items_to_be_public = false: anonymous blob access is disallowed
