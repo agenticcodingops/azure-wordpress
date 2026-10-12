@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.0](https://github.com/agenticcodingops/azure-wordpress/compare/v4.2.0...v4.3.0) (2026-10-12)
+
+
+### Features
+
+* **app-service:** add scheduled App Service backup ([#109](https://github.com/agenticcodingops/azure-wordpress/issues/109)) ([524fec9](https://github.com/agenticcodingops/azure-wordpress/commit/524fec9bed8b37a192b5613160559a7848777e63))
+* **app-service:** allow opting out of the staging slot ([#107](https://github.com/agenticcodingops/azure-wordpress/issues/107)) ([6c39c53](https://github.com/agenticcodingops/azure-wordpress/commit/6c39c53a08452c28d9d4e9495e1be436fd922290))
+* **database:** support passwordless app access with a managed identity ([#111](https://github.com/agenticcodingops/azure-wordpress/issues/111)) ([b680302](https://github.com/agenticcodingops/azure-wordpress/commit/b6803027de161adcaf5abdd269bc460cbe3ba9b2))
+* **storage:** add a flat opt-out for the storage-key secret ([#110](https://github.com/agenticcodingops/azure-wordpress/issues/110)) ([ed89221](https://github.com/agenticcodingops/azure-wordpress/commit/ed89221bf5433e3d9b23651d54dada8d0d35a097))
+
 ## [4.2.0](https://github.com/agenticcodingops/azure-wordpress/compare/v4.1.1...v4.2.0) (2026-10-11)
 
 
