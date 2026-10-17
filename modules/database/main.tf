@@ -185,6 +185,6 @@ resource "azurerm_mysql_flexible_database" "wordpress" {
   collation           = "utf8mb4_unicode_ci"
 }
 
-# Note: Database snapshot before WordPress update (deployment slot swap)
-# is handled via Azure Automation Runbook triggered by slot swap webhook
-# See: docs/runbooks/database-snapshot.md
+# Note: this module creates no database snapshot around a deployment slot swap or any other
+# automation. Take an on-demand backup before a risky change, and restore with point-in-time
+# restore. See: docs/operations/backup-and-restore.md
