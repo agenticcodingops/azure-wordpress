@@ -185,7 +185,9 @@ was exercised here; the app's Backups page in the portal offers both.
      --query "[?name=='WP_HOME' || name=='WP_SITEURL'].{name:name, value:value}" -o table
    ```
 
-   Both must be `https://<app-name>-staging.azurewebsites.net`. Do not swap a slot that points at production.
+   Both must match what the module is configured to set: `https://<app-name>-staging.azurewebsites.net` by default, or the
+   value in `app_service.staging_app_settings_override` if your configuration overrides them (the override is merged last).
+   Do not swap a slot whose values point at production.
 6. **Check the slot**, swap it into production, then end maintenance mode (`wp maintenance-mode deactivate` with the
    same arguments):
 
