@@ -35,8 +35,12 @@ What the sources say:
   az mysql flexible-server upgrade --resource-group <resource-group> --name <restored-server-name> --version 8.4
   ```
 
-  Then run the application's checks against it. A Burstable copy needs the portal workflow (see the Burstable section).
-  Delete the copy afterwards. Finish the rehearsal before you touch the site's configuration.
+  Then run the schema check below and your own SQL against the copy from a client in the network. **This rehearsal covers
+  the upgrade, the schema and SQL, not WordPress itself:** the composition wires `DATABASE_HOST` to the site's own server
+  (`modules/wordpress-site/main.tf`), so the site's app and slot cannot reach the copy. To exercise the image and plugins
+  on 8.4 you would need a throwaway app, outside Terraform and in the same network, with `DATABASE_HOST` set to the copy's
+  host name. That setup is not covered here and has not been tried. A Burstable copy needs the portal workflow (see the
+  Burstable section). Delete the copy afterwards. Finish the rehearsal before you touch the site's configuration.
 - The server's SKU tier. `database.sku_name` defaults by environment: nonprod is `B_Standard_B2s` (Burstable) and
   production is `GP_Standard_D2ds_v4` (General Purpose) when you set nothing
   ([README](../../README.md#environment-aware-defaults)).
@@ -56,8 +60,9 @@ What the sources say:
    the server run `XA RECOVER CONVERT XID;`. Roll back each listed transaction with its complete identifier: the `data`
    column is the transaction's `gtrid` followed by its `bqual`. `gtrid_length` and `bqual_length` count **bytes**, and each
    byte of the converted `data` is two hex characters. Ignoring any `0x` prefix, the `gtrid` is the first
-   `2 * gtrid_length` characters and the `bqual` the next `2 * bqual_length`. Run
-   `XA ROLLBACK 0x<gtrid-hex>, 0x<bqual-hex>, <formatID>;` (Microsoft's shorter `XA ROLLBACK '{xid}';` fits only
+   `2 * gtrid_length` characters and the `bqual` the next `2 * bqual_length`. Write each part as `X'<hex>'`, which also
+   covers an empty part as `X''` (a bare `0x` with no digits is not a valid literal), and run
+   `XA ROLLBACK X'<gtrid-hex>', X'<bqual-hex>', <formatID>;` (Microsoft's shorter `XA ROLLBACK '{xid}';` fits only
    a transaction with no branch qualifier and the default format ID). The syntax is in the
    [MySQL XA reference](https://dev.mysql.com/doc/refman/8.4/en/xa-statements.html). Run `XA RECOVER;` again: it must list
    nothing.

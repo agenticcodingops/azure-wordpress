@@ -69,6 +69,7 @@ PHP without an SDK ([README](../../modules/wordpress-site/README.md#failure-anom
    az monitor activity-log alert list --resource-group <resource-group> -o table
    az resource list --resource-group <resource-group> --resource-type Microsoft.Insights/scheduledQueryRules -o table
    az monitor action-group show --resource-group <resource-group> --name ag-<project_name>-<site_name>-<np|prod> -o json
+   # Only with alert_recipients set. With extra_action_group_ids alone there is no site group: show your own group instead.
    ```
 
    Expect every rule in the table above that your configuration enables, each `enabled`, and the action group's email
@@ -80,7 +81,10 @@ Do this in nonprod. There are two separate things to prove: the route delivers, 
 
 ### A. The route delivers
 
-Send a test notification through the action group to an address you can read:
+Send a test notification through the action group to an address you can read. The site group
+`ag-<project_name>-<site_name>-<np|prod>` exists only when `alert_recipients` is set (`count` in
+`modules/wordpress-site/main.tf`). If you route only through `extra_action_group_ids`, run this against your own group,
+using its name and resource group:
 
 ```bash
 az monitor action-group test-notifications create --resource-group <resource-group> \

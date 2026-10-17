@@ -47,6 +47,8 @@ This runbook is the short, repeatable version of [deployment guide step 10](../d
      `cloudflare.enable_page_rules` on for exactly one site per zone.
    - `azure_front_door`, `direct`, or `cloudflare` with `cloudflare.enabled = false`: create the TXT record
      `asuid.<subdomain>` holding the app's domain verification ID. With `direct`, also point the CNAME at the app.
+     For an apex `custom_domain` the TXT record is `asuid` itself, the mapping is an A record (an apex cannot hold a
+     CNAME), and with Front Door you need an alias record or your DNS provider's CNAME flattening.
      With Front Door, create the `_dnsauth` TXT record and the endpoint CNAME after the first apply.
      If the domain already serves a live site, create only the TXT record now and leave its CNAME or A record alone:
      repoint it only after the new site is verified.
