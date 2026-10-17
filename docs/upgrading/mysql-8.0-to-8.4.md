@@ -14,6 +14,6 @@ Setting another version: neither source states whether the server is updated in 
 
 [Upgrading to v4.1.0](v4.0-to-v4.1.md#upgrading-to-v410) on the 4.0 to 4.1 page is the former site-module section. Its `database.mysql_version` bullet says that setting `"8.4"` on an existing server is an irreversible major-version upgrade, and that a dry run shows whether the provider updates the server in place or replaces it. That bullet is the moved note, not a changelog statement.
 
-## Open issue
+## Procedure
 
-The procedure for this upgrade is tracked in [#70](https://github.com/agenticcodingops/azure-wordpress/issues/70). This page cites its plan result above. Its other findings, and the procedure, are not in `CHANGELOG.md` or the release notes yet.
+The procedure for this upgrade is in the [MySQL major-version upgrade runbook](../operations/mysql-major-version-upgrade.md). It rests on the findings in [#70](https://github.com/agenticcodingops/azure-wordpress/issues/70), which this page cites above; they are not in `CHANGELOG.md` or the release notes. The Burstable steps are unmeasured and still need a real run.
