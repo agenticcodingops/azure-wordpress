@@ -41,13 +41,16 @@ minor and a major release; a major release needs the extra reading in step 1.
 
    ```bash
    terraform init -upgrade -input=false -backend-config=backend.hcl
-   terraform providers lock -platform=linux_amd64 -platform=windows_amd64 -platform=darwin_arm64
    ```
 
    Commit the lock file change. Providers installed from the public registry normally record checksums that other
-   platforms can match, so this is often unnecessary. Add the `providers lock` step when providers come through a mirror or
-   cache, or when `terraform init` on another platform reports a checksum mismatch, and list every platform your CI and
-   operators run on.
+   platforms can match, so nothing more is usually needed. Run `terraform providers lock` only when providers come
+   through a mirror or cache, or when `terraform init` on another platform reports a checksum mismatch, listing every
+   platform your CI and operators run on:
+
+   ```bash
+   terraform providers lock -platform=linux_amd64 -platform=windows_amd64 -platform=darwin_arm64
+   ```
 
 4. **Plan nonprod and read it.** Compare it with the "Expected plan" section of the upgrade page.
 

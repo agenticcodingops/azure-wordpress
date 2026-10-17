@@ -29,15 +29,16 @@ What the sources say:
 - A rehearsal on a restored copy. Microsoft recommends upgrading a restored copy first. Restore one with
   [the point-in-time restore steps](backup-and-restore.md#2-mysql-point-in-time-restore) and upgrade **that server** with
   Azure's own workflow, not with Terraform: the module's `mysql_version` input only ever targets the site's existing
-  server, so changing it would upgrade the original. For a General Purpose or Memory Optimized copy:
+  server, so changing it would upgrade the original. Run the schema check (step 3 below) against the copy **while it is
+  still on 8.0**, and fix what it reports. For a General Purpose or Memory Optimized copy, then upgrade it:
 
   ```bash
   az mysql flexible-server upgrade --resource-group <resource-group> --name <restored-server-name> --version 8.4
   ```
 
-  Then run the schema check below and your own SQL against the copy from a client in the network. **This rehearsal covers
-  the upgrade, the schema and SQL, not WordPress itself:** the composition wires `DATABASE_HOST` to the site's own server
-  (`modules/wordpress-site/main.tf`), so the site's app and slot cannot reach the copy. To exercise the image and plugins
+  Then run your own SQL against the upgraded copy from a client in the network. **This rehearsal covers the upgrade, the
+  schema and SQL, not WordPress itself:** the composition wires `DATABASE_HOST` to the site's own server
+  (`modules/wordpress-site/main.tf`), so the site's app and slot are not configured to connect to the copy. To exercise the image and plugins
   on 8.4 you would need a throwaway app, outside Terraform and in the same network, with `DATABASE_HOST` set to the copy's
   host name. That setup is not covered here and has not been tried. A Burstable copy needs the portal workflow (see the
   Burstable section). Delete the copy afterwards. Finish the rehearsal before you touch the site's configuration.
@@ -66,7 +67,8 @@ What the sources say:
    a transaction with no branch qualifier and the default format ID). The syntax is in the
    [MySQL XA reference](https://dev.mysql.com/doc/refman/8.4/en/xa-statements.html). Run `XA RECOVER;` again: it must list
    nothing.
-3. **Run the schema compatibility check.** Online validation is not supported for 8.0 to 8.4, so Microsoft points to
+3. **Run the schema compatibility check** against the 8.0 server before it is upgraded (the same check you ran on the
+   rehearsal copy). Online validation is not supported for 8.0 to 8.4, so Microsoft points to
    Oracle's MySQL Shell upgrade checker:
 
    ```text

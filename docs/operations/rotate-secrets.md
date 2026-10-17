@@ -222,7 +222,8 @@ token as well as applies, because the module looks the zone up on every plan.
    ```
 
    Never store a write token as a repository or organization secret.
-3. **Prove it.** Run a plan with the new token, as the pipeline does; a failure names the missing permission. A plan, or an
+3. **Prove it.** Run a plan with the new token, as the pipeline does; a permission failure may name the missing permission, though a plan can also fail for other reasons,
+   such as an invalid token or a configuration error. A plan, or an
    apply that changes nothing, sends no writes, so it does not prove that a write token can write. Compare the new token's
    permissions in Cloudflare's token settings with the list in [deployment guide step 5](../deployment-guide.md#step-5-write-the-pipeline), and keep the old token until the
    first real change has applied with the new one.
