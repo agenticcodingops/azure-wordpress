@@ -134,6 +134,8 @@ See [examples/](examples/) for complete configurations.
 - **Production pattern:** [docs/deployment-guide.md](docs/deployment-guide.md) covers remote state, OIDC from CI,
   provider pins, locks, staging slots, shared plans, and adding and removing sites.
 - **Cost:** [docs/cost.md](docs/cost.md) has the dated price table.
+- **Operations:** [docs/operations/](docs/operations/README.md) has the runbooks: deploy a site, upgrade the module, rotate
+  secrets, back up and restore, choose an image tag, alerting, a MySQL major-version upgrade, and troubleshooting.
 
 ## Modules
 
