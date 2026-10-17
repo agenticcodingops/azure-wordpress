@@ -173,16 +173,19 @@ was exercised here; the app's Backups page in the portal offers both.
    site's custom domain: that name is already bound to the production app, and the slot cannot take it too.
    `--overwrite` is documented as "overwrite the source web app, if `--target-name` is not specified". Whether the CLI
    needs it when `--slot` is given was not verified; the app's Backups page in the portal does the same restore.
-5. **Check the slot's settings before you test or swap it.** The restore may have replaced the slot's configuration:
+5. **Reapply the module's slot configuration before you test or swap the slot.** The restore can replace the whole of
+   the slot's configuration, not only the two URLs below: the module also sets `WP_DEBUG`, any
+   `staging_app_settings_override`, and the slot's database settings (which can differ from production once the
+   passwordless-database stages are on), and a backup can carry other site settings such as health check and
+   Application Insights. Always run the pipeline's plan and then its apply, so the module's slot configuration is set
+   back; do this even if the check below looks right. Then check the two URLs:
 
    ```bash
    az webapp config appsettings list --resource-group <app-resource-group> --name <app-name> --slot staging \
      --query "[?name=='WP_HOME' || name=='WP_SITEURL'].{name:name, value:value}" -o table
    ```
 
-   Both must be `https://<app-name>-staging.azurewebsites.net`. If they are not, run the pipeline's apply: the module owns
-   these settings, so the next apply sets them back, and a plan before it shows the drift. Do not swap a slot that points
-   at production.
+   Both must be `https://<app-name>-staging.azurewebsites.net`. Do not swap a slot that points at production.
 6. **Check the slot**, swap it into production, then end maintenance mode (`wp maintenance-mode deactivate` with the
    same arguments):
 

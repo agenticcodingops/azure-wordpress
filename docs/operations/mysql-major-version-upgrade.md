@@ -75,7 +75,9 @@ What the sources say:
    mysqlsh> util.checkForServerUpgrade('<user>@<server-fqdn>:3306', {"targetVersion": "8.4.0"})
    ```
 
-   The function and its `targetVersion` option are from MySQL's documentation. Fix what it reports. Pass the password
+   The function and its `targetVersion` option are from MySQL's documentation. Use **MySQL Shell 8.4 or newer**: the
+   checker can target only releases up to the version of the shell itself, so an 8.0 shell cannot check target `8.4.0`.
+   Fix what it reports. Pass the password
    through the prompt, not the options dictionary.
 4. **Take an on-demand backup** and note its name ([Backup and restore](backup-and-restore.md)):
 

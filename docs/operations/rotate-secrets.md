@@ -225,8 +225,9 @@ token as well as applies, because the module looks the zone up on every plan.
 3. **Prove it.** Run a plan with the new token, as the pipeline does; a permission failure may name the missing permission, though a plan can also fail for other reasons,
    such as an invalid token or a configuration error. A plan, or an
    apply that changes nothing, sends no writes, so it does not prove that a write token can write. Compare the new token's
-   permissions in Cloudflare's token settings with the list in [deployment guide step 5](../deployment-guide.md#step-5-write-the-pipeline), and keep the old token until the
-   first real change has applied with the new one.
+   permissions in Cloudflare's token settings with the list in [deployment guide step 5](../deployment-guide.md#step-5-write-the-pipeline), and keep the old token until an apply that
+   changes a Cloudflare-managed resource (a DNS record or a rule) has succeeded with the new one. An apply that changes
+   only Azure resources performs reads against Cloudflare and exercises none of the write permissions.
 4. **Revoke the old token** in Cloudflare only after step 3 passed.
 
 **Rollback.** Until you revoke the old token, put it back in the secret and re-run. After revocation, create a
