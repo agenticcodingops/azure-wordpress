@@ -29,14 +29,19 @@ What the sources say:
 - A rehearsal on a restored copy. Microsoft recommends upgrading a restored copy first. Restore one with
   [the point-in-time restore steps](backup-and-restore.md#2-mysql-point-in-time-restore) and upgrade **that server** with
   Azure's own workflow, not with Terraform: the module's `mysql_version` input only ever targets the site's existing
-  server, so changing it would upgrade the original. For a General Purpose or Memory Optimized copy:
+  server, so changing it would upgrade the original. Run the schema check (step 3 below) against the copy **while it is
+  still on 8.0**, and fix what it reports. For a General Purpose or Memory Optimized copy, then upgrade it:
 
   ```bash
   az mysql flexible-server upgrade --resource-group <resource-group> --name <restored-server-name> --version 8.4
   ```
 
-  Then run the application's checks against it. A Burstable copy needs the portal workflow (see the Burstable section).
-  Delete the copy afterwards. Finish the rehearsal before you touch the site's configuration.
+  Then run your own SQL against the upgraded copy from a client in the network. **This rehearsal covers the upgrade, the
+  schema and SQL, not WordPress itself:** the composition wires `DATABASE_HOST` to the site's own server
+  (`modules/wordpress-site/main.tf`), so the site's app and slot are not configured to connect to the copy. To exercise the image and plugins
+  on 8.4 you would need a throwaway app, outside Terraform and in the same network, with `DATABASE_HOST` set to the copy's
+  host name. That setup is not covered here and has not been tried. A Burstable copy needs the portal workflow (see the
+  Burstable section). Delete the copy afterwards. Finish the rehearsal before you touch the site's configuration.
 - The server's SKU tier. `database.sku_name` defaults by environment: nonprod is `B_Standard_B2s` (Burstable) and
   production is `GP_Standard_D2ds_v4` (General Purpose) when you set nothing
   ([README](../../README.md#environment-aware-defaults)).
@@ -56,19 +61,23 @@ What the sources say:
    the server run `XA RECOVER CONVERT XID;`. Roll back each listed transaction with its complete identifier: the `data`
    column is the transaction's `gtrid` followed by its `bqual`. `gtrid_length` and `bqual_length` count **bytes**, and each
    byte of the converted `data` is two hex characters. Ignoring any `0x` prefix, the `gtrid` is the first
-   `2 * gtrid_length` characters and the `bqual` the next `2 * bqual_length`. Run
-   `XA ROLLBACK 0x<gtrid-hex>, 0x<bqual-hex>, <formatID>;` (Microsoft's shorter `XA ROLLBACK '{xid}';` fits only
+   `2 * gtrid_length` characters and the `bqual` the next `2 * bqual_length`. Write each part as `X'<hex>'`, which also
+   covers an empty part as `X''` (a bare `0x` with no digits is not a valid literal), and run
+   `XA ROLLBACK X'<gtrid-hex>', X'<bqual-hex>', <formatID>;` (Microsoft's shorter `XA ROLLBACK '{xid}';` fits only
    a transaction with no branch qualifier and the default format ID). The syntax is in the
    [MySQL XA reference](https://dev.mysql.com/doc/refman/8.4/en/xa-statements.html). Run `XA RECOVER;` again: it must list
    nothing.
-3. **Run the schema compatibility check.** Online validation is not supported for 8.0 to 8.4, so Microsoft points to
+3. **Run the schema compatibility check** against the 8.0 server before it is upgraded (the same check you ran on the
+   rehearsal copy). Online validation is not supported for 8.0 to 8.4, so Microsoft points to
    Oracle's MySQL Shell upgrade checker:
 
    ```text
    mysqlsh> util.checkForServerUpgrade('<user>@<server-fqdn>:3306', {"targetVersion": "8.4.0"})
    ```
 
-   The function and its `targetVersion` option are from MySQL's documentation. Fix what it reports. Pass the password
+   The function and its `targetVersion` option are from MySQL's documentation. Use **MySQL Shell 8.4 or newer**: the
+   checker can target only releases up to the version of the shell itself, so an 8.0 shell cannot check target `8.4.0`.
+   Fix what it reports. Pass the password
    through the prompt, not the options dictionary.
 4. **Take an on-demand backup** and note its name ([Backup and restore](backup-and-restore.md)):
 

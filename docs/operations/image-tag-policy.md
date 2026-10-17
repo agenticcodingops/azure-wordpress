@@ -106,8 +106,20 @@ stateDiagram-v2
    | order by TimeGenerated desc
    ```
 
-   If the table is missing or empty, the diagnostic setting may be writing to the legacy table instead. Run the same
-   filter against `AzureDiagnostics` (`where Category == "AppServicePlatformLogs"`) and read the message column there.
+   If the table is missing or empty, the diagnostic setting may be writing to the legacy table instead. The message
+   column there is `ResultDescription`, not `Message`, so the query is different:
+
+   ```kusto
+   AzureDiagnostics
+   | where TimeGenerated > ago(2h)
+   | where Category == "AppServicePlatformLogs"
+   | where _ResourceId contains "<app-name>"
+   | where ResultDescription has_any ("Pulling image", "Creating container with image")
+   | project TimeGenerated, ResultDescription
+   | order by TimeGenerated desc
+   ```
+
+   The `AzureDiagnostics` column names are from its documented schema and were not checked against a live workspace.
    Microsoft lists `AppServicePlatformLogs` as the log table for this category, and the module's own 5xx-rate alert reads
    `AppServiceHTTPLogs`, but the destination mode of a given workspace was not checked here.
 

@@ -26,7 +26,8 @@ Server. To restore a whole site, restore the database to the same moment as the 
   from the app subnet, and the storage account denies public access by default. Work from the app's SSH console
   (`az webapp ssh --resource-group <app-resource-group> --name <app-name>`) for database work.
 - For section 3, `app_service_backup_enabled = true`, a private container declared in `storage.additional_containers`
-  (default name `wp-backups`), and an app on a Basic, Standard or Premium SKU.
+  (default name `wp-backups`), and an app on a Basic, Standard or Premium SKU. The restore steps below also need the
+  staging slot, which exists only on S\* and P\* SKUs with `app_service.staging_slot_enabled` left on.
 
 ## Steps
 
@@ -95,7 +96,7 @@ resource group exists ([deployment guide, Rollback](../deployment-guide.md#rollb
 
 ```hcl
 storage = {
-  additional_containers = { "wp-backups" = {} } # private; the module does not create the container itself
+  additional_containers = { "wp-backups" = {} } # private; the storage module creates it, so do not create it by hand
 }
 
 app_service_backup_enabled = true
@@ -124,17 +125,33 @@ Enable it in nonprod, confirm the first backup succeeded (`az webapp config back
 
 #### Restore it
 
-App Service restores to a **new app or slot**, or overwrites an existing one; the target stops while it runs. Prefer
-the staging slot (on an S\* or P\* SKU) and swap. A restore brings files and, optionally, settings, but not VNet
-integration, managed identities, TLS bindings or the backup configuration. Restoring into the module's own app or slot
-keeps everything the module manages. A **new** app has a new identity with no Key Vault access policy, so its Key Vault
-references do not resolve until you grant one.
+App Service restores to a **new app or slot**, or overwrites an existing one; the target stops while it runs. A restore
+brings files and, optionally, settings, but not VNet integration, managed identities, TLS bindings or the backup
+configuration. A custom backup also carries the app's configuration, and the CLI command has no switch to leave it out,
+so a restore into the module's staging slot can overwrite the slot-specific settings the module sets (`WP_HOME` and
+`WP_SITEURL` point at the staging host name, `modules/app-service/main.tf`). Step 5 checks and repairs that. A **new** app
+has a new identity with no Key Vault access policy, so its Key Vault references do not resolve until you grant one.
 
-1. **Stop writes and keep a way back.** The staging slot shares the production database, and a file restore plus a
-   database restore must describe the same moment. Put WordPress in maintenance mode (or stop the app) and keep it
-   there until step 5. Take an on-demand database backup now ([section 2](#2-mysql-point-in-time-restore), step 1):
-   swapping the files back does **not** undo a database import, so this backup is the only way back for the data.
-2. **Make a short-lived container SAS** for the restore. It is yours, not the module's; keep it out of logs and
+**This path needs a staging slot.** The module creates one only on an S\* or P\* SKU with
+`app_service.staging_slot_enabled` left at `true`. Without one (a Basic SKU, or the slot turned off), restore into a new
+app that you create yourself, or overwrite production during a maintenance window after taking a fresh backup. Neither
+was exercised here; the app's Backups page in the portal offers both.
+
+1. **Stop writes, quiesce the slot and keep a way back.** The slot has its own host name and shares the production
+   database, so an older WordPress or plugin tree that becomes reachable can run migrations or scheduled tasks against
+   live data. Put production in maintenance mode (from the app's SSH console:
+   `wp maintenance-mode activate --path=/home/site/wwwroot --allow-root`), and stop the slot until the database matches:
+
+   ```bash
+   az webapp stop --resource-group <app-resource-group> --name <app-name> --slot staging
+   ```
+
+   Take an on-demand database backup now ([section 2](#2-mysql-point-in-time-restore), step 1). Swapping files back does
+   **not** undo a database import, so this backup is the only way back for the data.
+2. **Restore the database first, if it also needs restoring**, to the moment of the file backup
+   ([section 2](#2-mysql-point-in-time-restore)). Do this while the slot is stopped, so nothing runs the old files against
+   the wrong data.
+3. **Make a short-lived container SAS** for the restore. It is yours, not the module's; keep it out of logs and
    shell history, and let it expire.
 
    ```bash
@@ -143,21 +160,36 @@ references do not resolve until you grant one.
      --permissions rwdl --expiry "$end" --https-only --auth-mode key -o tsv)"
    ```
 
-3. **Restore into the staging slot:**
+4. **Restore into the staging slot:**
 
    ```bash
    az webapp config backup restore --resource-group <app-resource-group> --webapp-name <app-name> --slot staging \
-     --backup-name <backup-name> --container-url "https://<storage-account>.blob.core.windows.net/wp-backups?$sas"      --overwrite --ignore-hostname-conflict
+     --backup-name <backup-name> \
+     --container-url "https://<storage-account>.blob.core.windows.net/wp-backups?$sas" \
+     --overwrite --ignore-hostname-conflict
    ```
 
    `--ignore-hostname-conflict` ("ignores custom hostnames stored in the backup") matters when the backup holds the
    site's custom domain: that name is already bound to the production app, and the slot cannot take it too.
    `--overwrite` is documented as "overwrite the source web app, if `--target-name` is not specified". Whether the CLI
    needs it when `--slot` is given was not verified; the app's Backups page in the portal does the same restore.
-4. **Restore the database to the matching moment now** (section 2), if the data changed since the file backup, and
-   before you validate the slot: running an older WordPress or plugin tree against a newer database can run
-   migrations or scheduled tasks against live data.
-5. **Check the slot**, swap it into production, then end maintenance mode:
+5. **Reapply the module's slot configuration before you test or swap the slot.** The restore can replace the whole of
+   the slot's configuration, not only the two URLs below: the module also sets `WP_DEBUG`, any
+   `staging_app_settings_override`, and the slot's database settings (which can differ from production once the
+   passwordless-database stages are on), and a backup can carry other site settings such as health check and
+   Application Insights. Always run the pipeline's plan and then its apply, so the module's slot configuration is set
+   back; do this even if the check below looks right. Then check the two URLs:
+
+   ```bash
+   az webapp config appsettings list --resource-group <app-resource-group> --name <app-name> --slot staging \
+     --query "[?name=='WP_HOME' || name=='WP_SITEURL'].{name:name, value:value}" -o table
+   ```
+
+   Both must match what the module is configured to set: `https://<app-name>-staging.azurewebsites.net` by default, or the
+   value in `app_service.staging_app_settings_override` if your configuration overrides them (the override is merged last).
+   Do not swap a slot whose values point at production.
+6. **Check the slot**, swap it into production, then end maintenance mode (`wp maintenance-mode deactivate` with the
+   same arguments):
 
    ```bash
    az webapp deployment slot swap --resource-group <app-resource-group> --name <app-name> --slot staging --target-slot production
