@@ -6,8 +6,8 @@ An existing site's MySQL Flexible Server runs 8.0 (`database.mysql_version = "8.
 earlier server was created with) and you want it on 8.4. A new server created with `"8.4"` needs none of this.
 
 **This is an in-place, irreversible major-version upgrade.** The findings below come from issue #70, which cites the
-provider source and a real plan; this repository's README and the input's description do not yet state them, and the
-[MySQL 8.0 to 8.4](../upgrading/mysql-8.0-to-8.4.md) page still marks them **UNKNOWN**. Treat the General Purpose and
+provider source and a real plan. The `mysql_version` description and the site module README now state them, while the
+changelog and release notes do not (see [MySQL 8.0 to 8.4](../upgrading/mysql-8.0-to-8.4.md)). Treat the General Purpose and
 Memory Optimized path below as the sourced one, and the Burstable path as **unmeasured: to be confirmed by a real run**.
 
 What the sources say:
