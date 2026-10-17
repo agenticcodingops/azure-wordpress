@@ -91,7 +91,7 @@ stateDiagram-v2
 4. **Read the configured image back from Azure:**
 
    ```bash
-   az webapp config show --resource-group <resource-group> --name <app-name> --query linuxFxVersion -o tsv
+   az webapp config show --resource-group <app-resource-group> --name <app-name> --query linuxFxVersion -o tsv
    ```
 
    Expect `DOCKER|mcr.microsoft.com/appsvc/wordpress-debian-php:<tag>`. For the slot add `--slot staging`.
@@ -106,13 +106,18 @@ stateDiagram-v2
    | order by TimeGenerated desc
    ```
 
+   If the table is missing or empty, the diagnostic setting may be writing to the legacy table instead. Run the same
+   filter against `AzureDiagnostics` (`where Category == "AppServicePlatformLogs"`) and read the message column there.
+   Microsoft lists `AppServicePlatformLogs` as the log table for this category, and the module's own 5xx-rate alert reads
+   `AppServiceHTTPLogs`, but the destination mode of a given workspace was not checked here.
+
    The messages must name `appsvc/wordpress-debian-php` with your tag. A different repository or an older tag is the
    failure above. The query shape comes from the log categories the module enables; the exact message text can differ
    by platform version.
 6. **Check PHP inside the container:**
 
    ```bash
-   az webapp ssh --resource-group <resource-group> --name <app-name>
+   az webapp ssh --resource-group <app-resource-group> --name <app-name>
    php -v
    ```
 

@@ -26,9 +26,17 @@ What the sources say:
 
 ## Prerequisites
 
-- A nonprod site on the same version, SKU tier and data shape to rehearse on. Microsoft recommends upgrading a restored
-  copy first. Restore one with [the point-in-time restore steps](backup-and-restore.md#2-mysql-point-in-time-restore)
-  and run the whole upgrade against it.
+- A rehearsal on a restored copy. Microsoft recommends upgrading a restored copy first. Restore one with
+  [the point-in-time restore steps](backup-and-restore.md#2-mysql-point-in-time-restore) and upgrade **that server** with
+  Azure's own workflow, not with Terraform: the module's `mysql_version` input only ever targets the site's existing
+  server, so changing it would upgrade the original. For a General Purpose or Memory Optimized copy:
+
+  ```bash
+  az mysql flexible-server upgrade --resource-group <resource-group> --name <restored-server-name> --version 8.4
+  ```
+
+  Then run the application's checks against it. A Burstable copy needs the portal workflow (see the Burstable section).
+  Delete the copy afterwards. Finish the rehearsal before you touch the site's configuration.
 - The server's SKU tier. `database.sku_name` defaults by environment: nonprod is `B_Standard_B2s` (Burstable) and
   production is `GP_Standard_D2ds_v4` (General Purpose) when you set nothing
   ([README](../../README.md#environment-aware-defaults)).
@@ -45,7 +53,12 @@ What the sources say:
    `NO_KEY_OPTIONS` and `NO_TABLE_OPTIONS` as no longer supported, and says leftover deprecated values make the
    upgrade fail. This module sets no `sql_mode`; check the server parameter if someone changed it outside Terraform.
 2. **Check for XA transactions** in the `prepared` state; ongoing ones can fail the upgrade. From a client connected to
-   the server run `XA RECOVER;`, and roll back each listed transaction with `XA ROLLBACK '{xid}';`.
+   the server run `XA RECOVER CONVERT XID;`. Roll back each listed transaction with its complete identifier: the `data`
+   column is the transaction's `gtrid` followed by its `bqual`, with lengths in `gtrid_length` and `bqual_length`, so split
+   it and run `XA ROLLBACK 0x<gtrid-hex>, 0x<bqual-hex>, <formatID>;` (Microsoft's shorter `XA ROLLBACK '{xid}';` fits only
+   a transaction with no branch qualifier and the default format ID). The syntax is in the
+   [MySQL XA reference](https://dev.mysql.com/doc/refman/8.4/en/xa-statements.html). Run `XA RECOVER;` again: it must list
+   nothing.
 3. **Run the schema compatibility check.** Online validation is not supported for 8.0 to 8.4, so Microsoft points to
    Oracle's MySQL Shell upgrade checker:
 
@@ -87,7 +100,8 @@ What the sources say:
 
 ## Steps (Burstable): unmeasured, to be confirmed by a real run
 
-Issue #70's proposed procedure, which no run has confirmed. Do it first on a restored copy.
+Issue #70's proposed procedure, which no run has confirmed. Rehearse it first on a restored copy, using Microsoft's portal
+workflow below, because the Azure CLI refuses a major upgrade on Burstable and the module cannot target the copy.
 
 1. Do steps 1 to 4 above.
 2. **Upgrade and resize in one apply.** In the configuration set `database.sku_name` to a General Purpose SKU (for

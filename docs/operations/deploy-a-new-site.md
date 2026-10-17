@@ -48,7 +48,13 @@ This runbook is the short, repeatable version of [deployment guide step 10](../d
    - `azure_front_door`, `direct`, or `cloudflare` with `cloudflare.enabled = false`: create the TXT record
      `asuid.<subdomain>` holding the app's domain verification ID. With `direct`, also point the CNAME at the app.
      With Front Door, create the `_dnsauth` TXT record and the endpoint CNAME after the first apply.
+     If the domain already serves a live site, create only the TXT record now and leave its CNAME or A record alone:
+     repoint it only after the new site is verified.
    - A `custom_domain` ending in `.azurewebsites.net` needs no DNS.
+   - `direct` with your own domain also needs a certificate. The module binds the host name without one, so HTTPS on
+     the custom domain fails certificate validation until you bind an App Service managed or imported certificate
+     yourself ([security model, TLS settings](../security-model.md#tls-settings)). Until then, verify against the app's
+     default host name.
 
    Treat every DNS change on a live domain as its own reviewed change. The exact records, and what to do if the
    verification ID is not available before the first apply, are in
@@ -95,11 +101,12 @@ This runbook is the short, repeatable version of [deployment guide step 10](../d
 
 Run these for each environment. `curl` is the only tool needed beyond `az`.
 
-1. The app answers on its default host name. A site behind Cloudflare or Front Door answers `403` here by design; test
-   through the custom domain instead.
+1. The app answers. A site behind Cloudflare or Front Door answers `403` on its default host name by design; test
+   through the custom domain instead. A `direct` site with a custom domain and no certificate yet cannot be tested
+   over HTTPS on that domain: use `https://<app-name>.azurewebsites.net/` until you bind one.
 
    ```bash
-   az webapp show --subscription <subscription-id> --resource-group <resource-group> --name <app-name> \
+   az webapp show --subscription <subscription-id> --resource-group <app-resource-group> --name <app-name> \
      --query "{state:state, host:defaultHostName}" -o table
    curl -sS -o /dev/null -w '%{http_code}\n' "https://<custom-domain>/wp-includes/images/blank.gif"
    ```
@@ -121,7 +128,7 @@ Run these for each environment. `curl` is the only tool needed beyond `az`.
   [deployment guide step 12](../deployment-guide.md#step-12-remove-a-site) (locks, DNS, the production plan,
   platform-created alert rules). Removing a site is not undoable.
 - A site that applied but misbehaves is better stopped than removed: `az webapp stop --subscription <subscription-id>
-  --resource-group <resource-group> --name <app-name>` (add `--slot staging` for the slot), then fix and
+  --resource-group <app-resource-group> --name <app-name>` (add `--slot staging` for the slot), then fix and
   `az webapp start`.
 
 ## Sources

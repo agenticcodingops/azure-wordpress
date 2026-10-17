@@ -43,7 +43,7 @@ Sources: `modules/app-service/main.tf` (`ip_restriction`), [security model](../s
 **Confirm.**
 
 ```bash
-az webapp config access-restriction show --resource-group <resource-group> --name <app-name> -o json
+az webapp config access-restriction show --resource-group <app-resource-group> --name <app-name> -o json
 curl -sS -o /dev/null -w '%{http_code}\n' https://<custom-domain>/
 curl -sS -o /dev/null -w '%{http_code}\n' https://<app-name>.azurewebsites.net/
 ```
@@ -63,7 +63,7 @@ fault.
    ([deployment guide Verify item 1](../deployment-guide.md#verify)).
 
 **Do not** switch to `direct` or add an allow rule to "fix" a 403 from the app's own host. To reach the container for
-debugging, use the SSH console, which goes through the SCM site (`az webapp ssh --resource-group <resource-group> --name <app-name>`).
+debugging, use the SSH console, which goes through the SCM site (`az webapp ssh --resource-group <app-resource-group> --name <app-name>`).
 SCM is a separate gate with its own rules (`app_service_scm_ip_restrictions`), open by default.
 
 **Rollback.** Nothing changed unless you edited rules; revert that change.
@@ -85,8 +85,10 @@ az keyvault show --name <vault-name> --query "properties.accessPolicies[].object
 ```
 
 Read the first for `defaultAction` and whether the runner's egress address is listed under `ipRules` or its subnet under
-`virtualNetworkRules`. Read the second for the identity that runs Terraform. Your own access to the data plane is subject
-to the same firewall.
+`virtualNetworkRules`. The second lists the principals that already have an access policy; it does not say who runs
+Terraform. Take the object ID of the identity your CI signs in as (from your pipeline or provider configuration, or
+`az ad sp show --id <client-id> --query id -o tsv` for an app registration) and check that it appears in the list. Your own
+access to the data plane is subject to the same firewall.
 
 **Fix**, in the configuration, never on the vault by hand:
 
@@ -237,8 +239,10 @@ terraform import 'module.<name>.module.key_vault.azurerm_key_vault_access_policy
 
 Quote the address in a `for_each` (`module.<name>["<site>"]...`). Run it as the environment's CI identity.
 
-**Rollback.** None needed: a plan changes nothing. If you applied a plan that deleted the pipeline's policy, the next
-refresh fails with `403`; restore the policy by importing it (above) or by re-applying as an identity with access.
+**Rollback.** None needed: a plan changes nothing. If you applied a plan that deleted the pipeline's policy, the policy no
+longer exists, so import cannot bring it back. The next refresh fails with `403`; re-apply the configuration as an
+identity that can still reach the vault and has permission to write its access policies, which recreates it. Use the import
+above only when the policy still exists in Azure but is missing from state.
 
 ## Verify
 

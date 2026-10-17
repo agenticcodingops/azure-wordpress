@@ -24,7 +24,7 @@ Server. To restore a whole site, restore the database to the same moment as the 
 - Rights to read and change resources in the site's resource group.
 - Network reach, for any step that touches data: the MySQL server has no public endpoint and admits port 3306 only
   from the app subnet, and the storage account denies public access by default. Work from the app's SSH console
-  (`az webapp ssh --resource-group <resource-group> --name <app-name>`) for database work.
+  (`az webapp ssh --resource-group <app-resource-group> --name <app-name>`) for database work.
 - For section 3, `app_service_backup_enabled = true`, a private container declared in `storage.additional_containers`
   (default name `wp-backups`), and an app on a Basic, Standard or Premium SKU.
 
@@ -34,7 +34,7 @@ Server. To restore a whole site, restore the database to the same moment as the 
 
 ```bash
 az mysql flexible-server show --resource-group <resource-group> --name <server-name> -o json
-az webapp config backup list --resource-group <resource-group> --webapp-name <app-name> -o json
+az webapp config backup list --resource-group <app-resource-group> --webapp-name <app-name> -o json
 ```
 
 In the first output read the backup retention, the geo-redundancy setting and the earliest restore time; they decide
@@ -130,7 +130,11 @@ integration, managed identities, TLS bindings or the backup configuration. Resto
 keeps everything the module manages. A **new** app has a new identity with no Key Vault access policy, so its Key Vault
 references do not resolve until you grant one.
 
-1. **Make a short-lived container SAS** for the restore. It is yours, not the module's; keep it out of logs and
+1. **Stop writes and keep a way back.** The staging slot shares the production database, and a file restore plus a
+   database restore must describe the same moment. Put WordPress in maintenance mode (or stop the app) and keep it
+   there until step 5. Take an on-demand database backup now ([section 2](#2-mysql-point-in-time-restore), step 1):
+   swapping the files back does **not** undo a database import, so this backup is the only way back for the data.
+2. **Make a short-lived container SAS** for the restore. It is yours, not the module's; keep it out of logs and
    shell history, and let it expire.
 
    ```bash
@@ -139,22 +143,25 @@ references do not resolve until you grant one.
      --permissions rwdl --expiry "$end" --https-only --auth-mode key -o tsv)"
    ```
 
-2. **Restore into the staging slot:**
+3. **Restore into the staging slot:**
 
    ```bash
-   az webapp config backup restore --resource-group <resource-group> --webapp-name <app-name> --slot staging \
-     --backup-name <backup-name> --container-url "https://<storage-account>.blob.core.windows.net/wp-backups?$sas" --overwrite
+   az webapp config backup restore --resource-group <app-resource-group> --webapp-name <app-name> --slot staging \
+     --backup-name <backup-name> --container-url "https://<storage-account>.blob.core.windows.net/wp-backups?$sas"      --overwrite --ignore-hostname-conflict
    ```
 
+   `--ignore-hostname-conflict` ("ignores custom hostnames stored in the backup") matters when the backup holds the
+   site's custom domain: that name is already bound to the production app, and the slot cannot take it too.
    `--overwrite` is documented as "overwrite the source web app, if `--target-name` is not specified". Whether the CLI
    needs it when `--slot` is given was not verified; the app's Backups page in the portal does the same restore.
-3. **Check the slot**, then swap it into production:
+4. **Restore the database to the matching moment now** (section 2), if the data changed since the file backup, and
+   before you validate the slot: running an older WordPress or plugin tree against a newer database can run
+   migrations or scheduled tasks against live data.
+5. **Check the slot**, swap it into production, then end maintenance mode:
 
    ```bash
-   az webapp deployment slot swap --resource-group <resource-group> --name <app-name> --slot staging --target-slot production
+   az webapp deployment slot swap --resource-group <app-resource-group> --name <app-name> --slot staging --target-slot production
    ```
-
-4. **Restore the database to the same moment** (section 2) if the data changed since the file backup.
 
 ### 4. Automatic and blob-level protection
 
@@ -174,7 +181,8 @@ not protect against deleting the storage account itself.
 ## Rollback
 
 - **A bad slot restore:** swap back (`az webapp deployment slot swap` with the same arguments); the previous production
-  content is now in the slot. Do this before anything else writes to either.
+  files are now in the slot. This restores files only. If you imported database data, return it with the on-demand
+  backup from step 1, and keep writes stopped until both match.
 - **A restore you do not want to keep:** delete the restored MySQL server (above). Terraform never managed it.
 - **A restore over production (`--overwrite`):** there is no undo except another backup. Take a fresh one first.
 

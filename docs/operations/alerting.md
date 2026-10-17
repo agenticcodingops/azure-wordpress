@@ -110,9 +110,9 @@ delivery path to that address. It does not prove any rule.
 For the availability alert, stop the nonprod app and wait for the test frequency plus the window:
 
 ```bash
-az webapp stop --resource-group <resource-group> --name <app-name>
+az webapp stop --resource-group <app-resource-group> --name <app-name>
 # wait, confirm the alert fired, then:
-az webapp start --resource-group <resource-group> --name <app-name>
+az webapp start --resource-group <app-resource-group> --name <app-name>
 ```
 
 That also exercises `alert-healthcheck` later than the availability test, because the platform reports a health-check

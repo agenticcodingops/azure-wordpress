@@ -91,10 +91,11 @@ configuration.
 
    Then exercise the feature that uses it (send a test mail, for an SMTP password). The portal's Application settings
    page shows a failed reference with an error.
-5. **Retire the old version** if the old value was exposed:
+5. **Retire the old version** if the old value was exposed. Use the `id` of the old version from the previous command
+   (a full secret URI; `--id` takes it on its own):
 
    ```bash
-   az keyvault secret set-attributes --vault-name <vault-name> --name <secret-name> --version <old-version-id> --enabled false
+   az keyvault secret set-attributes --id <old-secret-version-id> --enabled false
    ```
 
    Disabling an old version does not change what Terraform tracks. Revoke the old value at its source as well (the
@@ -164,13 +165,14 @@ change that password inside WordPress after you sign in ([Getting started](../ge
    az storage account keys renew --resource-group <resource-group> --account-name <storage-account> --key primary
    ```
 
-3. **Apply immediately.** The plan shows the `storage-key` secret updated and the web app's backup block updated in
-   place with a new SAS ([README, The SAS](../../modules/wordpress-site/README.md#the-sas-source-rotation-and-trade-off)).
+3. **Apply immediately.** The plan shows the web app's backup block updated in place with a new SAS, and, only when
+   `storage_key_secret_enabled` is true, the `storage-key` secret updated too (the module writes no such secret when it is false).
+   Do not wait for the secret line: the backup needs the apply either way ([README, The SAS](../../modules/wordpress-site/README.md#the-sas-source-rotation-and-trade-off)).
 4. **Refresh the reference** if a plugin uses `MICROSOFT_AZURE_ACCOUNT_KEY` (the `az rest` call above).
 5. **Check the backup**: list the backups and confirm a new one finishes after the apply.
 
    ```bash
-   az webapp config backup list --resource-group <resource-group> --webapp-name <app-name> -o json
+   az webapp config backup list --resource-group <app-resource-group> --webapp-name <app-name> -o json
    ```
 
    Read the newest entry's status in the output. The field names were not checked against a live backup here.

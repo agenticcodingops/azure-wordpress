@@ -86,8 +86,10 @@ Decide per environment, because nonprod applies before production
 - **No apply has run there with the new providers:** set the previous `?ref=`, the previous provider pins and the
   previous lock file, then plan.
 - **An apply has run there:** set only the previous `?ref=`. Keep the newer pins and lock file if the previous
-  version's provider constraints allow them. Every apply rewrites each resource's schema version in state, and an
-  older provider that cannot read it stops the plan with `Resource instance managed by newer provider version`.
+  version's provider constraints allow them. An apply upgrades the state of any resource whose schema version the
+  new provider has raised, and an older provider that cannot read that version stops the plan with
+  `Resource instance managed by newer provider version`. If no resource's schema changed, a provider rollback may still
+  work; check the plan to find out.
 - **The previous version's constraints exclude the newer providers** (any move back from v4.x to v3.x): roll forward
   with a fix instead.
 - **Read the revert's plan** before it applies. A revert restores configuration, not data, and it can replace

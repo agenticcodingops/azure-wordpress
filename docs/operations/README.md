@@ -23,11 +23,14 @@ the long-form guides stay the place for the reasoning.
 
 - **Environments.** `nonprod` is `np` in resource names and `production` is `prod`. Do a change in nonprod first and
   read its plan before you repeat it in production.
-- **Names.** `<resource-group>` is `rg-<project_name>-<site_name>-<np|prod>` (or the shared group for a site on a
-  shared plan), `<app-name>` is `app-<project_name>-<site_name>-<np|prod>`, `<server-name>` is
-  `mysql-<project_name>-<site_name>-<np|prod>`. The module outputs `resource_group_name`, `app_service_name` and
-  `database_server_name` give the real values; expose them from your root configuration if you want
-  `terraform output` to print them.
+- **Names.** `<resource-group>` is the site's group, `rg-<project_name>-<site_name>-<np|prod>`: it holds the MySQL
+  server, Key Vault, storage account, monitoring and alerts, and is the module's `resource_group_name` output.
+  `<app-resource-group>` is the group that holds the web app and its staging slot. It is the same group as
+  `<resource-group>` on a dedicated plan, but on a shared plan it is the shared group, `rg-<project_name>-shared-<np|prod>`
+  (`shared_resource_group_name`), so every `az webapp` command uses it. `<app-name>` is
+  `app-<project_name>-<site_name>-<np|prod>` and `<server-name>` is `mysql-<project_name>-<site_name>-<np|prod>`. The
+  outputs `resource_group_name`, `app_service_name` and `database_server_name` give the real values; expose them from
+  your root configuration if you want `terraform output` to print them.
 - **Plans.** Read every plan before you apply it. Where a runbook names what a plan must show, stop if it shows
   more.
 - **Secrets.** Never paste a secret into a command line you keep in shell history or a log. Load values from a
