@@ -108,7 +108,10 @@ Run these for each environment. `curl` is the only tool needed beyond `az`.
    ```bash
    az webapp show --subscription <subscription-id> --resource-group <app-resource-group> --name <app-name> \
      --query "{state:state, host:defaultHostName}" -o table
+   # Behind a CDN, or a direct site whose custom domain has a certificate:
    curl -sS -o /dev/null -w '%{http_code}\n' "https://<custom-domain>/wp-includes/images/blank.gif"
+   # A direct site with no certificate on its custom domain yet:
+   curl -sS -o /dev/null -w '%{http_code}\n' "https://<app-name>.azurewebsites.net/wp-includes/images/blank.gif"
    ```
 
    Expect `Running` and `200`. The health-check file the module probes by default is

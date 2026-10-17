@@ -54,8 +54,10 @@ What the sources say:
    upgrade fail. This module sets no `sql_mode`; check the server parameter if someone changed it outside Terraform.
 2. **Check for XA transactions** in the `prepared` state; ongoing ones can fail the upgrade. From a client connected to
    the server run `XA RECOVER CONVERT XID;`. Roll back each listed transaction with its complete identifier: the `data`
-   column is the transaction's `gtrid` followed by its `bqual`, with lengths in `gtrid_length` and `bqual_length`, so split
-   it and run `XA ROLLBACK 0x<gtrid-hex>, 0x<bqual-hex>, <formatID>;` (Microsoft's shorter `XA ROLLBACK '{xid}';` fits only
+   column is the transaction's `gtrid` followed by its `bqual`. `gtrid_length` and `bqual_length` count **bytes**, and each
+   byte of the converted `data` is two hex characters. Ignoring any `0x` prefix, the `gtrid` is the first
+   `2 * gtrid_length` characters and the `bqual` the next `2 * bqual_length`. Run
+   `XA ROLLBACK 0x<gtrid-hex>, 0x<bqual-hex>, <formatID>;` (Microsoft's shorter `XA ROLLBACK '{xid}';` fits only
    a transaction with no branch qualifier and the default format ID). The syntax is in the
    [MySQL XA reference](https://dev.mysql.com/doc/refman/8.4/en/xa-statements.html). Run `XA RECOVER;` again: it must list
    nothing.
