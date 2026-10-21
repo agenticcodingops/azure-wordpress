@@ -52,7 +52,7 @@ done
 rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl
 
 # validate.yml "Checkov": Checkov 3.3.22 (bridgecrewio/checkov-action v12.3128.0), as the suffixed install this file prescribes (keep plain checkov off PATH)
-RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform --quiet --skip-check CKV_TF_1,CKV_TF_2,CKV_AZURE_225,CKV_AZURE_13,CKV_AZURE_88,CKV_AZURE_222,CKV_AZURE_17,CKV_AZURE_94,CKV_AZURE_189,CKV_AZURE_109,CKV_AZURE_41,CKV_AZURE_211,CKV_AZURE_212,CKV_AZURE_206,CKV_AZURE_33,CKV_AZURE_59,CKV_AZURE_34,CKV2_AZURE_32,CKV2_AZURE_56,CKV2_AZURE_21,CKV2_AZURE_40,CKV2_AZURE_33,CKV2_AZURE_1,CKV_AZURE_53
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform --quiet --skip-check CKV_TF_1,CKV_TF_2,CKV_AZURE_225,CKV_AZURE_13,CKV_AZURE_88,CKV_AZURE_222,CKV_AZURE_17,CKV_AZURE_94,CKV_AZURE_189,CKV_AZURE_109,CKV_AZURE_41,CKV_AZURE_211,CKV_AZURE_212,CKV_AZURE_206,CKV_AZURE_33,CKV_AZURE_59,CKV_AZURE_34,CKV2_AZURE_32,CKV2_AZURE_56,CKV2_AZURE_21,CKV2_AZURE_40,CKV2_AZURE_33,CKV2_AZURE_1
 
 # validate.yml "Documentation": terraform-docs 0.20.0 (terraform-docs/gh-actions v1.4.1), fail-on-diff
 for m in modules/wordpress-site modules/shared-infrastructure modules/app-service modules/database modules/storage modules/key-vault modules/networking modules/dns-zones modules/cloudflare modules/front-door modules/monitoring; do
@@ -545,7 +545,7 @@ Measured when v3.0.0 introduced `coalesce(var.key_vault_purge_protection_enabled
 
 - **CKV_AZURE_110** (purge protection) renders the nonprod branch of the environment-aware default above: off in nonprod on purpose, on in production.
 - **CKV_AZURE_214** (always on) is a false positive. `always_on` defaults to `true` at every layer, but Checkov cannot read the `optional(bool, true)` inside `var.app_service` (the object-attribute blindness above).
-- **CKV_AZURE_53** (public network access for MySQL) is a false positive on the flexible server since Checkov 3.3.29. The check reads `public_network_access_enabled`, which AzureRM 5 replaced with `public_network_access`, and the provider sets that to `Disabled` itself when `delegated_subnet_id` and `private_dns_zone_id` are both given, as `modules/database` does. Measured on #125: 40 passed, 1 failed, and the failure was this check on `azurerm_mysql_flexible_server.main`.
+- **CKV_AZURE_53** (public network access for MySQL) is a false positive on the flexible server. The check reads `public_network_access_enabled`, which AzureRM 5 replaced with `public_network_access`, and the provider sets that to `Disabled` itself when `delegated_subnet_id` and `private_dns_zone_id` are both given, as `modules/database` does. Checkov 3.3.29 (the action bump in #125) started reporting it: 40 passed, 1 failed, on `azurerm_mysql_flexible_server.main`. It is skipped inline on that resource, so the check stays active for any other flexible server.
 
 Set the same variable locally, or local results will not match CI.
 

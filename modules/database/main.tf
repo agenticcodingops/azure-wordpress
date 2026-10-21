@@ -33,6 +33,7 @@ resource "null_resource" "validate_production_sku" {
 
 # MySQL Flexible Server
 resource "azurerm_mysql_flexible_server" "main" {
+  #checkov:skip=CKV_AZURE_53:public network access is off through VNet integration (delegated_subnet_id with private_dns_zone_id); the check reads public_network_access_enabled, which AzureRM 5 replaced with public_network_access
   name                   = "mysql-${local.name_prefix}"
   resource_group_name    = var.resource_group_name
   location               = var.location
