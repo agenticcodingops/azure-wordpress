@@ -545,6 +545,7 @@ Measured when v3.0.0 introduced `coalesce(var.key_vault_purge_protection_enabled
 
 - **CKV_AZURE_110** (purge protection) renders the nonprod branch of the environment-aware default above: off in nonprod on purpose, on in production.
 - **CKV_AZURE_214** (always on) is a false positive. `always_on` defaults to `true` at every layer, but Checkov cannot read the `optional(bool, true)` inside `var.app_service` (the object-attribute blindness above).
+- **CKV_AZURE_53** (public network access for MySQL) is a false positive on the flexible server. The check reads `public_network_access_enabled`, which AzureRM 5 replaced with `public_network_access`, and the provider sets that to `Disabled` itself when `delegated_subnet_id` and `private_dns_zone_id` are both given, as `modules/database` does. Checkov 3.3.29 (the action bump in #125) started reporting it: 40 passed, 1 failed, on `azurerm_mysql_flexible_server.main`. It is skipped inline on that resource, so the check stays active for any other flexible server.
 
 Set the same variable locally, or local results will not match CI.
 
