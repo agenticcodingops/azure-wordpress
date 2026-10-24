@@ -1,7 +1,7 @@
 # 0012: Prefer Azure Verified Modules
 
 **Status:** Accepted  
-**Date:** 2026-09-28  
+**Date:** 2026-09-26  
 **Code commit:** `0ca9c63afe42ba866bc0a9b748946448a699da2b`
 
 ## Context

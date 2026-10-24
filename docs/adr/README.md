@@ -42,7 +42,7 @@ The short excerpts below are the exact text that supports each record's claim. A
 | 0008 | `modules/wordpress-site/main.tf:1012-1036` | `x-azure-fdid = [module.front_door[0].resource_guid]` | The later patch injects the created profile GUID. |
 | 0009 | `modules/wordpress-site/main.tf:66-74` | `data "azurerm_client_config" "current" {}`; `deployer_object_id = ...` | The composition reads and resolves the identity. |
 | 0009 | `modules/wordpress-site/main.tf:533-571` | `outside this module's depends_on`; `deployer_object_id = local.deployer_object_id` | Known IDs are passed into the dependent module. |
-| 0010 | `modules/shared-infrastructure/variables.tf:84-99` | `Only kind = "CanNotDelete" is accepted`; `ReadOnly is not offered` | The lock interface excludes ReadOnly. |
+| 0010 | `modules/shared-infrastructure/variables.tf:84-99` | `Only kind = \"CanNotDelete\" is accepted`; `ReadOnly is not offered` | The lock interface excludes ReadOnly. |
 | 0010 | `modules/wordpress-site/main.tf:1187-1197` | `lock_level = local.site_lock.kind` | The selected CanNotDelete lock is applied to the site group. |
 | 0011 | `modules/wordpress-site/variables.tf:74-77` | `default = "8.3"` | The composition defaults to a floating tag. |
 | 0011 | `modules/wordpress-site/main.tf:606` | `docker_image_tag = var.wordpress_version` | The input is forwarded as an image tag. |
