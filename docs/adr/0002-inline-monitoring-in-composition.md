@@ -10,7 +10,7 @@ The repository has a standalone monitoring module, but the site composition need
 
 ## Decision
 
-Create the workspace and Application Insights directly in the composition module rather than instantiate the standalone monitoring module.
+Declare the Log Analytics workspace and Application Insights directly in the composition module rather than instantiate the standalone monitoring module. The workspace is created only when the caller supplies no existing workspace ID (`local.create_workspace`); otherwise Application Insights uses `var.monitoring.log_analytics_workspace_id`.
 
 ## Consequences
 
@@ -18,5 +18,6 @@ The composition can control the early dependency edge. Changes to the standalone
 
 ## Code
 
-- `modules/wordpress-site/main.tf:364-393` — creates both core monitoring resources inline.
+- `modules/wordpress-site/main.tf:225` — sets `create_workspace` when no workspace ID is supplied.
+- `modules/wordpress-site/main.tf:364-393` — declares both monitoring resources inline; the workspace is conditional.
 - `modules/wordpress-site/main.tf:520-572` — consumes Application Insights before App Service and includes it in the Key Vault dependency.

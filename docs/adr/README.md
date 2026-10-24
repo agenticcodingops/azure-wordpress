@@ -23,7 +23,7 @@ The short excerpts below are the exact text that supports each record's claim. A
 
 | Record | Citation | Exact text cited | Claim supported |
 | --- | --- | --- | --- |
-| 0001 | `modules/wordpress-site/main.tf:326-368` | `LAYER 1: FOUNDATION`; `EARLY MONITORING RESOURCES (BREAKS CIRCULAR DEPENDENCY)` | The foundation layer precedes early monitoring. |
+| 0001 | `modules/wordpress-site/main.tf:326-393` | `LAYER 1: FOUNDATION`; `EARLY MONITORING RESOURCES (BREAKS CIRCULAR DEPENDENCY)` | The foundation layer precedes early monitoring. |
 | 0001 | `modules/wordpress-site/main.tf:395-399` | `LAYER 2: APPLICATION`; `depends_on ensures Layer 1 → Layer 2 ordering` | The application layer explicitly follows Layer 1. |
 | 0001 | `modules/wordpress-site/main.tf:511-516` | `"appinsights-connection" = azurerm_application_insights.main.connection_string` | The early component supplies a Key Vault secret. |
 | 0002 | `modules/wordpress-site/main.tf:364-393` | `resource "azurerm_application_insights" "main"` | The composition creates monitoring inline. |
@@ -43,7 +43,8 @@ The short excerpts below are the exact text that supports each record's claim. A
 | 0009 | `modules/wordpress-site/main.tf:66-74` | `data "azurerm_client_config" "current" {}`; `deployer_object_id = ...` | The composition reads and resolves the identity. |
 | 0009 | `modules/wordpress-site/main.tf:533-571` | `outside this module's depends_on`; `deployer_object_id = local.deployer_object_id` | Known IDs are passed into the dependent module. |
 | 0010 | `modules/shared-infrastructure/variables.tf:84-99` | `Only kind = \"CanNotDelete\" is accepted`; `ReadOnly is not offered` | The lock interface excludes ReadOnly. |
-| 0010 | `modules/wordpress-site/main.tf:1187-1197` | `lock_level = local.site_lock.kind` | The selected CanNotDelete lock is applied to the site group. |
+| 0010 | `modules/wordpress-site/variables.tf:1049-1066` | `var.lock.kind == "CanNotDelete"` | The site lock rejects every other kind. |
+| 0010 | `modules/wordpress-site/main.tf:1178-1197` | `site_lock = var.lock != null ? {`; `lock_level = local.site_lock.kind` | The site lock is normalized, then applied to the site group. |
 | 0011 | `modules/wordpress-site/variables.tf:74-77` | `default = "8.3"` | The composition defaults to a floating tag. |
 | 0011 | `modules/wordpress-site/main.tf:606` | `docker_image_tag = var.wordpress_version` | The input is forwarded as an image tag. |
 | 0011 | `modules/app-service/main.tf:241-245` | `docker_image_name = "appsvc/wordpress-debian-php:${var.docker_image_tag}"` | App Service deploys the selected tag. |

@@ -18,6 +18,6 @@ The ordering breaks a dependency cycle and makes the connection string available
 
 ## Code
 
-- `modules/wordpress-site/main.tf:326-368` — declares Layer 1 and explains the early monitoring dependency.
-- `modules/wordpress-site/main.tf:395-399` — declares Layer 2 and its ordering.
+- `modules/wordpress-site/main.tf:326-393` — declares Layer 1 and the early monitoring resources.
+- `modules/wordpress-site/main.tf:395-399` — declares Layer 2 and its ordering; its modules state the dependency explicitly in their `depends_on` blocks (`modules/wordpress-site/main.tf:443`, `:500`, `:568`, `:680`).
 - `modules/wordpress-site/main.tf:511-516` — puts the Application Insights connection string in the owned secrets map.

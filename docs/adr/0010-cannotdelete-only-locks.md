@@ -19,4 +19,5 @@ Deletion and replacement fail while the lock exists. Adopters must remove the lo
 ## Code
 
 - `modules/shared-infrastructure/variables.tf:84-99` — defines the AVM-shaped lock and rejects every kind except CanNotDelete.
-- `modules/wordpress-site/main.tf:1187-1197` — applies the selected lock and preserves the legacy CanNotDelete behavior.
+- `modules/wordpress-site/variables.tf:1049-1066` — defines the site lock in the same shape and rejects every kind except CanNotDelete.
+- `modules/wordpress-site/main.tf:1178-1197` — normalizes and applies the selected site lock while preserving the legacy CanNotDelete behavior.
