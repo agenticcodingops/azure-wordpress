@@ -63,6 +63,8 @@ One call to `modules/wordpress-site` deploys one site:
 - [Media](docs/architecture.md#media), [Secrets](docs/architecture.md#secrets),
   [Network](docs/architecture.md#network) and [Monitoring](docs/architecture.md#monitoring)
 
+The [architecture decision record index](docs/adr/README.md) explains the design choices behind the module.
+
 ## Quick Start
 
 ### Prerequisites
