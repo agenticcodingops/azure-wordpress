@@ -319,9 +319,10 @@ gh api repos/agenticcodingops/azure-wordpress/rulesets/23947709 --jq .enforcemen
   one merges.
 - **release-please PRs.** release-please's default PR footer ("This PR was generated with
   Release Please") matches `BRANDING_ERE`, so the PR check failed on every release PR up to
-  4.3.1 (#132). `release-please-config.json` now sets a neutral `pull-request-footer`, and a
-  neutral `pull-request-header` in place of the default robot shortcode, which the policy above
-  prohibits. Keep both free of anything `BRANDING_ERE` matches. The release commit and its squash merge
+  4.3.1 (#132). `release-please-config.json` now sets a neutral `pull-request-footer`; the footer
+  is what failed the check. It also sets a neutral `pull-request-header`: the default header's
+  `:robot:` shortcode does not match `BRANDING_ERE`, but GitHub renders it as the robot emoji,
+  which `AGENTS.md` prohibits in PR text. Keep both free of anything `BRANDING_ERE` matches. The release commit and its squash merge
   (`chore(main): release X.Y.Z (#N)`) were always clean, so the push to `main` passes.
 
 Do not "fix" either by adding bot addresses to the allow-list; it cannot work.
