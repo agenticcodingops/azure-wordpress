@@ -42,6 +42,12 @@ files to satisfy this policy.
 - Never pass `--author`, and never set `GIT_AUTHOR_*` / `GIT_COMMITTER_*` to commit as
   anyone else.
 
+Merged dependency-update commits with that bot's exact author identity and GitHub's merge
+committer identity are exempt from the push scan of the default branch, so GitHub's own
+merge does not break this policy. The exact match lives in `scripts/dependency-bot-exemption.sh`,
+outside `.githooks/`, and is tested by `scripts/tests/dependency-bot-exemption.test.sh`. Pull requests from the bot remain fully scanned, and no
+other identity is exempt.
+
 ### Never bypass the guard
 
 - Never use `--no-verify`. If a hook blocks you, rewrite the message — do not work
