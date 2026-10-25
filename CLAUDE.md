@@ -310,21 +310,22 @@ bypass actors are ever added, use **pull request** mode only — `always` reopen
 gh api repos/agenticcodingops/azure-wordpress/rulesets/23947709 --jq .enforcement   # must be: active
 ```
 
-**Two automated sources stay red, and the allow-list cannot fix either:**
+**Automated sources, and why the allow-list cannot fix them:**
 
 - **Dependabot.** `identity_check` rejects any `[bot]` or `bot@` address *before* it reads the
   allow-list, so listing `49699333+dependabot[bot]@users.noreply.github.com` changes nothing.
   GitHub's squash merge also adds a `Co-authored-by: dependabot[bot]` trailer, which
   `branding_scan` rejects on its own. Dependabot PRs fail, and so does the push to `main` when
   one merges.
-- **release-please PRs.** The PR body ends with release-please's standard "generated with
-  Release Please" footer, which matches `BRANDING_ERE`. Only the PR check fails: the release
-  commit and its squash merge (`chore(main): release X.Y.Z (#N)`) are clean, so the push to
-  `main` passes.
+- **release-please PRs.** release-please's default PR footer ("This PR was generated with
+  Release Please") matches `BRANDING_ERE`, so the PR check failed on every release PR up to
+  4.3.1 (#132). `release-please-config.json` now sets a neutral `pull-request-footer`; the footer
+  is what failed the check. It also sets a neutral `pull-request-header`: the default header's
+  `:robot:` shortcode does not match `BRANDING_ERE`, but GitHub renders it as the robot emoji,
+  which `AGENTS.md` prohibits in PR text. Keep both free of anything `BRANDING_ERE` matches. The release commit and its squash merge
+  (`chore(main): release X.Y.Z (#N)`) were always clean, so the push to `main` passes.
 
-No status check is required on `main`, so both show red without blocking anything. Fixing either
-means exempting those branches in the workflow or changing the guard — a policy decision.
-Do not "fix" it by adding bot addresses to the allow-list; it cannot work.
+Do not "fix" either by adding bot addresses to the allow-list; it cannot work.
 
 **Branches cut before the guard fail it.** Their commits carry the old attribution trailers
 (`feat/scm-network-posture` has four). They fail Commit Hygiene until reworded.
