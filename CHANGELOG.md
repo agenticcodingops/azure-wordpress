@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.1](https://github.com/agenticcodingops/azure-wordpress/compare/v4.3.0...v4.3.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ci:** exempt the dependency-update bot's merged commits from the push scan of main ([#131](https://github.com/agenticcodingops/azure-wordpress/issues/131)) ([65081eb](https://github.com/agenticcodingops/azure-wordpress/commit/65081eb5b61b7fbed4b95fd287ea78e83b44b9dc))
+
 ## [4.3.0](https://github.com/agenticcodingops/azure-wordpress/compare/v4.2.0...v4.3.0) (2026-10-12)
 
 
