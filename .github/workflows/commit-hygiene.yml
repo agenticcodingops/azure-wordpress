@@ -12,6 +12,8 @@
 # revision's copy of everything, this file included, so they are advisory: a direct push
 # to the default branch can rewrite the check it is judged by. Only branch protection
 # that requires pull requests closes that path.
+# Exactly identified dependency-update commits are exempt only on default-branch pushes,
+# because GitHub's merge preserves their otherwise rejected bot identity and message.
 # ============================================================================
 name: Commit Hygiene
 
@@ -55,11 +57,12 @@ jobs:
         run: |
           # Fail closed if the policy files are missing: identity_check passes everything
           # when the allow-list is absent.
-          for f in .githooks/branding-guard.sh .githooks/guard-helpers.sh .githooks/allowed-authors.txt; do
+          for f in .githooks/branding-guard.sh .githooks/guard-helpers.sh .githooks/allowed-authors.txt scripts/dependency-bot-exemption.sh; do
             [ -f "$f" ] || { echo "::error::$f is missing; refusing to pass without it."; exit 1; }
           done
           . .githooks/branding-guard.sh
           . .githooks/guard-helpers.sh    # uncomment, is_zero, name_check
+          . scripts/dependency-bot-exemption.sh    # is_dependency_update_bot_commit (#130)
           fail=0
 
           # A failing git command aborts the step (bash -e), so an unresolvable range fails closed.
@@ -87,6 +90,16 @@ jobs:
 
           for c in $commits; do
             short=$(git rev-parse --short "$c")
+            if [ "$EVENT_NAME" = push ] && [ "$REF_TYPE" = branch ] &&
+              [ "$REF_NAME" = "$DEFAULT_BRANCH" ] &&
+              is_dependency_update_bot_commit \
+                "$(git log -1 --format=%an "$c")" "$(git log -1 --format=%ae "$c")" \
+                "$(git log -1 --format=%cn "$c")" "$(git log -1 --format=%ce "$c")"; then
+              echo "::$stop_token::"
+              echo "::notice::Skipping commit $short: exact dependency-update bot merge identity on the default branch."
+              echo "::stop-commands::$stop_token"
+              continue
+            fi
             git log -1 --format=%B "$c" | uncomment | branding_scan "commit $short" || fail=1
             identity_check "$(git log -1 --format=%ae "$c")" author "$short" || fail=1
             identity_check "$(git log -1 --format=%ce "$c")" committer "$short" || fail=1
