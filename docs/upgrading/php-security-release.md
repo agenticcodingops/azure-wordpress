@@ -158,7 +158,8 @@ flowchart TD
      the slot each on their own rows. The slot's rows reach the workspace only when `staging_slot_diagnostic_settings`
      is set (the default creates no diagnostic setting on the slot; `{ default = {} }` sends the app's four categories
      to the site workspace), so set it before the change on a site with a slot. Without it the slot's image cannot be
-     proved: `linuxFxVersion` with `--slot staging` (runbook step 4) shows only what was configured, and `php -v` over
+     proved: `linuxFxVersion` with `--slot staging` ([Image-tag policy](../operations/image-tag-policy.md), its step 4)
+     shows only what was configured, and `php -v` over
      SSH to the slot (step 5 below) shows the PHP version, which several builds share.
 
    The table and its columns are from Microsoft's
@@ -189,7 +190,8 @@ flowchart TD
 
    The value must equal the `PHP_VERSION` you read from the build's config, to the patch level. A missing header with
    an otherwise healthy site means `expose_php` is off and this check cannot be made: fall back to `php -v` over SSH
-   (runbook step 6, which asks only for the series; for a security release compare the patch level), which is also the
+   ([Image-tag policy](../operations/image-tag-policy.md), its step 6, which asks only for the series; for a security
+   release compare the patch level), which is also the
    check Microsoft's own post on the release suggests. A consumer measured the header move from `PHP/8.4.21` to
    `PHP/8.4.27` within about four minutes of the apply on 2026-10-24, on nonprod and again on production.
 
