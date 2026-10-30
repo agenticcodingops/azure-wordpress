@@ -1,6 +1,6 @@
 # Upgrade guide
 
-Latest release: **v4.3.0**. Pin module sources with `?ref=v4.3.0`. Releases are listed on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page.
+Latest release: **v4.3.1** (2026-10-25). Pin module sources with `?ref=v4.3.1`. Releases are listed on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page.
 
 These pages hold the upgrade notes that were in the repository README, in `modules/wordpress-site/README.md`, and in the changelog's upgrade-path sections. Changelog text is copied unchanged. A statement about what a release changed is cited to [`CHANGELOG.md`](../../CHANGELOG.md) or to that version's [release notes](https://github.com/agenticcodingops/azure-wordpress/releases). Where neither states a plan diff, or whether anything is replaced or destroyed, the page says **UNKNOWN**.
 
@@ -14,6 +14,7 @@ Read every page between the release you are on and the release you are moving to
 | 4.0 to 4.1 | [4.0 to 4.1](v4.0-to-v4.1.md) | v4.0.1, v4.0.2, v4.1.0 |
 | 4.1.0 to 4.1.1 | [4.1.0 to 4.1.1](v4.1.0-to-v4.1.1.md) | v4.1.1 |
 | 4.1.1 to 4.3.0 | [4.1.1 to 4.3.0](v4.1.1-to-v4.3.0.md) | v4.2.0, v4.3.0 |
+| 4.3.0 to 4.3.1 | no page: v4.3.1 changes one CI workflow and no module ([changelog](../../CHANGELOG.md#431-2026-10-25)); a consumer on v4.3.0 plans no changes | v4.3.1 |
 | MySQL 8.0 to 8.4 | [MySQL 8.0 to 8.4](mysql-8.0-to-8.4.md) | input added in v4.1.0 |
 | PHP security release | [Taking a PHP security release with a dated image tag](php-security-release.md) | any release: `wordpress_version` |
 
