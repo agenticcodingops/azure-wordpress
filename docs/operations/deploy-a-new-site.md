@@ -10,7 +10,7 @@ This runbook is the short, repeatable version of [deployment guide step 10](../d
 ## Prerequisites
 
 - A working root configuration per environment, with the pipeline from deployment guide steps 1 to 5, and the module
-  source pinned with `?ref=v4.3.1` (or the release you run).
+  source pinned with `?ref=v4.3.2` (or the release you run).
 - No `depends_on` on the `wordpress-site` module call, and `deployer_object_id`/`deployer_tenant_id` set if plan
   and apply run as different identities ([deployment guide steps 6 and 7](../deployment-guide.md#step-6-decide-whether-to-set-the-deployer-id-inputs)).
   Both are read from `modules/wordpress-site/main.tf`.

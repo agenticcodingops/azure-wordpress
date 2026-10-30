@@ -96,6 +96,12 @@ resource "azurerm_cdn_frontdoor_route" "main" {
 
   cdn_frontdoor_custom_domain_ids = [azurerm_cdn_frontdoor_custom_domain.main.id]
 
+  # A rule set acts only on the routes that list it: Front Door processes "the rule set associated
+  # to the route" after the WAF (https://learn.microsoft.com/azure/frontdoor/front-door-rules-engine).
+  # Through v4.3.1 the rule set below was created and never listed here, so none of its three rules
+  # applied and admin paths were cached like any other (#138).
+  cdn_frontdoor_rule_set_ids = [azurerm_cdn_frontdoor_rule_set.caching.id]
+
   cache {
     query_string_caching_behavior = "UseQueryString"
     compression_enabled           = true

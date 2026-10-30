@@ -16,7 +16,7 @@ module call, resource locks, staging slots, shared plans, adding and removing si
 
 Code references are `file:line` at commit
 [`b592e13`](https://github.com/agenticcodingops/azure-wordpress/tree/b592e13ad09938075b0e8f7a1dd51cfbe007320b),
-which is release v4.3.0; v4.3.1 changed one CI workflow and no module, so the references hold at v4.3.1. Every name, ID and host name below is a placeholder.
+which is release v4.3.0; v4.3.1 changed one CI workflow and v4.3.2 added six lines to the Front Door route (`modules/front-door/main.tf`, after line 97), so every reference on this page holds at v4.3.2. Every name, ID and host name below is a placeholder.
 
 ## When to use
 
@@ -335,7 +335,7 @@ terraform {
 
 module "wordpress_sites" {
   # A release tag. For an immutable reference, use the tag's commit SHA instead.
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.2"
   # ...
 }
 ```
@@ -793,7 +793,7 @@ storage account and network.
 
 ```hcl
 module "shared" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.3.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.3.2"
 
   project_name    = "example"
   environment     = "nonprod"
@@ -803,7 +803,7 @@ module "shared" {
 
 module "wordpress_sites" {
   for_each = local.sites
-  source   = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.1"
+  source   = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.2"
   # ...
 
   app_service = {

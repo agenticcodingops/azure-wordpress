@@ -67,7 +67,7 @@ Default alert thresholds:
 
 ```hcl
 module "monitoring" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/monitoring?ref=v4.3.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/monitoring?ref=v4.3.2"
 
   project_name        = "example"
   site_name           = "examplewp01"
