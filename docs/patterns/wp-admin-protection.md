@@ -28,8 +28,11 @@ An edge-only control has routes around it, and this module's defaults leave some
   `/wp-admin/admin-ajax.php/..%2F..%2Fwp-login.php`, all of which the origin served as the real login or admin code.
 
 So the rule of the pattern is: **never enable the edge application without the origin check.** The origin check
-decides on the PHP that executes, which is the same whatever the URL looked like, and for every script that loads
-WordPress it refuses a request that did not come through your Access application, whatever route it took. Cloudflare
+decides on the PHP that executes, which is the same whatever the URL looked like, and in `enforce` it refuses a
+request for `wp-login.php` or a `wp-admin` script that loads WordPress (`admin-ajax.php` excepted) when the request
+did not come through your Access application, whatever route it took. It protects nothing else: `/wp-json/`,
+`/wp-cron.php`, the public site and cookie-authenticated requests to the exempt path stay as WordPress leaves them.
+Cloudflare
 says the same about its own tokens: "Token validation ensures that any requests which bypass Cloudflare Access (for
 example, due to a network misconfiguration) are rejected"
 ([Publish a self-hosted application](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/)).
@@ -222,9 +225,10 @@ previous one's checks pass:
    ```
 
    The forwarded-protocol header is what the web server sees behind the CDN; without it WordPress answers a 302 to
-   HTTPS instead of the form (measured by the consumer). In `report` the request must serve the form and log
-   `would-refuse`; after the switch to `enforce` it must answer the 403 marker. Only then set `enforce`, flush the page
-   cache again, and run the whole matrix.
+   HTTPS instead of the form (measured by the consumer). The sequence is: in `report`, the request serves the form and
+   logs `would-refuse` (that line proves the check is present and wired); then set `enforce`, which restarts the
+   container; flush the page cache again; repeat the same request, which must now answer the 403 marker; only then run
+   the whole matrix.
 5. **Production,** the same four steps in the same order, each a production change under your own approval rules.
    The consumer shortened production's `report` day because the site was not yet in use; a site with editors gets the
    full day.
@@ -351,11 +355,14 @@ Port numbers and `#` fragments are not part of Access paths either ([Application
   the remote-connection tunnel), where WP-CLI runs PHP without the web server, so neither Access nor the check
   applies. Whatever you do to SCM access later, keep that route usable.
 - **The identity provider is down:** sign in with the second login method.
-- **Access is down or misconfigured:** WP-CLI for anything urgent; to restore the browser, create the kill switch over
-  SSH while the application still covers the host, then fix the application or its settings, then clear the switch.
-- **An application was recreated or is missing, so its AUD changed or no token arrives:** restore the application
-  first, then set the switch, update the AUD setting, and clear the switch once the setting has deployed. Do not set
-  the switch while no application covers the host.
+- **Access itself is down, or a policy denies you:** the request stops at the edge and never reaches the origin, so
+  the kill switch cannot help. WP-CLI over SSH for anything urgent; fix the policy, or wait for Access.
+- **The origin check refuses a request that Access let through** (stale or unreachable signing keys, a wrong team
+  domain or AUD setting, an application recreated so its AUD changed): WP-CLI for anything urgent; to restore the
+  browser, create the kill switch over SSH while the application still covers the host, fix the setting or refresh
+  the keys, then clear the switch. If the application is missing, restore it first (it gets a new AUD), then set the
+  switch, update the AUD setting, and clear the switch once the setting has deployed. Do not set the switch while no
+  application covers the host.
 - **SSH or SCM is unavailable while the check enforces:** the kill switch is out of reach. Change the mode setting to
   `off` or `report` through your deployment path (Terraform, or the portal as a recorded exception), accept the
   container restart, and run the in-container probe once SSH is back. The consumer met this case once, when an image
@@ -400,7 +407,8 @@ check refuses the administrator with a bad AUD. A sign-in check covers that.
 - A staging slot. With this module `app_service.extra_app_settings` reaches the slot too, and no Access application can
   cover a slot that has no hostname. Choose: install the plugin on the app and the slot (the safer choice: a swap
   then moves a protected deployment either way), and accept that the slot's admin is reachable only through WP-CLI
-  or the kill switch while `enforce` is set, or keep it off the slot (set the
+  over SCM while `enforce` is set (never the kill switch there: with no application in front of the slot it would
+  open the slot's admin to anything that reaches it), or keep it off the slot (set the
   slot's mode to `off` through `app_service.staging_app_settings_override`, which is merged last on the slot). With
   different modes per slot, the mode setting **must** be in `app_service.extra_sticky_app_setting_names`: App
   Service swaps app settings with the slot unless they are "configured to stick to a slot"
