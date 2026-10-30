@@ -157,7 +157,10 @@ flowchart TD
    - `_ResourceId`, because a staging slot's rows match the same filter and end in `/slots/staging`: prove the app and
      the slot each on their own rows. The slot's rows reach the workspace only when `staging_slot_diagnostic_settings`
      is set (the default creates no diagnostic setting on the slot; `{ default = {} }` sends the app's four categories
-     to the site workspace), so set it before the change on a site with a slot. Without it the slot's image cannot be
+     to the site workspace), so set it before the change on a site with a slot. That input exists on
+     `modules/wordpress-site` since v4.1.0; on an earlier release, or on a standalone `modules/app-service` call, create
+     your own diagnostic setting on the slot with the `AppServicePlatformLogs` category instead, and do not let the
+     missing input delay the security change: the app's own rows and the proofs below still apply. Without it the slot's image cannot be
      proved: `linuxFxVersion` with `--slot staging` ([Image-tag policy](../operations/image-tag-policy.md), its step 4)
      shows only what was configured, and `php -v` over
      SSH to the slot (step 5 below) shows the PHP version, which several builds share.
