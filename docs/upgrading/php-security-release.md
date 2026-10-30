@@ -151,7 +151,7 @@ flowchart TD
    slot each on their own newest line. The slot's rows reach the workspace only when `staging_slot_diagnostic_settings`
    is set (the default creates no diagnostic setting on the slot; `{ default = {} }` sends the app's four categories to
    the site workspace); without it, prove the slot from `linuxFxVersion` with `--slot staging` (runbook step 4) and from
-   its own hostname in step 4 below. The table and its columns are from Microsoft's
+   `php -v` over SSH to the slot (step 5 below). The table and its columns are from Microsoft's
    [table reference](https://learn.microsoft.com/azure/azure-monitor/reference/tables/appserviceplatformlogs); the
    runbook has the legacy `AzureDiagnostics` form of the query. Two measured line shapes, both from one consumer:
 
@@ -163,11 +163,13 @@ flowchart TD
 4. **Prove the PHP that serves the site.** PHP adds `X-Powered-By: PHP/<version>` to responses while the `expose_php`
    directive is on ([php.net, core ini directives](https://www.php.net/manual/en/ini.core.php#ini.expose-php)); this
    image sent it on each of a consumer's checks between 2026-08 and 2026-10. Read it from a response that was not served
-   from a CDN cache. Both of the module's CDN providers cache the front page: behind Cloudflare, `cf-cache-status` must
-   not be `HIT`; behind Azure Front Door the module's route caches every path except `wp-admin/` and `wp-login.php`
-   (`modules/front-door/main.tf`, the route's `cache` block and the `NoCacheAdmin` rule) and reports a cached answer as
-   `x-cache: TCP_HIT` or `TCP_REMOTE_HIT` ([Front Door caching](https://learn.microsoft.com/azure/frontdoor/front-door-caching)).
-   A unique query string defeats both caches, because each keys on it:
+   from a CDN cache, and read the cache-status header to know. Behind Cloudflare the module bypasses the cache on
+   `wp-admin/*` and `wp-login.php` and caches `wp-content/*` (`modules/cloudflare/page-rules.tf`); the front page is
+   cached only where you added an HTML cache rule, so treat `cf-cache-status: HIT` as a cached answer. Behind Azure
+   Front Door the module's route caches every path except `wp-admin/` and `wp-login.php` (`modules/front-door/main.tf`,
+   the route's `cache` block and the `NoCacheAdmin` rule) and reports a cached answer as `x-cache: TCP_HIT` or
+   `TCP_REMOTE_HIT` ([Front Door caching](https://learn.microsoft.com/azure/frontdoor/front-door-caching)). A unique
+   query string avoids a cached answer on that route, whose cache key includes the query string:
 
    ```bash
    curl -sSI "https://<custom-domain>/?check=$(date +%s)" | grep -i -e '^x-powered-by' -e '^cf-cache-status' -e '^x-cache'
@@ -180,7 +182,11 @@ flowchart TD
    `PHP/8.4.27` within about four minutes of the apply on 2026-10-24, on nonprod and again on production.
 
 5. **Check the rest of the start:** the front page and the health-check path answer `200`, SSH or Kudu works, and the
-   staging slot, if there is one, is proved the same way on its own rows or its own hostname.
+   staging slot, if there is one, is proved the same way on its own log rows. The slot's hostname is behind the same
+   origin restriction as the app (when `cdn_provider` is not `direct`, only the CDN's addresses reach it:
+   `modules/app-service/main.tf`, the slot's `ip_restriction` blocks), so for its PHP version use `php -v` over SSH to
+   the slot, `az webapp ssh --resource-group <app-resource-group> --name <app-name> --slot staging`, which works
+   while SCM access is open (`scm_ip_restriction_default_action`, default `Allow`).
 
 ### Why you prove it after the start, every time
 
@@ -207,7 +213,7 @@ also why a rollback gets the same proof as a rollout.
 ## Soak, then promote the same build
 
 For a security release the question is whether the fixed build of the series you already run behaves like the build it
-replaces, so a soak of hours is reasonable, where a change of series would get days. A consumer soaked
+replaces, so a soak of hours is reasonable, where a change of series would need days. A consumer soaked
 `8.4_20261022.4.tuxprod` on nonprod for about four hours on 2026-10-24 before promoting it. Exit checks, all taken after
 the container start that the platform log proved:
 
