@@ -8,7 +8,7 @@ cleanly. It needs no CDN account and no DNS changes: the site is served on the A
 
 Code references are `file:line` at commit
 [`b592e13`](https://github.com/agenticcodingops/azure-wordpress/tree/b592e13ad09938075b0e8f7a1dd51cfbe007320b),
-which is release v4.3.0; v4.3.1 changed one CI workflow and v4.3.2 added six lines to the Front Door route (`modules/front-door/main.tf`, after line 97), so every reference on this page holds at v4.3.2.
+which is release v4.3.0; v4.3.1 changed one CI workflow and v4.3.2 changed only `modules/front-door/main.tf` (the route from line 98 on, and the three rules), so every reference on this page holds at v4.3.2.
 
 ## When to use
 

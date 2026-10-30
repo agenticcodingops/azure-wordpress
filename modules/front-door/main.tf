@@ -99,8 +99,11 @@ resource "azurerm_cdn_frontdoor_route" "main" {
   # A rule set acts only on the routes that list it: Front Door processes "the rule set associated
   # to the route" after the WAF (https://learn.microsoft.com/azure/frontdoor/front-door-rules-engine).
   # Through v4.3.1 the rule set below was created and never listed here, so none of its three rules
-  # applied and admin paths were cached like any other (#138).
+  # applied and admin paths were cached like any other (#138). The attach waits for the rules'
+  # renumbering below, so the set is never live with the admin rule at order 0.
   cdn_frontdoor_rule_set_ids = [azurerm_cdn_frontdoor_rule_set.caching.id]
+
+  depends_on = [azurerm_cdn_frontdoor_rule.no_cache_admin]
 
   cache {
     query_string_caching_behavior = "UseQueryString"
@@ -206,7 +209,14 @@ resource "azurerm_cdn_frontdoor_security_policy" "main" {
   }
 }
 
-# Rule Set for caching
+# Rule Set for caching.
+#
+# Rule orders start at 1 and are unique within the set: a rule at order 0 is Azure's "global rule",
+# whose actions apply to every request without evaluating its conditions (azurerm
+# cdn_frontdoor_rule docs, `order`), and the API rejects duplicate orders ("The delivery rules
+# order values cannot have duplicates"). Through v4.3.1 the admin rule sat at order 0, harmless only
+# because the set was unattached. The renumbering to 1, 2, 3 is sequenced with depends_on
+# (uploads, then static, then admin) so that no two rules hold the same order mid-apply.
 resource "azurerm_cdn_frontdoor_rule_set" "caching" {
   name                     = "caching${replace(var.site_name, "-", "")}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.main.id
@@ -216,8 +226,10 @@ resource "azurerm_cdn_frontdoor_rule_set" "caching" {
 resource "azurerm_cdn_frontdoor_rule" "cache_static" {
   name                      = "CacheStaticAssets"
   cdn_frontdoor_rule_set_id = azurerm_cdn_frontdoor_rule_set.caching.id
-  order                     = 1
+  order                     = 2
   behaviour_on_match        = "Continue"
+
+  depends_on = [azurerm_cdn_frontdoor_rule.cache_uploads] # takes order 2 only after uploads has left it
 
   conditions {
     request_file_extension {
@@ -243,7 +255,7 @@ resource "azurerm_cdn_frontdoor_rule" "cache_static" {
 resource "azurerm_cdn_frontdoor_rule" "cache_uploads" {
   name                      = "CacheUploads"
   cdn_frontdoor_rule_set_id = azurerm_cdn_frontdoor_rule_set.caching.id
-  order                     = 2
+  order                     = 3
   behaviour_on_match        = "Continue"
 
   conditions {
@@ -272,8 +284,10 @@ resource "azurerm_cdn_frontdoor_rule" "cache_uploads" {
 resource "azurerm_cdn_frontdoor_rule" "no_cache_admin" {
   name                      = "NoCacheAdmin"
   cdn_frontdoor_rule_set_id = azurerm_cdn_frontdoor_rule_set.caching.id
-  order                     = 0 # Highest priority
+  order                     = 1 # first, and Stop: a matched admin path skips the cache rules below
   behaviour_on_match        = "Stop"
+
+  depends_on = [azurerm_cdn_frontdoor_rule.cache_static] # takes order 1 only after static has left it
 
   conditions {
     # 5.x request_path values omit the leading slash. BeginsWith these values
