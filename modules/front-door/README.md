@@ -61,7 +61,7 @@ Without these exclusions, WordPress admin will be blocked.
 
 ```hcl
 module "front_door" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/front-door?ref=v4.3.0"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/front-door?ref=v4.3.1"
 
   project_name        = "example"
   site_name           = "examplewp01"
