@@ -20,7 +20,7 @@ and recorded on the dates given. Re-measure before you act on a number.
 | On 2026-10-21 the PHP project released PHP 8.4.27, 8.3.36 and 8.2.35 (and 8.5.12). Each release entry says it is "a security release fixing two critical vulnerabilities (CVE-2026-109618, CVE-2026-109619) that can allow unauthenticated remote code execution" and that "there are no complete mitigations, updating is the only safe choice". The release was pre-announced on 2026-10-20 for 14:00 UTC. | php.net news archive: the entries [PHP 8.4.27 Released!](https://www.php.net/archive/2026.php#2026-10-21-4), [PHP 8.3.36 Released!](https://www.php.net/archive/2026.php#2026-10-21-3) and [PHP 8.2.35 Released!](https://www.php.net/archive/2026.php#2026-10-21-2), the [security advisory](https://www.php.net/archive/2026.php#2026-10-21-5) and the [pre-announcement](https://www.php.net/archive/2026.php#2026-10-21-1). The ChangeLog dates 8.4.27 as 22 Oct 2026, the news entry as 21 Oct. |
 | CISA urged immediate patching on 2026-10-21, and its update of 2026-10-26 records the addition of both CVEs to the Known Exploited Vulnerabilities catalogue on 2026-10-26. | [CISA alert of 2026-10-21, revised 2026-10-26](https://www.cisa.gov/news-events/alerts/2026/10/21/critical-vulnerabilities-php-require-immediate-patching) |
 | The App Service team wrote on 2026-10-21 that the updated built-in PHP images had reached both the Latest and the Standard Platform Release Channel, and, in a separate note, that WordPress apps deployed from the marketplace offering "have been updated to patched PHP versions, except for apps still using the older Alpine-based images". The note names no mechanism and no image tag. Custom containers are not patched by the platform. | [Critical PHP Security Release: What It Means for Azure App Service](https://azure.github.io/AppService/2026/10/21/php-critical-security-release-app-service-linux.html), updates of 21 October 2026 |
-| The public registry's dated builds carried the fixed versions within an hour of the 14:00 UTC release: the `_20261021.5` build of each series was created between 14:54Z and 14:55Z with `PHP_VERSION` 8.4.27, 8.3.36 and 8.2.35 (`8.4_20261021.5.tuxprod`, `8.3_20261021.5.tuxprod`, `8.2_20261021.5.tuxprod`). A second 8.4 build followed at 15:20Z (`8.4_20261021.6.tuxprod`), and the `_20261022.4` builds of the next day carry the same versions. The last build before the release, `8.3_20261016.7.tuxprod`, has 8.3.35. | Measured 2026-10-30 with the [procedure below](#read-a-tags-php-version-without-azure) |
+| The public registry's dated builds with the fixed versions were built within an hour of the 14:00 UTC release: the `_20261021.5` image of each series has a `created` time between 14:54Z and 14:55Z and `PHP_VERSION` 8.4.27, 8.3.36 or 8.2.35 (`8.4_20261021.5.tuxprod`, `8.3_20261021.5.tuxprod`, `8.2_20261021.5.tuxprod`). A second 8.4 image was built at 15:20Z (`8.4_20261021.6.tuxprod`), and the `_20261022.4` images of the next day carry the same versions. The last build before the release, `8.3_20261016.7.tuxprod`, has 8.3.35. `created` is the image's build time, not the moment its tag became visible on the registry; that was not measured. A consumer found the `_20261022.4` tags listed on 2026-10-24. | Measured 2026-10-30 with the [procedure below](#read-a-tags-php-version-without-azure) |
 | The public registry's floating tags did not move: on 2026-10-30, nine days after the release, `8.3` still resolved to an image created 2025-10-16 with `PHP_VERSION=8.3.26`, and `8.2` to an image created 2025-01-21 with `PHP_VERSION=8.2.27`. A consumer measured the same two values on 2026-10-24. | Measured 2026-10-30 (and 2026-10-24 by a consumer) |
 | What a floating tag runs on App Service is not the registry's floating image either. On 2026-09-27 a consumer's site configured with floating `8.3` was started from `appsvc/wordpress-debian-php:8.3_20260113.8.tuxprod` (the platform log's pull and start lines; PHP 8.3.29 from `x-powered-by` and the console log), newer than the registry's `8.3` of that day. | Measured 2026-09-27 by a consumer, from `AppServicePlatformLogs` |
 
@@ -141,17 +141,27 @@ flowchart TD
    | where TimeGenerated > ago(2h)
    | where _ResourceId contains "<app-name>"
    | where Message has "Creating container with image"
-   | project TimeGenerated, _ResourceId, Message
+   | project TimeGenerated, _ResourceId, Host, ContainerId, Message
    | order by TimeGenerated desc
    ```
 
    The newest line after your apply must name `appsvc/wordpress-debian-php` with the exact tag you set. Any other
-   repository, or any other tag, means the platform did not run what you asked for: roll back (below). `_ResourceId` is
-   in the output because a staging slot's rows match the same filter and end in `/slots/staging`: prove the app and the
-   slot each on their own newest line. The slot's rows reach the workspace only when `staging_slot_diagnostic_settings`
-   is set (the default creates no diagnostic setting on the slot; `{ default = {} }` sends the app's four categories to
-   the site workspace); without it, prove the slot from `linuxFxVersion` with `--slot staging` (runbook step 4) and from
-   `php -v` over SSH to the slot (step 5 below). The table and its columns are from Microsoft's
+   repository, or any other tag, means the platform did not run what you asked for: roll back (below). Two columns
+   make the check complete:
+
+   - `Host`, because every worker starts its own container. A dedicated plan runs `worker_count` workers and the
+     module's autoscale setting can take it to five (`modules/app-service/main.tf`, `azurerm_monitor_autoscale_setting`),
+     so one worker can be on the new image while another still serves the old one, and a single HTTP check reaches only
+     one of them. Expect one post-apply start per active worker, and count them against the plan's current instance
+     count before you call the rollout done.
+   - `_ResourceId`, because a staging slot's rows match the same filter and end in `/slots/staging`: prove the app and
+     the slot each on their own rows. The slot's rows reach the workspace only when `staging_slot_diagnostic_settings`
+     is set (the default creates no diagnostic setting on the slot; `{ default = {} }` sends the app's four categories
+     to the site workspace), so set it before the change on a site with a slot. Without it the slot's image cannot be
+     proved: `linuxFxVersion` with `--slot staging` (runbook step 4) shows only what was configured, and `php -v` over
+     SSH to the slot (step 5 below) shows the PHP version, which several builds share.
+
+   The table and its columns are from Microsoft's
    [table reference](https://learn.microsoft.com/azure/azure-monitor/reference/tables/appserviceplatformlogs); the
    runbook has the legacy `AzureDiagnostics` form of the query. Two measured line shapes, both from one consumer:
 
@@ -163,13 +173,15 @@ flowchart TD
 4. **Prove the PHP that serves the site.** PHP adds `X-Powered-By: PHP/<version>` to responses while the `expose_php`
    directive is on ([php.net, core ini directives](https://www.php.net/manual/en/ini.core.php#ini.expose-php)); this
    image sent it on each of a consumer's checks between 2026-08 and 2026-10. Read it from a response that was not served
-   from a CDN cache, and read the cache-status header to know. Behind Cloudflare the module bypasses the cache on
-   `wp-admin/*` and `wp-login.php` and caches `wp-content/*` (`modules/cloudflare/page-rules.tf`); the front page is
-   cached only where you added an HTML cache rule, so treat `cf-cache-status: HIT` as a cached answer. Behind Azure
-   Front Door the module's route caches every path except `wp-admin/` and `wp-login.php` (`modules/front-door/main.tf`,
-   the route's `cache` block and the `NoCacheAdmin` rule) and reports a cached answer as `x-cache: TCP_HIT` or
-   `TCP_REMOTE_HIT` ([Front Door caching](https://learn.microsoft.com/azure/frontdoor/front-door-caching)). A unique
-   query string avoids a cached answer on that route, whose cache key includes the query string:
+   from a CDN cache, and read the cache-status header to know rather than trust any rule. Behind Cloudflare the module
+   bypasses the cache on `wp-admin/*` and `wp-login.php` and caches `wp-content/*` (`modules/cloudflare/page-rules.tf`);
+   the front page is cached only where you added an HTML cache rule, so treat `cf-cache-status: HIT` as a cached
+   answer. Behind Azure Front Door the module's route caches every path with the query string in the cache key
+   (`modules/front-door/main.tf`, the route's `cache` block); the rule set that would exempt `wp-admin/` and
+   `wp-login.php` exists in the module but, as of v4.3.1, no route references it, so assume any path can be cached.
+   Front Door reports a cached answer as `x-cache: TCP_HIT` or `TCP_REMOTE_HIT`
+   ([Front Door caching](https://learn.microsoft.com/azure/frontdoor/front-door-caching)). A unique query string
+   avoids a cached answer on that route, and the header tells you whether it did:
 
    ```bash
    curl -sSI "https://<custom-domain>/?check=$(date +%s)" | grep -i -e '^x-powered-by' -e '^cf-cache-status' -e '^x-cache'
@@ -182,11 +194,12 @@ flowchart TD
    `PHP/8.4.27` within about four minutes of the apply on 2026-10-24, on nonprod and again on production.
 
 5. **Check the rest of the start:** the front page and the health-check path answer `200`, SSH or Kudu works, and the
-   staging slot, if there is one, is proved the same way on its own log rows. The slot's hostname is behind the same
-   origin restriction as the app (when `cdn_provider` is not `direct`, only the CDN's addresses reach it:
+   staging slot, if there is one, is proved the same way on its own log rows (step 3). The slot's hostname is behind
+   the same origin restriction as the app (when `cdn_provider` is not `direct`, only the CDN's addresses reach it:
    `modules/app-service/main.tf`, the slot's `ip_restriction` blocks), so for its PHP version use `php -v` over SSH to
    the slot, `az webapp ssh --resource-group <app-resource-group> --name <app-name> --slot staging`, which works
-   while SCM access is open (`scm_ip_restriction_default_action`, default `Allow`).
+   while SCM access is open (`scm_ip_restriction_default_action`, default `Allow`). That proves the PHP version, not
+   the build; the build is proved only by the slot's start line.
 
 ### Why you prove it after the start, every time
 
@@ -217,8 +230,9 @@ replaces, so a soak of hours is reasonable, where a change of series would need 
 `8.4_20261022.4.tuxprod` on nonprod for about four hours on 2026-10-24 before promoting it. Exit checks, all taken after
 the container start that the platform log proved:
 
-- the two proofs above still hold at the end of the soak (no newer `Creating container with image:` line for the app,
-  or for the slot where its rows are collected, names a different image, and `x-powered-by` is unchanged);
+- the two proofs above still hold at the end of the soak (no newer `Creating container with image:` line for any
+  worker of the app, or of the slot where its rows are collected, names a different image, and `x-powered-by` is
+  unchanged);
 - the front page, a logged-in `wp-admin` page and the health-check path answer `200`;
 - every scheduled job that ran in the window (WP-Cron, backups, any probe you run) is green;
 - `AppServiceHTTPLogs` since the start shows no rise in 5xx responses against the previous days;
@@ -236,6 +250,11 @@ builds dated 10-21, 10-22, 10-27 and 10-29 for each series), and each is a new i
 Set the previous **dated** tag you ran, the one your change record names, and apply. Then take the two proofs again:
 the first measurement above is a rollback case too. Rules:
 
+- **The previous pin is the vulnerable build.** For a security release, rolling back restores the PHP the release
+  fixed, so both proofs can pass on a site that is exposed again. If the fixed build itself misbehaves, prefer another
+  fixed build of the same series (the registry publishes several a week; read its `PHP_VERSION` first). If only the
+  unpatched build runs, treat the rollback as containment time: keep public traffic off the site, or behind the
+  CDN's WAF rules, until a fixed build runs, and say so in the change record.
 - **Never roll back across a PHP series** (for example from a dated `8.4` build to `8.3`): WordPress and its plugins
   have run on the newer series since the change, and a lower series is a downgrade of the runtime under live content.
   Roll back to the previous build of the same series.
@@ -260,9 +279,10 @@ have to notice the next release yourself. What to watch, with how fast each move
   `php.announce` list. The 2026-10-21 release was pre-announced on 2026-10-20 for 14:00 UTC, which is time to prepare
   the non-production change.
 - **The registry's tag list** (step 1 above), read with the configuration's `created` time and `PHP_VERSION`, not the
-  date in the tag. On 2026-10-21 the `_20261021.5` builds of all three series were created between 14:54Z and 14:55Z,
+  date in the tag. The `_20261021.5` images of all three series were built between 14:54Z and 14:55Z on 2026-10-21,
   within an hour of the 14:00 UTC release, with the fixed versions; 8.4 got a further build at 15:20Z and every series
-  another the next day (measured 2026-10-30).
+  another the next day (measured 2026-10-30). When each tag became visible on the registry was not measured: poll the
+  list, and expect a fixed build the same day or the next.
 - **The App Service team's blog** for the platform's own statements on a release.
 - **The series' support dates** on [php.net](https://www.php.net/supported-versions.php): a pinned build of a series that
   has left security support gets no fixed build at all, so plan the series change before that date.
@@ -273,8 +293,10 @@ release. A pinned site with no record is a site nobody is watching.
 ## Sources
 
 `modules/wordpress-site/variables.tf` (`wordpress_version`, `staging_slot_diagnostic_settings`, `app_service`),
-`modules/app-service/variables.tf` (`docker_image_tag`), `modules/app-service/main.tf` (`docker_image_name` on the app and
-the slot, `create_staging_slot`), `modules/front-door/main.tf` (the route's `cache` block and the `NoCacheAdmin` rule); the
+`modules/app-service/variables.tf` (`docker_image_tag`, `scm_ip_restriction_default_action`), `modules/app-service/main.tf`
+(`docker_image_name` on the app and the slot, `create_staging_slot`, the slot's `ip_restriction` blocks,
+`azurerm_monitor_autoscale_setting`), `modules/cloudflare/page-rules.tf`, `modules/front-door/main.tf` (the route's `cache`
+block and the unreferenced `caching` rule set); the
 [Image-tag policy](../operations/image-tag-policy.md) runbook; the php.net [news archive](https://www.php.net/archive/2026.php)
 (the three release entries, the security advisory and the pre-announcement of 2026-10-21, as linked above) and
 [core ini directives](https://www.php.net/manual/en/ini.core.php#ini.expose-php); the
