@@ -169,8 +169,8 @@ installed on every app of the environment. Its contract, with the reasons:
   and a restart keeps it. See [The kill switch](#the-kill-switch).
 
 The consumer's implementation is about 900 lines of PHP with a CLI test suite, delivered by a workflow that installs the
-file atomically, verifies its checksum, waits for the opcode cache and reads the result back. Whether a generic copy
-will be published is recorded [below](#publishing-decision).
+file atomically, verifies its checksum, waits for the opcode cache and reads the result back. It is not published; this
+page is the specification to build from (see [Publishing decision](#publishing-decision)).
 
 ## Rollout and rollback order
 
@@ -424,11 +424,14 @@ check refuses the administrator with a bad AUD. A sign-in check covers that.
 
 ## Publishing decision
 
-**Open.** The reference implementation (the must-use plugin, its test suite and its delivery workflow) lives in the
-consumer's private repository and is not published. This repository ships no plugin, no Access resources and no
-workflow for this pattern; it documents the design so that another adopter can build it. Whether a generic copy of the
-plugin will be published, as a separate repository or under this repository's examples, is the maintainers' decision
-and is recorded here when taken.
+**Not published; this page is the specification.** Decided by the maintainers on 2026-10-30. The reference
+implementation (the must-use plugin, its test suite and its delivery workflow) lives in the consumer's private repository
+and stays there. This repository ships no plugin, no Access resources and no workflow for this pattern, and takes on no
+PHP code: an origin token check is an authentication component, and publishing one means owning its security fixes,
+its tests and its releases, which is outside what a Terraform module repository maintains. An adopter builds the check
+from [The origin token check](#the-origin-token-check) and proves it with the [test matrix](#test-matrix). The
+decision can be revisited; a published copy, as a separate repository or under this repository's examples, would need
+its own issue, a generic rewrite with tests, and a licence note.
 
 ## Sources
 
