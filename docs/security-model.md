@@ -487,8 +487,10 @@ paths are general, not an access control:
   characteristic, see [WAF rules beyond what the CDN plan provides](#waf-rules-beyond-what-the-cdn-plan-provides)) and add skip rules for admin paths in the
   managed-rules phase (`modules/cloudflare/waf.tf:30-44`).
 
-A pattern for adding an identity-aware proxy at the edge and a token check at the origin is
-tracked in [issue #76](https://github.com/agenticcodingops/azure-wordpress/issues/76).
+A pattern for adding an identity-aware proxy at the edge and a token check at the origin, as one
+consumer rolled it out with Cloudflare Access, is described in
+[Protecting wp-admin with an edge identity proxy and an origin token check](patterns/wp-admin-protection.md)
+(issue [#76](https://github.com/agenticcodingops/azure-wordpress/issues/76)). The module itself is unchanged by it.
 
 ### WAF rules beyond what the CDN plan provides
 
