@@ -7,6 +7,11 @@ module runs Microsoft's `mcr.microsoft.com/appsvc/wordpress-debian-php` image on
 (`modules/app-service/main.tf`). The tag is one input: `wordpress_version` on `modules/wordpress-site`, passed to the
 app-service module as `docker_image_tag`. The name is historical.
 
+For the day the PHP project ships a security release and the floating tags have not moved, see
+[Taking a PHP security release with a dated image tag](../upgrading/php-security-release.md): it adds how to read a
+build's PHP version from the registry, the `x-powered-by` proof, the soak's exit checks and the security watch a dated pin
+puts on you. The steps below are the general procedure it builds on.
+
 ## What the tag is, and what the registry offers
 
 - **The tag is the PHP version, not a WordPress version** (`modules/wordpress-site/variables.tf`,
@@ -124,8 +129,9 @@ stateDiagram-v2
    `AppServiceHTTPLogs`, but the destination mode of a given workspace was not checked here.
 
    The messages must name `appsvc/wordpress-debian-php` with your tag. A different repository or an older tag is the
-   failure above. The query shape comes from the log categories the module enables; the exact message text can differ
-   by platform version.
+   failure above. The `Creating container with image` line is the one that proves a start; a `Pulling image` line alone
+   does not, because a pull can succeed without a container being created from it. The query shape comes from the log
+   categories the module enables; the exact message text can differ by platform version.
 6. **Check PHP inside the container:**
 
    ```bash
@@ -146,7 +152,8 @@ stateDiagram-v2
 ## Verify
 
 - `linuxFxVersion` shows the tag you set, on the app and on the slot.
-- The platform log shows the same image, and `php -v` shows the expected series.
+- The platform log's `Creating container with image` line shows the same image, and `php -v` shows the expected series
+  (for a security release, the expected patch level: [PHP security release](../upgrading/php-security-release.md)).
 - A re-plan reports no changes.
 
 ## Rollback
