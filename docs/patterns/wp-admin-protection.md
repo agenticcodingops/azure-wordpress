@@ -197,6 +197,14 @@ stateDiagram-v2
 **Forward, non-production first.** Each step is a change you can read in a plan, and the next starts only when the
 previous one's checks pass:
 
+0. **Close the direct-origin route first, or know that it is open.** Until the plugin is installed, the origin check
+   cannot help a fresh app: its installer and every admin script are reachable from another Cloudflare account's
+   Worker, past your zone's WAF rules and Access alike. Set `app_service.cdn_origin_header_name` and
+   `cdn_origin_header_values` so that the origin also requires a header only your zone adds
+   ([Security model](../security-model.md#binding-the-origin-to-one-cdn-account)), and prove it with a request from a
+   Cloudflare address that lacks the header, which must be refused, before you create an app that will hold content.
+   The consumer had not set it at the time and tracked it as its own item; its sites were installed headlessly and
+   the installer was never served.
 1. **The Access applications** for the non-production host, from their own Terraform root. Then the edge rows of the
    [test matrix](#test-matrix): the protected paths answer with a 302 to the team domain, `admin-ajax.php` does not.
 2. **The origin check, delivered in mode `off`.** Nothing changes; the same rows read the same.
@@ -332,7 +340,7 @@ its image plugin.
 | `//wp-admin/`, `/x/../wp-admin/`, `/%77p-login.php` | Normalised at the edge before Access ([URL normalization](https://developers.cloudflare.com/rules/normalization/)); measured matched on 2026-10-04 | Served | Keep URL normalization on; the origin check covers the rest |
 | `/wp-admin/admin-ajax.php/..%2F..%2Fwp-login.php` | Not matched: the prefix is the bypassed path | Executes `wp-login.php` | The exemption is by resolved script, never by URL prefix |
 | `/wp-admin/upgrade.php`, `/wp-admin/maint/repair.php` | Covered, under `/wp-admin` | Do not define `WP_ADMIN`; `upgrade.php?step=upgrade_db` runs the upgrader with no capability check | The origin check keys on the directory, not the constant |
-| `/wp-admin/install.php`, `setup-config.php` | Covered, under `/wp-admin`. The consumer also blocks them with a WAF custom rule in its own zone; the module ships no such rule, and custom rules run in the `http_request_firewall_custom` phase, before the Access check ([Phases list](https://developers.cloudflare.com/ruleset-engine/reference/phases-list/)) | Reachable on a fresh app, which has no plugin yet | Add and keep an installer rule (a custom rule blocking `http.request.uri.path` in `/wp-admin/install.php` and `/wp-admin/setup-config.php`); a fresh app has no check |
+| `/wp-admin/install.php`, `setup-config.php` | Covered, under `/wp-admin`. The consumer also blocks them with a WAF custom rule in its own zone; the module ships no such rule, and custom rules run in the `http_request_firewall_custom` phase, before the Access check ([Phases list](https://developers.cloudflare.com/ruleset-engine/reference/phases-list/)) | Reachable on a fresh app, which has no plugin yet, and on the direct-origin route neither the rule nor Access applies | Add and keep an installer rule (a custom rule blocking `http.request.uri.path` in `/wp-admin/install.php` and `/wp-admin/setup-config.php`) for the zone route, and close the direct-origin route (step 0) before a fresh app exists; install headlessly so the installer is never served |
 | `/wp-cron.php`, `/wp-json/…`, `/xmlrpc.php` | Not covered | Public, or closed by the image (`xmlrpc.php`) | Out of scope for this pattern |
 
 Port numbers and `#` fragments are not part of Access paths either ([Application paths](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/)).
@@ -390,11 +398,17 @@ check refuses the administrator with a bad AUD. A sign-in check covers that.
   Through the zone the `/wp-admin` application covers them; on the direct-origin route they stay reachable until the
   origin is bound to one CDN account.
 - A staging slot. With this module `app_service.extra_app_settings` reaches the slot too, and no Access application can
-  cover a slot that has no hostname. Choose: install the plugin on the app and the slot, and accept that the slot's
-  admin is reachable only through WP-CLI or the kill switch while `enforce` is set, or keep it off the slot (set the
-  slot's mode to `off` through `app_service.staging_app_settings_override`, which is merged last on the slot) and
-  re-run the in-container probe on the production hostname after every swap, because a swap moves the slot's content,
-  plugin file included or not, under the production hostname.
+  cover a slot that has no hostname. Choose: install the plugin on the app and the slot (the safer choice: a swap
+  then moves a protected deployment either way), and accept that the slot's admin is reachable only through WP-CLI
+  or the kill switch while `enforce` is set, or keep it off the slot (set the
+  slot's mode to `off` through `app_service.staging_app_settings_override`, which is merged last on the slot). With
+  different modes per slot, the mode setting **must** be in `app_service.extra_sticky_app_setting_names`: App
+  Service swaps app settings with the slot unless they are "configured to stick to a slot"
+  ([Set up staging environments](https://learn.microsoft.com/azure/app-service/deploy-staging-slots#which-settings-are-swapped)),
+  and the module pins only its own names plus that list (`modules/app-service/main.tf`, `sticky_settings`), so an
+  unpinned `off` would move into production at the next swap and turn the check off there. Either way, re-run the
+  in-container probe on the production hostname after every swap, because a swap moves the slot's content, plugin
+  file included or not, under the production hostname.
 - A site whose visitors use `wp-login.php` flows (protected posts, privacy-request confirmations, registration).
 - `cdn_provider = "azure_front_door"`: the pattern's edge half is Cloudflare-specific, and the module's Front Door
   route has caching enabled on admin paths (above). An identity-aware proxy for Front Door is a different design and
