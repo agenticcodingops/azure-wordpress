@@ -15,8 +15,9 @@ Read every page between the release you are on and the release you are moving to
 | 4.1.0 to 4.1.1 | [4.1.0 to 4.1.1](v4.1.0-to-v4.1.1.md) | v4.1.1 |
 | 4.1.1 to 4.3.0 | [4.1.1 to 4.3.0](v4.1.1-to-v4.3.0.md) | v4.2.0, v4.3.0 |
 | MySQL 8.0 to 8.4 | [MySQL 8.0 to 8.4](mysql-8.0-to-8.4.md) | input added in v4.1.0 |
+| PHP security release | [Taking a PHP security release with a dated image tag](php-security-release.md) | any release: `wordpress_version` |
 
-The v2 to v3 page has the Key Vault lifecycle diagram. Patch, minor, and major guarantees stay in the repository README under [Version guarantees](../../README.md#version-guarantees).
+The v2 to v3 page has the Key Vault lifecycle diagram. The PHP security release page is not a module upgrade: it covers the day the PHP project ships a security fix and the floating image tags have not moved, with the registry reads, the proof after the container start, the soak and the rollback. Patch, minor, and major guarantees stay in the repository README under [Version guarantees](../../README.md#version-guarantees).
 
 ## How to upgrade
 
