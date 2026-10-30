@@ -405,18 +405,22 @@ check refuses the administrator with a bad AUD. A sign-in check covers that.
   Through the zone the `/wp-admin` application covers them; on the direct-origin route they stay reachable until the
   origin is bound to one CDN account.
 - A staging slot. With this module `app_service.extra_app_settings` reaches the slot too, and no Access application can
-  cover a slot that has no hostname. Choose: install the plugin on the app and the slot (the safer choice: a swap
-  then moves a protected deployment either way), and accept that the slot's admin is reachable only through WP-CLI
-  over SCM while `enforce` is set (never the kill switch there: with no application in front of the slot it would
-  open the slot's admin to anything that reaches it), or keep it off the slot (set the
-  slot's mode to `off` through `app_service.staging_app_settings_override`, which is merged last on the slot). With
-  different modes per slot, the mode setting **must** be in `app_service.extra_sticky_app_setting_names`: App
-  Service swaps app settings with the slot unless they are "configured to stick to a slot"
+  cover a slot that has no hostname. Keep two things apart: the plugin file and the mode. The file is part of the
+  deployed content, and a swap moves the slot's content under the production hostname
+  ([Swap operation steps](https://learn.microsoft.com/azure/app-service/deploy-staging-slots#swap-operation-steps)),
+  so a slot deployed without the file would put production on an unprotected deployment at the next swap, with
+  `enforce` still set and nothing enforcing it, and the post-swap probe would find that only after protection was
+  lost. The file is therefore in every deployment that can be swapped, slot included; never omit it to make the slot
+  usable. The mode is the per-slot choice: either keep `enforce` on the slot and accept that the slot's admin is
+  reachable only through WP-CLI over SCM (never the kill switch there: with no application in front of the slot it
+  would open the slot's admin to anything that reaches it), or set the slot's mode to `off` through
+  `app_service.staging_app_settings_override`, which is merged last on the slot. With different modes per slot, the
+  mode setting **must** be in `app_service.extra_sticky_app_setting_names`: App Service swaps app settings with the
+  slot unless they are "configured to stick to a slot"
   ([Set up staging environments](https://learn.microsoft.com/azure/app-service/deploy-staging-slots#which-settings-are-swapped)),
   and the module pins only its own names plus that list (`modules/app-service/main.tf`, `sticky_settings`), so an
   unpinned `off` would move into production at the next swap and turn the check off there. Either way, re-run the
-  in-container probe on the production hostname after every swap, because a swap moves the slot's content, plugin
-  file included or not, under the production hostname.
+  in-container probe on the production hostname after every swap.
 - A site whose visitors use `wp-login.php` flows (protected posts, privacy-request confirmations, registration).
 - `cdn_provider = "azure_front_door"`: the pattern's edge half is Cloudflare-specific, and the module's Front Door
   route has caching enabled on admin paths (above). An identity-aware proxy for Front Door is a different design and
