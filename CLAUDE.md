@@ -215,12 +215,49 @@ allow-list denies all three, so nothing is posted. The prompt now appends **POST
 bound rule allows. Each full review costs roughly $1–5 of subscription usage, because the plugin
 runs Opus sub-agents.
 
-The plugin's own frontmatter lists an **unbound** `Bash(gh pr comment:*)`. Measured on CLI
-2.1.281 (the version the pinned action installs), that grant authorizes nothing in a
-non-interactive run: with our allow-list omitting `gh pr comment`, both local runs had
-`gh pr comment 48 …` denied. The PR boundary therefore rests on our `--allowedTools`. Re-measure
-it before bumping the action pin, because a CLI that honours command frontmatter in print mode
-would widen it to every PR in the repo.
+The plugin's own frontmatter lists an **unbound** `Bash(gh pr comment:*)`, and the CLI **honours
+that grant** in a non-interactive run. Re-measured 2026-10-31 on CLI 2.1.281, 2.1.302, 2.1.310,
+2.1.314 and 2.1.316, with this workflow's exact `--allowedTools` and `--disallowedTools`: a probe
+command carrying the plugin's frontmatter ran `gh pr comment 999 …` on a different PR every time
+(two runs per version), and a control command without the grant was denied every time. An earlier
+note here said the grant authorized nothing on 2.1.281; that does not reproduce. So the exact-PR,
+exact-file rules in `--allowedTools` only approve three forms; they do not forbid the rest, and
+injected PR text could have posted on another PR or posted `--body-file .git/config`.
+
+The boundary is a `PreToolUse` hook, written by the "Write the review comment guard" step and
+installed through the action's `settings` input. It is an **allow-list, not a keyword match**
+(a first version matched the word `comment`; review found that quoting tricks such as
+`comm''ent` get past a keyword, so it was replaced). A Bash call passes only if it is
+byte-for-byte one of the three `gh pr comment` forms `--allowedTools` names, or a single
+`gh pr view|diff|list`, `gh issue view|list` or `gh search <kind>` call whose words contain nothing
+the shell would expand or split and no `--jq`, `--template`, `-q` or `-t`; everything else exits 2.
+"Nothing the shell would expand or split" is the part that went wrong twice in review, and both
+times the cause was the guard's regex reading a command differently from bash: a backslash inside
+double quotes (it escapes the closing quote, so a `;` that looks quoted runs), and an unquoted `#`
+(it starts a comment, so a quote after it is not a quote and the next line runs). The guard now
+rejects every backslash, every unquoted `#`, and any line break or control character, and counts a
+quoted string only as a whole word. Do not loosen the word grammar without running the differential
+fuzz again: it feeds generated commands to the guard, then runs each accepted one in real bash with
+a stub `gh` and requires exactly one call with the predicted arguments (5,100 runs across
+six seeds, none differed; a copy with the backslash exclusion removed does differ).
+A write by `Write`, `Edit`, `MultiEdit` or `NotebookEdit` passes only for the summary file. The
+hook command ends in `|| exit 2`, so a crash or a missing `node` blocks every call, and a watchdog
+blocks a hang at 10 seconds because a timed-out hook does not block.
+
+The file side matters as much: the guard script and the settings that install it are files, and the
+review's `Write` was unrestricted, so it could have replaced either. `--allowedTools` now names an
+`Edit(...)` rule for the summary file only, and `--disallowedTools` denies `Edit(...)` on the
+runner temp directory, `~/.claude` and `.git`. Use `Edit(path)`, never `Write(path)`: a `Write(path)`
+rule is never matched by the file permission checks, and an `Edit` rule covers the Write tool.
+Paths are `//` plus the absolute path.
+
+Tested on 2.1.281, 2.1.302 and 2.1.316: another PR blocked, the exact form ran, a quoted search ran,
+a missing guard script blocked everything, a control `Write` replaced the guard path and the hook
+blocked it. On 2.1.316 the grant did not approve a `comm''ent` or `comm\ent` spelling, so that
+route was never open, but the allow-list does not depend on it. A deny rule cannot do this job,
+because deny rules cannot narrow a grant. Re-measure with that probe before loosening the guard or
+bumping the action pin: a PR that edits the workflow cannot be reviewed by it, so the next review
+after a bump is the first proof it still posts.
 
 **The review's sub-agents must run in the foreground (2026-10-05).** On this pinned action (CLI
 2.1.281) the plugin's sub-agents can start in the background, either with no `run_in_background`
