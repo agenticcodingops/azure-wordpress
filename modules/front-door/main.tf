@@ -271,9 +271,9 @@ resource "azurerm_cdn_frontdoor_rule" "cache_uploads" {
   actions {
     route_configuration_override {
       caching {
-        behaviour              = "OverrideAlways"
-        duration               = "${format("%02d", floor(var.cache_uploads_minutes / 60))}:${format("%02d", var.cache_uploads_minutes % 60)}:00"
-        compression_enabled    = true
+        behaviour           = "OverrideAlways"
+        duration            = "${format("%02d", floor(var.cache_uploads_minutes / 60))}:${format("%02d", var.cache_uploads_minutes % 60)}:00"
+        compression_enabled = true
         # The query string stays in the cache key: page builders write generated CSS under
         # wp-content/uploads/ and bust it with ?ver=, and media URLs rarely carry one, so
         # ignoring it would serve stale generated files for the whole TTL and save little.
