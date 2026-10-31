@@ -65,8 +65,16 @@ def review_settings():
         if line.strip() and len(line) - len(line.lstrip()) <= key_indent:
             break
         body.append(line)
-    text = re.sub(r"\$\{\{[^}]*\}\}", "X", textwrap.dedent("\n".join(body)))
-    return json.loads(text)
+    # The workflow expressions are left as written: inside the JSON strings they are plain text, and the tests
+    # compare them exactly so the guard cannot be wired to the wrong pull request, repository or path.
+    return json.loads(textwrap.dedent("\n".join(body)))
+
+
+# What the hook runs. The pull request number, repository and workspace are the ones of the run being reviewed.
+EXPECTED_HOOK_COMMAND = (
+    "node '${{ runner.temp }}/review-comment-guard.js' ${{ github.event.pull_request.number }} "
+    "${{ github.repository }} '${{ github.workspace }}' || exit 2"
+)
 
 
 class GuardTestCase(unittest.TestCase):
@@ -126,10 +134,15 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertEqual(self.hook_entry()["matcher"], "*")
 
     def test_the_matcher_and_the_guard_command_are_on_the_same_entry(self):
-        hooks = self.hook_entry()["hooks"]
+        entry = self.hook_entry()
+        self.assertEqual(set(entry), {"matcher", "hooks"})
+        hooks = entry["hooks"]
         self.assertEqual(len(hooks), 1)
+        # Only these fields. A hook that runs in the background ("async", "asyncRewake") cannot block a tool call,
+        # so the guard would stop enforcing anything; any field not named here is refused.
+        self.assertEqual(set(hooks[0]), {"type", "command", "timeout"})
         self.assertEqual(hooks[0]["type"], "command")
-        self.assertRegex(hooks[0]["command"], r"^node '[^']*review-comment-guard\.js' \S+ \S+ '[^']*' \|\| exit 2$")
+        self.assertEqual(hooks[0]["command"], EXPECTED_HOOK_COMMAND)
 
     def test_settings_from_the_checkout_cannot_turn_the_hook_off(self):
         # A pull request can add .claude/settings.json with {"disableAllHooks": true}; measured on CLI 2.1.316, a

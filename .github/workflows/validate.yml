@@ -116,6 +116,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job runs repository-controlled Python and JavaScript and needs no git credentials after checkout.
+          persist-credentials: false
 
       - name: Test the review comment guard
         run: python3 -m unittest discover -s scripts/tests -p 'test_review_comment_guard.py' -v
