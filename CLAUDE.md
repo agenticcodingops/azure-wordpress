@@ -215,12 +215,25 @@ allow-list denies all three, so nothing is posted. The prompt now appends **POST
 bound rule allows. Each full review costs roughly $1–5 of subscription usage, because the plugin
 runs Opus sub-agents.
 
-The plugin's own frontmatter lists an **unbound** `Bash(gh pr comment:*)`. Measured on CLI
-2.1.281 (the version the pinned action installs), that grant authorizes nothing in a
-non-interactive run: with our allow-list omitting `gh pr comment`, both local runs had
-`gh pr comment 48 …` denied. The PR boundary therefore rests on our `--allowedTools`. Re-measure
-it before bumping the action pin, because a CLI that honours command frontmatter in print mode
-would widen it to every PR in the repo.
+The plugin's own frontmatter lists an **unbound** `Bash(gh pr comment:*)`, and the CLI **honours
+that grant** in a non-interactive run. Re-measured 2026-10-31 on CLI 2.1.281, 2.1.302, 2.1.310,
+2.1.314 and 2.1.316, with this workflow's exact `--allowedTools` and `--disallowedTools`: a probe
+command carrying the plugin's frontmatter ran `gh pr comment 999 …` on a different PR every time
+(two runs per version), and a control command without the grant was denied every time. An earlier
+note here said the grant authorized nothing on 2.1.281; that does not reproduce. So the exact-PR,
+exact-file rules in `--allowedTools` only approve three forms; they do not forbid the rest, and
+injected PR text could have posted on another PR or posted `--body-file .git/config`.
+
+The boundary is a `PreToolUse` hook, written by the "Write the review comment guard" step and
+installed through the action's `settings` input. It lets a `gh pr comment` through only when the
+command is byte-for-byte one of the three forms `--allowedTools` names, and blocks (exit 2) any
+other command that mentions it. The hook command ends in `|| exit 2`, so a crash or a missing
+`node` blocks every Bash call, and a watchdog blocks a hang at 10 seconds because a timed-out hook
+does not block. Tested on 2.1.281, 2.1.302 and 2.1.316: another PR blocked, the exact form ran,
+a missing guard script blocked everything, a benign `gh pr view` still passed. A deny rule cannot
+do this job, because deny rules cannot narrow a grant. Re-measure with that probe before loosening
+the guard or bumping the action pin: a PR that edits the workflow cannot be reviewed by it, so
+the next review after a bump is the first proof it still posts.
 
 **The review's sub-agents must run in the foreground (2026-10-05).** On this pinned action (CLI
 2.1.281) the plugin's sub-agents can start in the background, either with no `run_in_background`

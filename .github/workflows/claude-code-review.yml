@@ -46,12 +46,70 @@ jobs:
       - name: Clear the review summary path
         run: rm -rf -- "$GITHUB_WORKSPACE/.review-summary.md"
 
+      # The plugin's frontmatter grants `Bash(gh pr comment:*)`, with any arguments, and the CLI
+      # honours that grant in a non-interactive run: measured on 2.1.281, 2.1.302, 2.1.310, 2.1.314
+      # and 2.1.316, with this job's --allowedTools and --disallowedTools in force, and a control
+      # command without the grant was denied each time. So the exact-PR, exact-file rules in
+      # claude_args do not bind that command: injected PR text could post on another PR, or post
+      # `--body-file .git/config`. A deny rule cannot narrow a grant, so this hook does. It runs
+      # before every Bash call (the hook is in `settings` below) and lets `gh pr comment` through
+      # only when the command is byte-for-byte one of the three forms claude_args names, and
+      # blocks any other command that mentions it. Exit 2 blocks, and stderr tells the model why.
+      # The hook command adds `|| exit 2`, so a crash or a missing node blocks every Bash call.
+      # A hook that times out does not block, so a watchdog armed on the script's first line
+      # blocks at 10 seconds, well inside the hook's 30-second timeout.
+      - name: Write the review comment guard
+        run: |
+          cat > "$RUNNER_TEMP/review-comment-guard.js" <<'GUARD'
+          setTimeout(() => block("the guard timed out."), 10000);
+
+          function block(why) {
+            process.stderr.write("Blocked: " + why + "\n");
+            process.exit(2);
+          }
+
+          const [pr, repo, ws] = process.argv.slice(2);
+          if (!/^[0-9]+$/.test(pr || "") || !/^[\w.-]+\/[\w.-]+$/.test(repo || "") || !ws) {
+            block("the guard was started without its arguments.");
+          }
+
+          let raw = "";
+          process.stdin.setEncoding("utf8");
+          process.stdin.on("data", (chunk) => (raw += chunk));
+          process.stdin.on("end", () => {
+            let tool;
+            let command;
+            try {
+              const event = JSON.parse(raw);
+              tool = event.tool_name;
+              command = (event.tool_input || {}).command;
+            } catch (e) {
+              block("the hook input could not be read.");
+            }
+            if (tool !== "Bash") process.exit(0);
+            if (typeof command !== "string") block("a Bash call without a command.");
+
+            const file = ws + "/.review-summary.md";
+            const allowed = [
+              "gh pr comment " + pr + " --repo " + repo + " --body-file " + file,
+              "gh pr comment " + pr + " --body-file " + file,
+              "gh pr comment https://github.com/" + repo + "/pull/" + pr + " --body-file " + file,
+            ];
+            if (allowed.includes(command)) process.exit(0);
+            if (/\bgh\b[\s\S]*\bpr\b[\s\S]*\bcomment\b/i.test(command)) {
+              block("the only `gh pr comment` allowed is on PR #" + pr + " with --body-file " + file +
+                ", as exactly `gh pr comment " + pr + " --repo " + repo + " --body-file " + file + "`.");
+            }
+            process.exit(0);
+          });
+          GUARD
+          node --check "$RUNNER_TEMP/review-comment-guard.js"
+
       - name: Run Claude Code Review
         id: claude-review
-        # The plugin's frontmatter grants an unbound `Bash(gh pr comment:*)`. On the CLI this
-        # version installs (2.1.281) that grant authorizes nothing in a non-interactive run, so
-        # the PR boundary rests on --allowedTools below. Re-measure it before bumping this pin:
-        # a CLI that honours the plugin's grant would let a review post on any PR in the repo.
+        # Re-measure before bumping this pin, and before loosening the guard step above: the
+        # plugin's `gh pr comment` grant is honoured on every CLI version measured, so the
+        # PR boundary rests on that guard, not on --allowedTools.
         uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d # v1.0.266
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -70,10 +128,25 @@ jobs:
           # docs/configuration.md, "Custom Environment Variables", names `settings` `env`.
           # The action merges this into ~/.claude/settings.json before it installs the
           # plugin. The POSTING RULES ask for the foreground too, as a second layer.
+          # The same input carries the comment guard written above, as a PreToolUse hook on Bash.
           settings: |
             {
               "env": {
                 "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"
+              },
+              "hooks": {
+                "PreToolUse": [
+                  {
+                    "matcher": "Bash",
+                    "hooks": [
+                      {
+                        "type": "command",
+                        "timeout": 30,
+                        "command": "node '${{ runner.temp }}/review-comment-guard.js' ${{ github.event.pull_request.number }} ${{ github.repository }} '${{ github.workspace }}' || exit 2"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           # The action's own token is in GH_TOKEN while the review runs, so text in a PR could
@@ -107,10 +180,11 @@ jobs:
             and never use --jq, -q, --template or -t with gh.
             Run every sub-agent in the foreground: if the Agent tool takes run_in_background, pass false, and never end your turn while a sub-agent is still running.
           # The plugin's own allowed-tools list plus Write (for the --body-file), so its gh and
-          # inline-comment calls are not denied. `gh pr comment` is bound to this PR (by number
-          # or URL), as the inline-comment tool already is, so injected PR text cannot make the
-          # review post on another PR.
-          # It is also bound to one body file, with exact rules and no wildcard. The review action
+          # inline-comment calls are not denied. `gh pr comment` is named here by this PR (by
+          # number or URL) and one body file, with exact rules and no wildcard. These rules only
+          # approve those forms; the plugin's own grant approves every other `gh pr comment`, so
+          # the guard step above is what stops one. The reasoning for the exact rules still holds
+          # for the guard, which allows the same three forms. The review action
           # puts its own token in this checkout's .git/config and in GH_TOKEN, and only inline
           # comments go through its token redaction, so a prefix rule would let injected PR text
           # post `--body-file .git/config` or `--body-file /proc/self/environ`. The Read deny keeps
