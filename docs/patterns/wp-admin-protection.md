@@ -249,12 +249,17 @@ then arrive without a token and the check refuses them.
 **What the consumer measured and what it did not.** On the non-production host the consumer installed the check
 `off` first (2026-09-28), then created the Access applications and set `report` (2026-10-03), then `enforce`
 (2026-10-04), so steps 1 and 2 above ran in the other order there and no edge-only window existed. Production ran
-the four steps in the order above on 2026-10-05, with the matrix after each switch. The kill switch's effect has not
-been measured on a live site: its branch passes the plugin's CLI tests, and what was measured on the mount is only
-that the PHP-FPM user can create the file. **The back-out path, kill switch and durable mode change included, has not
-been rehearsed on a non-production site**, and no tested procedure exists yet for removing an application past
-`prevent_destroy`: both are open items on the consumer's side. Until a rehearsal is recorded, treat the back-out steps
-above as the design, not as measured.
+the four steps in the order above on 2026-10-05, with the matrix after each switch. **The kill switch was rehearsed on
+the non-production site on 2026-10-31, in `enforce` with no mode change.** With the file absent, the in-container probe
+answered the 403 marker and logged `decision=refused`; with it present, the login form and `decision=kill-switch`; once
+cleared, the 403 again (the switch existed for under two minutes), and a status read before and after showed it absent.
+WP-CLI over SSH listed the administrator with no edge involved, and a sign-in through the second login method, then the
+WordPress form, reached the dashboard. The rehearsal also found two things, now in [Break-glass](#break-glass): the
+WordPress password had reverted to its bootstrap value, which a database restore from before the rotation would explain
+(the consumer could not establish which of its restores did it), and the site's own password-reset request is accepted
+while nothing is sent, because no mail relay is configured. **Not rehearsed, because outside the rehearsal's scope:** the
+durable back-out through a settings change, and removing an application past `prevent_destroy`, for which no tested
+procedure exists yet. Treat those two steps as the design, not as measured.
 
 ## The kill switch
 
@@ -368,8 +373,19 @@ Port numbers and `#` fragments are not part of Access paths either ([Application
 - **SSH or SCM is unavailable while the check enforces:** the kill switch is out of reach. Change the mode setting to
   `off` or `report` through your deployment path (Terraform, or the portal as a recorded exception), accept the
   container restart, and run the in-container probe once SSH is back. The consumer met this case once, when an image
-  change crash-looped the SCM sidecar.
-- **Locked out of WordPress itself:** reset the password with WP-CLI over SSH.
+  change crash-looped the SCM sidecar. This durable route was not rehearsed (see the measured-versus-design paragraph
+  under [Rollout and rollback order](#rollout-and-rollback-order)).
+- **Locked out of WordPress itself,** at the password prompt (a second factor is a separate matter):
+  1. Try the first administrator password, the one set at install or first deployment, from wherever your deployment
+     keeps it (a vault secret or Terraform state). A database restored from a dump taken before you rotated it brings
+     that password back; the consumer met this on 2026-10-31, weeks after rollbacks of the same site, and could not
+     tell which restore had done it. If it logs in, rotate again at once in Profile: it is a retired credential.
+  2. Otherwise reset it with WP-CLI over SSH. On this image, load the app settings first (`. /etc/profile`), then
+     `wp user update <login> --prompt=user_pass --path=/home/site/wwwroot --allow-root`; the prompt keeps the password
+     out of shell history. On production, apply your own approval rules.
+  3. Do not wait for WordPress's own "Lost your password" mail. It works only on a site with an outbound relay
+     ([Outbound Email](../../README.md#outbound-email-smtp-relay)); without one the page answers "Check your email"
+     and nothing is sent, as on the consumer's site. The link is also behind Access, like the rest of `wp-login.php`.
 - **On the way back,** the order above: check off before application removed.
 
 ## Test matrix
@@ -454,5 +470,5 @@ source: `wp-admin/load-scripts.php` and `wp-admin/load-styles.php`. This reposit
 `modules/cloudflare/page-rules.tf`, `modules/front-door/main.tf`, `modules/app-service/main.tf` (the origin IP
 restrictions and the app-settings merge on the app and the slot) and `modules/wordpress-site/variables.tf`
 (`app_service.extra_app_settings`, `extra_secret_app_settings`, `app_service.staging_app_settings_override`,
-`cloudflare.enable_page_rules`). One consumer's design record, must-use plugin, runbook and rollout evidence of
-2026-09-26 to 2026-10-05, as dated in the text.
+`cloudflare.enable_page_rules`). One consumer's design record, must-use plugin, runbook, rollout evidence and
+back-out rehearsal of 2026-09-26 to 2026-10-31, as dated in the text.
