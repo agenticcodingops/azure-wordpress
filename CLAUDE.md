@@ -225,15 +225,30 @@ exact-file rules in `--allowedTools` only approve three forms; they do not forbi
 injected PR text could have posted on another PR or posted `--body-file .git/config`.
 
 The boundary is a `PreToolUse` hook, written by the "Write the review comment guard" step and
-installed through the action's `settings` input. It lets a `gh pr comment` through only when the
-command is byte-for-byte one of the three forms `--allowedTools` names, and blocks (exit 2) any
-other command that mentions it. The hook command ends in `|| exit 2`, so a crash or a missing
-`node` blocks every Bash call, and a watchdog blocks a hang at 10 seconds because a timed-out hook
-does not block. Tested on 2.1.281, 2.1.302 and 2.1.316: another PR blocked, the exact form ran,
-a missing guard script blocked everything, a benign `gh pr view` still passed. A deny rule cannot
-do this job, because deny rules cannot narrow a grant. Re-measure with that probe before loosening
-the guard or bumping the action pin: a PR that edits the workflow cannot be reviewed by it, so
-the next review after a bump is the first proof it still posts.
+installed through the action's `settings` input. It is an **allow-list, not a keyword match**
+(a first version matched the word `comment`; review found that quoting tricks such as
+`comm''ent` get past a keyword, so it was replaced). A Bash call passes only if it is
+byte-for-byte one of the three `gh pr comment` forms `--allowedTools` names, or a single
+`gh pr view|diff|list`, `gh issue view|list` or `gh search <kind>` call whose words contain nothing
+the shell would expand or split and no `--jq`, `--template`, `-q` or `-t`; everything else exits 2.
+A write by `Write`, `Edit`, `MultiEdit` or `NotebookEdit` passes only for the summary file. The
+hook command ends in `|| exit 2`, so a crash or a missing `node` blocks every call, and a watchdog
+blocks a hang at 10 seconds because a timed-out hook does not block.
+
+The file side matters as much: the guard script and the settings that install it are files, and the
+review's `Write` was unrestricted, so it could have replaced either. `--allowedTools` now names an
+`Edit(...)` rule for the summary file only, and `--disallowedTools` denies `Edit(...)` on the
+runner temp directory, `~/.claude` and `.git`. Use `Edit(path)`, never `Write(path)`: a `Write(path)`
+rule is never matched by the file permission checks, and an `Edit` rule covers the Write tool.
+Paths are `//` plus the absolute path.
+
+Tested on 2.1.281, 2.1.302 and 2.1.316: another PR blocked, the exact form ran, a quoted search ran,
+a missing guard script blocked everything, a control `Write` replaced the guard path and the hook
+blocked it. On 2.1.316 the grant did not approve a `comm''ent` or `comm\ent` spelling, so that
+route was never open, but the allow-list does not depend on it. A deny rule cannot do this job,
+because deny rules cannot narrow a grant. Re-measure with that probe before loosening the guard or
+bumping the action pin: a PR that edits the workflow cannot be reviewed by it, so the next review
+after a bump is the first proof it still posts.
 
 **The review's sub-agents must run in the foreground (2026-10-05).** On this pinned action (CLI
 2.1.281) the plugin's sub-agents can start in the background, either with no `run_in_background`
