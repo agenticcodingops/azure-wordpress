@@ -227,8 +227,9 @@ injected PR text could have posted on another PR or posted `--body-file .git/con
 The boundary is a `PreToolUse` hook, written by the "Write the review comment guard" step and
 installed through the action's `settings` input. It is an **allow-list, not a keyword match**
 (a first version matched the word `comment`; review found that quoting tricks such as
-`comm''ent` get past a keyword, so it was replaced). A Bash call passes only if it is
-byte-for-byte one of the three `gh pr comment` forms `--allowedTools` names, or a single
+`comm''ent` get past a keyword, so it was replaced). A shell call (`Bash`, `Monitor` or
+`PowerShell`) passes only if it is byte-for-byte one of the three `gh pr comment` forms
+`--allowedTools` names, or a single
 `gh pr view|diff|list`, `gh issue view|list` or `gh search <kind>` call whose words contain nothing
 the shell would expand or split and no `--jq`, `--template`, `-q` or `-t`; everything else exits 2.
 "Nothing the shell would expand or split" is the part that went wrong twice in review, and both
@@ -250,6 +251,31 @@ review's `Write` was unrestricted, so it could have replaced either. `--allowedT
 runner temp directory, `~/.claude` and `.git`. Use `Edit(path)`, never `Write(path)`: a `Write(path)`
 rule is never matched by the file permission checks, and an `Edit` rule covers the Write tool.
 Paths are `//` plus the absolute path.
+
+Two more ways round the hook were found after it merged, and the second is why the matcher is `*`:
+
+- **Settings from the checkout.** The review runs in the pull request's head. A `.claude/settings.json`
+  there with `{"disableAllHooks": true}` stopped a loaded hook (measured on 2.1.316: the other-PR
+  comment ran), because the action loads user, project and local settings by default and the project
+  ones win. `claude_args` now passes `--setting-sources user`; the action supports it for exactly
+  this reason (`parse-sdk-options.ts`, "to avoid in-repo configs"), and with it the same file changed
+  nothing. The hook lives in the user settings, which the `settings` input writes.
+- **Other tools that run commands.** `Monitor` runs a shell command under the same permission rules
+  as `Bash`, so the plugin's `Bash(gh pr comment:*)` grant approves it. What a hook is told differs
+  by CLI version: `Monitor` reaches it as `Bash` on 2.1.316 and as `Monitor` on 2.1.302, where a
+  Bash-only matcher let a `Monitor` comment on another PR run. The matcher is therefore `*`, and the
+  guard is default-deny: it passes reading and searching the checkout (`Read`, `Grep`, `Glob`, `LS`),
+  sub-agents, task tracking and `ToolSearch`, and the inline-comment tool, applies the shell grammar
+  to `Bash`, `Monitor` and `PowerShell`, restricts file writes to the summary, and blocks every other
+  tool, so a tool added to the CLI later fails closed. If a review loses a tool it needs, add it to
+  `NO_IO` in the guard and to the test table; do not widen the matcher back to a list.
+
+The test (`scripts/tests/test_review_comment_guard.py`, run by the `Review guard` job) extracts the
+guard from the workflow, so the guard that ships is the one that is tested. It checks the hook wiring,
+runs the decision table through the script, and runs the differential against real bash. It fails the
+build if any of these is put back: a backslash allowed in double quotes, an unquoted `#`, line breaks,
+a fail-open hook command, a narrow matcher, a missing `--setting-sources user`, a default-allow guard,
+`Monitor` or `PowerShell` dropped from the shell tools, a bare `Write` allow.
 
 Tested on 2.1.281, 2.1.302 and 2.1.316: another PR blocked, the exact form ran, a quoted search ran,
 a missing guard script blocked everything, a control `Write` replaced the guard path and the hook
