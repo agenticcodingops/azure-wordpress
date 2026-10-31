@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -51,6 +52,21 @@ def extract_guard(text):
     indent = match.group(2)
     lines = match.group(1).split("\n")
     return "\n".join(line[len(indent):] if line.startswith(indent) else line for line in lines) + "\n"
+
+
+def review_settings():
+    """The review step's `settings` input, parsed: the JSON the action writes into the user settings."""
+    step = TEXT.index("id: claude-review")
+    lines = TEXT[step:].split("\n")
+    start = next(i for i, line in enumerate(lines) if re.match(r"\s+settings:\s*\|\s*$", line))
+    key_indent = len(lines[start]) - len(lines[start].lstrip())
+    body = []
+    for line in lines[start + 1:]:
+        if line.strip() and len(line) - len(line.lstrip()) <= key_indent:
+            break
+        body.append(line)
+    text = re.sub(r"\$\{\{[^}]*\}\}", "X", textwrap.dedent("\n".join(body)))
+    return json.loads(text)
 
 
 class GuardTestCase(unittest.TestCase):
@@ -96,28 +112,37 @@ class WorkflowWiringTests(unittest.TestCase):
             done = subprocess.run(["node", "--check", path], capture_output=True, text=True, check=False)
             self.assertEqual(done.returncode, 0, done.stderr)
 
+    def hook_entry(self):
+        settings = review_settings()
+        # PreToolUse runs before the call. A PostToolUse hook would run the guard after the command had run.
+        self.assertEqual(set(settings.get("hooks", {})), {"PreToolUse"}, "the guard must be a PreToolUse hook")
+        entries = settings["hooks"]["PreToolUse"]
+        self.assertEqual(len(entries), 1, "expected exactly one PreToolUse entry")
+        return entries[0]
+
     def test_the_hook_sees_every_tool(self):
         # Shell tools other than Bash (Monitor, PowerShell) reach a hook under a name that depends on the CLI
         # version, and a tool added later would not be on any list. The guard blocks what it does not know.
-        match = re.search(r'"matcher":\s*"([^"]+)"', TEXT)
-        self.assertIsNotNone(match, "no PreToolUse matcher found")
-        self.assertEqual(match.group(1), "*")
+        self.assertEqual(self.hook_entry()["matcher"], "*")
+
+    def test_the_matcher_and_the_guard_command_are_on_the_same_entry(self):
+        hooks = self.hook_entry()["hooks"]
+        self.assertEqual(len(hooks), 1)
+        self.assertEqual(hooks[0]["type"], "command")
+        self.assertRegex(hooks[0]["command"], r"^node '[^']*review-comment-guard\.js' \S+ \S+ '[^']*' \|\| exit 2$")
 
     def test_settings_from_the_checkout_cannot_turn_the_hook_off(self):
         # A pull request can add .claude/settings.json with {"disableAllHooks": true}; measured on CLI 2.1.316, a
         # project setting like that stopped a loaded hook. The action loads user, project and local settings
         # unless told otherwise, and the hook is installed in the user settings.
-        self.assertRegex(TEXT, r"--setting-sources user\s*\n")
+        self.assertRegex(TEXT, r"(?m)^\s+--setting-sources user\s*$")  # an argument line, not a comment
 
     def test_the_hook_fails_closed(self):
-        command = re.search(r'"command":\s*"(node [^"]*review-comment-guard\.js[^"]*)"', TEXT)
-        self.assertIsNotNone(command, "the hook command was not found")
-        self.assertTrue(command.group(1).rstrip().endswith("|| exit 2"), "a crash or a missing node must block")
-        timeout = re.search(r'"timeout":\s*(\d+)', TEXT)
-        self.assertIsNotNone(timeout)
+        hook = self.hook_entry()["hooks"][0]
+        self.assertTrue(hook["command"].endswith("|| exit 2"), "a crash or a missing node must block")
         watchdog = re.search(r"setTimeout\([^;]*?,\s*(\d+)\)", extract_guard(TEXT))
         self.assertIsNotNone(watchdog, "the guard has no watchdog")
-        self.assertLess(int(watchdog.group(1)), int(timeout.group(1)) * 1000, "the watchdog must fire before the hook times out")
+        self.assertLess(int(watchdog.group(1)), int(hook["timeout"]) * 1000, "the watchdog must fire before the hook times out")
 
     def test_the_guard_step_comes_before_the_review_step(self):
         self.assertLess(TEXT.index("Write the review comment guard"), TEXT.index("id: claude-review"))
@@ -273,6 +298,17 @@ TOOL_CASES = (
     + [["block", tool, {"command": PLAIN}] for tool in UNKNOWN_TOOLS]
     + [["block", tool, {"command": OTHER_PR}] for tool in UNKNOWN_TOOLS]
     + [["block", None, {}]]
+    # the review starts from the plugin's command, which some CLI versions run through the Skill tool; only that
+    # command is allowed, by exact name, because a skill's body can carry its own allowed-tools
+    + [["allow", "Skill", {"skill": "code-review:code-review", "args": "o/r/pull/48"}],
+       ["allow", "Skill", {"skill": "code-review"}],
+       ["block", "Skill", {"skill": "other:thing"}],
+       ["block", "Skill", {"skill": "code-review:code-review-evil"}],
+       ["block", "Skill", {"skill": "Code-Review:code-review"}],
+       ["block", "Skill", {"skill": "../code-review"}],
+       ["block", "Skill", {"skill": ["code-review"]}],
+       ["block", "Skill", {"skill": None}],
+       ["block", "Skill", {}]]
     # tools that run nothing and write nothing go on to the normal permission check
     + [["allow", tool, {}] for tool in ("Read", "Grep", "Glob", "LS", "Agent", "Task", "TaskCreate", "TaskGet", "TaskList",
                                        "TaskUpdate", "TaskOutput", "TaskStop", "BashOutput", "KillShell", "TodoWrite",

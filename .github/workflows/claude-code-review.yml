@@ -60,7 +60,8 @@ jobs:
       # the three `gh pr comment` forms claude_args names, or a single `gh pr view|diff|list`,
       # `gh issue view|list` or `gh search <kind>` call whose words contain nothing the shell
       # would expand or split, and no --jq, --template, -q or -t. A file write passes only for the
-      # summary file. Reading and searching the checkout, sub-agents, task tracking and the
+      # summary file. Reading and searching the checkout, sub-agents, task tracking, the plugin's own
+      # review command (the Skill tool, by exact name: 2.1.281 needs it, 2.1.316 does not) and the
       # inline-comment tool pass; every other tool is blocked. Exit 2 blocks, and stderr tells the
       # model why. The hook command adds `|| exit 2`, so a crash or a missing node blocks every
       # call. A hook that times out does not block, so a watchdog armed on the script's first line
@@ -101,6 +102,10 @@ jobs:
             "TaskOutput", "TaskStop", "BashOutput", "KillShell", "TodoWrite", "ToolSearch"];
           // Posts one inline comment. The action fixes the repository and pull request, and the body is text.
           const INLINE = "mcp__github_inline_comment__create_inline_comment";
+          // The review starts from the plugin's slash command. The CLI expands it up front on 2.1.316, but on 2.1.281
+          // the model runs it through the Skill tool, and blocking that makes the model improvise a review without the
+          // plugin's steps. A skill's body can carry its own allowed-tools, so only this one command is allowed, by name.
+          const PLUGIN_COMMANDS = ["code-review:code-review", "code-review"];
 
           // Returns null to let the call go on to the normal permission check, or the reason to block it.
           function decide(tool, input, ctx) {
@@ -110,6 +115,9 @@ jobs:
               const targets = [input.file_path, input.notebook_path].filter((p) => p !== undefined);
               const ok = targets.length > 0 && targets.every((p) => typeof p === "string" && path.resolve(p) === path.resolve(file));
               return ok ? null : "the only file the review may write is " + file + ".";
+            }
+            if (tool === "Skill") {
+              return PLUGIN_COMMANDS.includes(input.skill) ? null : "the review may not run the " + String(input.skill) + " skill.";
             }
             if (NO_IO.includes(tool) || tool === INLINE) return null;
             if (!SHELL_TOOLS.includes(tool)) return "the review may not use the " + tool + " tool.";
