@@ -56,7 +56,7 @@ The route lists the module's rule set in `cdn_frontdoor_rule_set_ids`, so Front 
 |------|------|-------|
 | `wp-admin/*`, `wp-login.php` | `NoCacheAdmin` (order 1, stops further rules) | Disabled |
 | `css`, `js`, `jpg`, `jpeg`, `png`, `gif`, `ico`, `woff`, `woff2`, `ttf`, `svg` | `CacheStaticAssets` (order 2) | `cache_static_minutes` (default 180, 3 hours), query string in the cache key |
-| `wp-content/uploads/*` | `CacheUploads` (order 3) | `cache_uploads_minutes` (default 180, 3 hours), query string ignored |
+| `wp-content/uploads/*` | `CacheUploads` (order 3) | `cache_uploads_minutes` (default 180, 3 hours), query string in the cache key (generated files under uploads are busted with `?ver=`) |
 | Everything else | route default | Cached, query string in the cache key, compression on |
 
 Front Door honours an origin's `private`, `no-cache` and `no-store` directives even where a rule overrides caching ([Front Door caching](https://learn.microsoft.com/azure/frontdoor/front-door-caching)), so WordPress's own admin responses, which carry `no-cache`, were not stored on earlier releases unless something changed their headers; the rule makes that independent of the origin's headers.

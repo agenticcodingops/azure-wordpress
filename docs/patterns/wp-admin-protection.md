@@ -286,9 +286,10 @@ Two caches can serve the login or admin page without the check ever running:
   origin's `private`, `no-cache` and `no-store` directives "and doesn't cache the responses, even if you override the
   caching behavior by using the Rules Engine"
   ([Front Door caching](https://learn.microsoft.com/azure/frontdoor/front-door-caching)), and the check's refusals
-  carry `Cache-Control: no-store`, so an admin page is stored only if the origin sent a cacheable response; on a
-  release before v4.3.2, attach the rule set or disable caching for those paths before relying on this pattern with
-  Front Door. Whether Cloudflare ever
+  carry `Cache-Control: no-store`, so an admin page is stored only if the origin sent a cacheable response. On a
+  release before v4.3.2, upgrade before relying on this pattern with Front Door, or disable caching for those paths
+  with a rule of your own; do not attach the module's rule set as those releases define it, because its admin rule
+  sits at order 0, which Azure treats as a global rule, and attaching it disables caching for every request. Whether Cloudflare ever
   caches an Access-protected response was not measured: UNKNOWN.
 - **The origin page cache.** A page-cache plugin's drop-in (`advanced-cache.php`) answers from its store before
   WordPress includes must-use plugins, so a response it stored for a gated script is served without reaching the
