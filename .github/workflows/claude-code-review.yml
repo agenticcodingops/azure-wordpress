@@ -88,9 +88,10 @@ jobs:
           function decide(tool, input, ctx) {
             const file = ctx.ws + "/.review-summary.md";
             if (FILE_TOOLS.includes(tool)) {
-              const target = input.file_path || input.notebook_path;
-              if (typeof target === "string" && path.resolve(target) === path.resolve(file)) return null;
-              return "the only file the review may write is " + file + ".";
+              // Every path field that is present must be the summary file, and there must be at least one.
+              const targets = [input.file_path, input.notebook_path].filter((p) => p !== undefined);
+              const ok = targets.length > 0 && targets.every((p) => typeof p === "string" && path.resolve(p) === path.resolve(file));
+              return ok ? null : "the only file the review may write is " + file + ".";
             }
             if (tool !== "Bash") return null;
 
