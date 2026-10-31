@@ -40,7 +40,7 @@ worked comparison.
 # In the root configuration for one environment (see docs/deployment-guide.md, steps 4 and 11)
 
 module "shared_infrastructure" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.3.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.3.2"
 
   project_name    = "example"
   environment     = "nonprod"
@@ -54,7 +54,7 @@ module "shared_infrastructure" {
 # Pass the shared plan to WordPress sites
 module "wordpress_sites" {
   for_each = var.sites
-  source   = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.1"
+  source   = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.2"
 
   # ... other config ...
 

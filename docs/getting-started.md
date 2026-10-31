@@ -8,7 +8,7 @@ cleanly. It needs no CDN account and no DNS changes: the site is served on the A
 
 Code references are `file:line` at commit
 [`b592e13`](https://github.com/agenticcodingops/azure-wordpress/tree/b592e13ad09938075b0e8f7a1dd51cfbe007320b),
-which is release v4.3.0; v4.3.1 changed one CI workflow and no module, so the references hold at v4.3.1.
+which is release v4.3.0; v4.3.1 changed one CI workflow and v4.3.2 changed only `modules/front-door/main.tf` (the route from line 98 on, and the three rules), so every reference on this page holds at v4.3.2.
 
 ## When to use
 
@@ -91,7 +91,7 @@ resource "random_password" "wp_admin" {
 }
 
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.2"
 
   project_name = local.project_name
   site_name    = local.site_name

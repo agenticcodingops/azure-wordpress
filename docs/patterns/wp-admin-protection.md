@@ -281,13 +281,15 @@ Two caches can serve the login or admin page without the check ever running:
 - **The CDN.** When the module manages the zone and `cloudflare.enable_page_rules` is left `true` (the default), its
   page rules bypass the cache on `*/wp-admin/*` and `*/wp-login.php*` (`modules/cloudflare/page-rules.tf`); on a zone
   you manage yourself, add the equivalent bypass before step 3. The module's Front Door route has caching enabled on
-  every path, with the query string in the cache key, and the rule set that would disable it for `wp-admin/` and
-  `wp-login.php` is not attached to the route as of v4.3.1 (`modules/front-door/main.tf`). Front Door "honors" an
+  every path, with the query string in the cache key; from v4.3.2 the route lists the rule set that disables caching
+  for `wp-admin/` and `wp-login.php`, and through v4.3.1 it did not (`modules/front-door/main.tf`, #138). Front Door "honors" an
   origin's `private`, `no-cache` and `no-store` directives "and doesn't cache the responses, even if you override the
   caching behavior by using the Rules Engine"
   ([Front Door caching](https://learn.microsoft.com/azure/frontdoor/front-door-caching)), and the check's refusals
-  carry `Cache-Control: no-store`, so an admin page is stored only if the origin sent a cacheable response; attach the
-  rule set or disable caching for those paths before relying on this pattern with Front Door. Whether Cloudflare ever
+  carry `Cache-Control: no-store`, so an admin page is stored only if the origin sent a cacheable response. On a
+  release before v4.3.2, upgrade before relying on this pattern with Front Door, or disable caching for those paths
+  with a rule of your own; do not attach the module's rule set as those releases define it, because its admin rule
+  sits at order 0, which Azure treats as a global rule, and attaching it disables caching for every request. Whether Cloudflare ever
   caches an Access-protected response was not measured: UNKNOWN.
 - **The origin page cache.** A page-cache plugin's drop-in (`advanced-cache.php`) answers from its store before
   WordPress includes must-use plugins, so a response it stored for a gated script is served without reaching the
@@ -422,9 +424,9 @@ check refuses the administrator with a bad AUD. A sign-in check covers that.
   unpinned `off` would move into production at the next swap and turn the check off there. Either way, re-run the
   in-container probe on the production hostname after every swap.
 - A site whose visitors use `wp-login.php` flows (protected posts, privacy-request confirmations, registration).
-- `cdn_provider = "azure_front_door"`: the pattern's edge half is Cloudflare-specific, and the module's Front Door
-  route has caching enabled on admin paths (above). An identity-aware proxy for Front Door is a different design and
-  not described here.
+- `cdn_provider = "azure_front_door"`: the pattern's edge half is Cloudflare-specific, and through v4.3.1 the
+  module's Front Door route also cached admin paths (above). An identity-aware proxy for Front Door is a different
+  design and not described here.
 
 ## Publishing decision
 

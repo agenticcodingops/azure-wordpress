@@ -50,18 +50,22 @@ Without these exclusions, WordPress admin will be blocked.
 
 ## Caching Rules
 
-| Path | Cache Duration | Behavior |
-|------|---------------|----------|
-| /wp-admin/* | Disabled | No caching for admin |
-| /wp-content/uploads/* | 3 hours | Media files |
-| *.css, *.js, images | 3 hours | Static assets |
-| Other | Default | Query string caching |
+The route lists the module's rule set in `cdn_frontdoor_rule_set_ids`, so Front Door applies these rules to every request through the route, in this order, before the route's own cache settings. Through v4.3.1 the rule set existed but no route listed it, so only the route's own settings applied and admin paths were cached like any other path (#138). The admin rule also sat at order 0, which Azure treats as a global rule whose actions apply to every request; it is now order 1. Taking the release that attaches the set plans in-place updates of the route and of the three rules' orders, nothing else.
+
+| Path | Rule | Cache |
+|------|------|-------|
+| `wp-admin/*`, `wp-login.php` | `NoCacheAdmin` (order 1, stops further rules) | Disabled |
+| `css`, `js`, `jpg`, `jpeg`, `png`, `gif`, `ico`, `woff`, `woff2`, `ttf`, `svg` | `CacheStaticAssets` (order 2) | `cache_static_minutes` (default 180, 3 hours), query string in the cache key |
+| `wp-content/uploads/*` | `CacheUploads` (order 3) | `cache_uploads_minutes` (default 180, 3 hours), query string in the cache key (generated files under uploads are busted with `?ver=`) |
+| Everything else | route default | Cached, query string in the cache key, compression on |
+
+Front Door honours an origin's `private`, `no-cache` and `no-store` directives even where a rule overrides caching ([Front Door caching](https://learn.microsoft.com/azure/frontdoor/front-door-caching)), so WordPress's own admin responses, which carry `no-cache`, were not stored on earlier releases unless something changed their headers; the rule makes that independent of the origin's headers.
 
 ## Usage
 
 ```hcl
 module "front_door" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/front-door?ref=v4.3.1"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/front-door?ref=v4.3.2"
 
   project_name        = "example"
   site_name           = "examplewp01"

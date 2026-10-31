@@ -181,8 +181,9 @@ flowchart TD
    bypasses the cache on `wp-admin/*` and `wp-login.php` and caches `wp-content/*` (`modules/cloudflare/page-rules.tf`);
    the front page is cached only where you added an HTML cache rule, so treat `cf-cache-status: HIT` as a cached
    answer. Behind Azure Front Door the module's route caches every path with the query string in the cache key
-   (`modules/front-door/main.tf`, the route's `cache` block); the rule set that would exempt `wp-admin/` and
-   `wp-login.php` exists in the module but, as of v4.3.1, no route references it, so assume any path can be cached.
+   (`modules/front-door/main.tf`, the route's `cache` block); from v4.3.2 the route lists the rule set that disables
+   caching for `wp-admin/` and `wp-login.php`, and through v4.3.1 no route referenced it (#138), so on those
+   releases assume any path can be cached.
    Front Door reports a cached answer as `x-cache: TCP_HIT` or `TCP_REMOTE_HIT`
    ([Front Door caching](https://learn.microsoft.com/azure/frontdoor/front-door-caching)). A unique query string
    avoids a cached answer on that route, and the header tells you whether it did:

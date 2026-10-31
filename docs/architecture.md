@@ -345,11 +345,13 @@ What the code sets up for this flow:
 - **WAF.** The policy uses Microsoft's Default Rule Set 2.1 and Bot Manager 1.1, with WordPress cookie exclusions.
   Rules 942230 and 941320 are set to log only. The mode is `Prevention` in production and `Detection` in nonprod
   unless you set `front_door.waf_mode`.
-- **Caching rules are created but not attached.** The module creates a rule set with three rules: no cache for
-  `wp-admin/` and `wp-login.php`, and cache overrides for static file extensions and `wp-content/uploads/`. The route
-  does not list the rule set in `cdn_frontdoor_rule_set_ids`. Microsoft applies a rule set only to the routes it is
-  associated with, so these rules do not act on requests. The route has its own `cache` block, which includes
-  query strings in the cache key and turns compression on.
+- **Caching rules are attached to the route from v4.3.2.** The module creates a rule set with three rules: no cache
+  for `wp-admin/` and `wp-login.php`, and cache overrides for static file extensions and `wp-content/uploads/`, and
+  the route lists it in `cdn_frontdoor_rule_set_ids`. Microsoft applies a rule set only to the routes it is
+  associated with. Through v4.3.1 the route did not list it, so none of the rules acted on requests, and the admin rule sat at
+  order 0, which Azure treats as a global rule that applies to every request (#138); it is order 1 from v4.3.2.
+  Taking v4.3.2 plans in-place updates of the route and of the three rules' orders. The route also has its own `cache` block, which includes query
+  strings in the cache key and turns compression on, and applies where no rule matches.
 - **DNS is yours to create.** `module.cloudflare` runs only when `cdn_provider = "cloudflare"`, so this mode creates
   no DNS records. Use the outputs `front_door_endpoint_hostname` (the CNAME target) and
   `custom_domain_validation_token` (the `_dnsauth` TXT value).
