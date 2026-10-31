@@ -269,6 +269,11 @@ Two more ways round the hook were found after it merged, and the second is why t
   to `Bash`, `Monitor` and `PowerShell`, restricts file writes to the summary, and blocks every other
   tool, so a tool added to the CLI later fails closed. If a review loses a tool it needs, add it to
   `NO_IO` in the guard and to the test table; do not widen the matcher back to a list.
+- **The plugin's own command.** The review starts from `/code-review:code-review`. On CLI 2.1.316
+  the command is expanded up front, but on 2.1.281 the model runs it through the `Skill` tool, and
+  blocking that made a read-only run improvise a review with none of the plugin's steps. The guard
+  therefore allows the `Skill` tool for that one command, by exact name, and blocks every other
+  skill, because a skill's body can carry its own `allowed-tools`.
 
 The test (`scripts/tests/test_review_comment_guard.py`, run by the `Review guard` job) extracts the
 guard from the workflow, so the guard that ships is the one that is tested. It checks the hook wiring,
