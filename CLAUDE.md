@@ -231,6 +231,15 @@ installed through the action's `settings` input. It is an **allow-list, not a ke
 byte-for-byte one of the three `gh pr comment` forms `--allowedTools` names, or a single
 `gh pr view|diff|list`, `gh issue view|list` or `gh search <kind>` call whose words contain nothing
 the shell would expand or split and no `--jq`, `--template`, `-q` or `-t`; everything else exits 2.
+"Nothing the shell would expand or split" is the part that went wrong twice in review, and both
+times the cause was the guard's regex reading a command differently from bash: a backslash inside
+double quotes (it escapes the closing quote, so a `;` that looks quoted runs), and an unquoted `#`
+(it starts a comment, so a quote after it is not a quote and the next line runs). The guard now
+rejects every backslash, every unquoted `#`, and any line break or control character, and counts a
+quoted string only as a whole word. Do not loosen the word grammar without running the differential
+fuzz again: it feeds generated commands to the guard, then runs each accepted one in real bash with
+a stub `gh` and requires exactly one call with the predicted arguments (5,100 runs across
+six seeds, none differed; a copy with the backslash exclusion removed does differ).
 A write by `Write`, `Edit`, `MultiEdit` or `NotebookEdit` passes only for the summary file. The
 hook command ends in `|| exit 2`, so a crash or a missing `node` blocks every call, and a watchdog
 blocks a hang at 10 seconds because a timed-out hook does not block.

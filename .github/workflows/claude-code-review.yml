@@ -66,73 +66,84 @@ jobs:
       - name: Write the review comment guard
         run: |
           cat > "$RUNNER_TEMP/review-comment-guard.js" <<'GUARD'
-          setTimeout(() => block("the guard timed out."), 10000);
-
-          function block(why) {
-            process.stderr.write("Blocked: " + why + "\n");
-            process.exit(2);
-          }
+          if (require.main === module) setTimeout(() => finish(2, "the guard timed out."), 10000);
 
           const path = require("path");
-          const [pr, repo, ws] = process.argv.slice(2);
-          if (!/^[0-9]+$/.test(pr || "") || !/^[\w.-]+\/[\w.-]+$/.test(repo || "") || !ws) {
-            block("the guard was started without its arguments.");
-          }
-          const file = ws + "/.review-summary.md";
 
-          // A word with no quote, backslash, $, backtick, ; & | < > ( ) { } * ? [ ] ~ ! or space in it, so
-          // the shell passes it through as written. A quoted string counts only as a whole word.
-          const WORD = "[A-Za-z0-9_./:=,@#%+-]+";
-          const QUOTED = "(?:'[^']*'|\"[^\"$`\\!]*\")";
-          const WORDS = new RegExp("(?<= )(?:" + WORD + "|" + QUOTED + ")(?= |$)", "g");
-          const READ = new RegExp(
-            "^gh (?:pr (?:diff|view|list)|issue (?:view|list)|search [a-z]+)(?: (?:" + WORD + "|" + QUOTED + "))*$"
-          );
-          const COMMENTS = [
-            "gh pr comment " + pr + " --repo " + repo + " --body-file " + file,
-            "gh pr comment " + pr + " --body-file " + file,
-            "gh pr comment https://github.com/" + repo + "/pull/" + pr + " --body-file " + file,
-          ];
+          // A word the shell passes through as written: no quote, backslash, #, $, backtick, ; & | < > ( )
+          // { } * ? [ ] ~ ! or space in it. A # would start a shell comment and hide the quote that follows.
+          const WORD = /[A-Za-z0-9_.\/:=,@%+-]+/;
+          // A whole quoted word. Single quotes hold anything but a quote. Double quotes hold nothing the
+          // shell would expand or escape. Nothing here can span a line, because decide() rejects them first.
+          // \x5c is the backslash, written as an escape so no layer between an editor and this file can halve it.
+          const QUOTED = /(?:'[^']*'|"[^"$`\x5c!]*")/;
+          const ARG = WORD.source + "|" + QUOTED.source;
+          const READ = new RegExp("^gh (?:pr (?:diff|view|list)|issue (?:view|list)|search [a-z]+)(?: (?:" + ARG + "))*$");
+          const WORDS = new RegExp("(?<= )(?:" + ARG + ")(?= |$)", "g");
           // gh's --jq and --template can read environment variables, and -q and -t are their short forms.
           const FILTER = /^(?:--(?:jq|template)(?:=|$)|-(?!-)[A-Za-z]*[qt])/;
+          const FILE_TOOLS = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
 
-          let raw = "";
-          process.stdin.setEncoding("utf8");
-          process.stdin.on("data", (chunk) => (raw += chunk));
-          process.stdin.on("end", () => {
-            let tool;
-            let input;
-            try {
-              const event = JSON.parse(raw);
-              tool = event.tool_name;
-              input = event.tool_input || {};
-            } catch (e) {
-              block("the hook input could not be read.");
-            }
-
-            if (["Write", "Edit", "MultiEdit", "NotebookEdit"].includes(tool)) {
+          // Returns null to let the call go on to the normal permission check, or the reason to block it.
+          function decide(tool, input, ctx) {
+            const file = ctx.ws + "/.review-summary.md";
+            if (FILE_TOOLS.includes(tool)) {
               const target = input.file_path || input.notebook_path;
-              if (typeof target === "string" && path.resolve(target) === path.resolve(file)) process.exit(0);
-              block("the only file the review may write is " + file + ".");
+              if (typeof target === "string" && path.resolve(target) === path.resolve(file)) return null;
+              return "the only file the review may write is " + file + ".";
             }
-            if (tool !== "Bash") process.exit(0);
+            if (tool !== "Bash") return null;
 
             const command = input.command;
-            if (typeof command !== "string") block("a Bash call without a command.");
-            if (COMMENTS.includes(command)) process.exit(0);
-            if (READ.test(command)) {
+            if (typeof command !== "string") return "a Bash call without a command.";
+            const comments = [
+              "gh pr comment " + ctx.pr + " --repo " + ctx.repo + " --body-file " + file,
+              "gh pr comment " + ctx.pr + " --body-file " + file,
+              "gh pr comment https://github.com/" + ctx.repo + "/pull/" + ctx.pr + " --body-file " + file,
+            ];
+            if (comments.includes(command)) return null;
+            // One line, and no control character, so a quoted string cannot hide a second command.
+            if (!/[\x00-\x1f\x7f]/.test(command) && READ.test(command)) {
               for (const word of command.match(WORDS) || []) {
                 if (FILTER.test(word.replace(/^(['"])(.*)\1$/, "$2"))) {
-                  block("gh read calls may not use --jq, --template, -q or -t.");
+                  return "gh read calls may not use --jq, --template, -q or -t.";
                 }
               }
-              process.exit(0);
+              return null;
             }
-            block("the only shell commands allowed are single gh calls with plain arguments: `gh pr view|diff|list`, " +
+            return "the only shell commands allowed are single gh calls with plain arguments: `gh pr view|diff|list`, " +
               "`gh issue view|list` and `gh search <kind>` (quote a search phrase as a whole word, with no $, backtick, " +
-              "backslash or !; no pipes, redirects, heredocs or substitutions), and the summary comment, exactly `" +
-              COMMENTS[0] + "`.");
-          });
+              "backslash or !; no #, pipes, redirects, heredocs, substitutions or line breaks), and the summary comment, " +
+              "exactly `" + comments[0] + "`.";
+          }
+
+          function finish(code, why) {
+            if (why) process.stderr.write("Blocked: " + why + "\n");
+            process.exit(code);
+          }
+
+          if (require.main === module) {
+            const [pr, repo, ws] = process.argv.slice(2);
+            if (!/^[0-9]+$/.test(pr || "") || !/^[\w.-]+\/[\w.-]+$/.test(repo || "") || !ws) {
+              finish(2, "the guard was started without its arguments.");
+            }
+            let raw = "";
+            process.stdin.setEncoding("utf8");
+            process.stdin.on("data", (chunk) => (raw += chunk));
+            process.stdin.on("end", () => {
+              let event;
+              try {
+                event = JSON.parse(raw);
+              } catch (e) {
+                finish(2, "the hook input could not be read.");
+              }
+              const why = decide(event.tool_name, event.tool_input || {}, { pr, repo, ws });
+              if (why) finish(2, why);
+              finish(0);
+            });
+          } else {
+            module.exports = { decide };
+          }
           GUARD
           node --check "$RUNNER_TEMP/review-comment-guard.js"
 
