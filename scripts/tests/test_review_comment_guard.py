@@ -87,6 +87,19 @@ def step_text(name):
     return TEXT[start:end if end != -1 else len(TEXT)]
 
 
+def step_run_block(name):
+    """The shell script of a `run: |` step, de-indented the way the runner does."""
+    lines = step_text(name).split("\n")
+    start = next(i for i, line in enumerate(lines) if re.match(r"\s+run:\s*\|\s*$", line))
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    body = []
+    for line in lines[start + 1:]:
+        if line.strip() and len(line) - len(line.lstrip()) <= indent:
+            break
+        body.append(line)
+    return textwrap.dedent("\n".join(body)) + "\n"
+
+
 # What the hook runs. The pull request number, repository and workspace are the ones of the run being reviewed.
 EXPECTED_HOOK_COMMAND = (
     "node '${{ runner.temp }}/review-comment-guard.js' ${{ github.event.pull_request.number }} "
@@ -105,9 +118,26 @@ class GuardTestCase(unittest.TestCase):
                 raise AssertionError("node and bash are required (the workflow runs the guard with node)")
             raise unittest.SkipTest("needs node and a POSIX bash")
         cls.tmp = tempfile.mkdtemp(prefix="review-guard-")
-        cls.guard = os.path.join(cls.tmp, "review-comment-guard.js")
-        with open(cls.guard, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(extract_guard(TEXT))
+        # Run the workflow's own guard-writing step, as the runner does, with a temporary RUNNER_TEMP, and test the
+        # file it produces at the path the hook invokes. Writing the extracted script to a name of the test's
+        # choosing would not notice a step that installs it somewhere the hook does not look, which blocks every
+        # tool call and leaves the review unable to do any work.
+        runner_temp = os.path.join(cls.tmp, "runner-temp")
+        os.makedirs(runner_temp)
+        script = os.path.join(cls.tmp, "write-guard.sh")
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(step_run_block("Write the review comment guard"))
+        done = subprocess.run(
+            [cls.bash, script], env={**os.environ, "RUNNER_TEMP": Path(runner_temp).as_posix()},
+            capture_output=True, text=True, timeout=60, check=False,
+        )
+        if done.returncode != 0:
+            raise AssertionError("the guard-writing step failed: " + done.stderr[-400:])
+        # The hook command names the script as <runner temp>/<name>; that is the file that must now exist.
+        name = re.search(r"\{\{ runner\.temp \}\}/([\w.-]+)'", EXPECTED_HOOK_COMMAND).group(1)
+        cls.guard = os.path.join(runner_temp, name)
+        if not os.path.isfile(cls.guard):
+            raise AssertionError("the guard-writing step did not create the file the hook invokes: " + name)
 
     @classmethod
     def tearDownClass(cls):
@@ -186,6 +216,13 @@ class WorkflowWiringTests(unittest.TestCase):
 
     def test_the_guard_step_comes_before_the_review_step(self):
         self.assertLess(TEXT.index("Write the review comment guard"), TEXT.index("id: claude-review"))
+
+    def test_the_steps_run_in_the_order_that_protects_the_review(self):
+        # The checkout can bring in a link at the summary path, so the cleanup must come after it; the guard must be
+        # in place, and the cleanup done, before the review starts.
+        order = [TEXT.index("- name: Checkout repository"), TEXT.index("- name: Clear the review summary path"),
+                 TEXT.index("- name: Write the review comment guard"), TEXT.index("id: claude-review")]
+        self.assertEqual(order, sorted(order), "expected checkout, cleanup, guard, then review")
 
     def test_the_review_cannot_write_anywhere_but_the_summary(self):
         # A bare Write allows every use of the tool, and a Write(path) rule is never matched.
@@ -413,6 +450,11 @@ class GuardDecisionTests(GuardTestCase):
             # right pull request with the other workspace's file, and right file with the other pull request
             mixed = ["gh pr comment " + own[0] + " --body-file " + other[2] + "/.review-summary.md",
                      "gh pr comment " + other[0] + " --body-file " + own[2] + "/.review-summary.md"]
+            # the repository on its own: the right pull request and file, with only the repository swapped, in
+            # both forms that name one (the contexts above change all three values together)
+            body = own[2] + "/.review-summary.md"
+            mixed += ["gh pr comment " + own[0] + " --repo " + other[1] + " --body-file " + body,
+                      "gh pr comment https://github.com/" + other[1] + "/pull/" + own[0] + " --body-file " + body]
             for command in mixed:
                 if self.verdict(BASH, {"command": command}, own) != "block":
                     failures.append(("mixed comment accepted", own, command))
