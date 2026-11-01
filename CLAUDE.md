@@ -281,6 +281,9 @@ runs the decision table through the script, and runs the differential against re
 build if any of these is put back: a backslash allowed in double quotes, an unquoted `#`, line breaks,
 a fail-open hook command, a narrow matcher, a missing `--setting-sources user`, a default-allow guard,
 `Monitor` or `PowerShell` dropped from the shell tools, a bare `Write` allow.
+`scripts/tests/mutate_review_guard.py`, in the same job, proves that: each row puts one known bug into a
+copy of the workflow and fails unless a named test goes red. When a review finds a gap in the test, add its
+row there. The test's copies in other repositories are identical, so change them together.
 
 Tested on 2.1.281, 2.1.302 and 2.1.316: another PR blocked, the exact form ran, a quoted search ran,
 a missing guard script blocked everything, a control `Write` replaced the guard path and the hook
