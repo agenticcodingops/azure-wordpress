@@ -132,7 +132,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         for test_id in dict.fromkeys(row[3] for row in ROWS):
             outcome = classify(*run_test(test_id, pristine, tmp))
-            if outcome != "GREEN":
+            if outcome != "GREEN" and (linux or outcome != "SKIPPED"):
                 bad.append("BAD-BASELINE " + test_id + " is " + outcome)
         for name, anchor, replacement, test_id in ROWS:
             text = mutated(pristine, anchor, replacement)
