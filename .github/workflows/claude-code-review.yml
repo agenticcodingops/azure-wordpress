@@ -198,7 +198,7 @@ jobs:
           # docs/configuration.md, "Custom Environment Variables", names `settings` `env`.
           # The action merges this into ~/.claude/settings.json before it installs the
           # plugin. The POSTING RULES ask for the foreground too, as a second layer.
-          # The same input carries the comment guard written above, as a PreToolUse hook on Bash.
+          # The same input carries the comment guard written above, as a PreToolUse hook on every tool.
           settings: |
             {
               "env": {
