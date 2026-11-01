@@ -128,7 +128,9 @@ class GuardTestCase(unittest.TestCase):
         with open(script, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(step_run_block("Write the review comment guard"))
         done = subprocess.run(
-            [cls.bash, script], env={**os.environ, "RUNNER_TEMP": Path(runner_temp).as_posix()},
+            # -e as the runner runs a step with no shell set (bash -e {0}): a failing command stops the step, so a
+            # setup command that breaks before the final syntax check cannot pass here and fail there.
+            [cls.bash, "-e", script], env={**os.environ, "RUNNER_TEMP": Path(runner_temp).as_posix()},
             capture_output=True, text=True, timeout=60, check=False,
         )
         if done.returncode != 0:
@@ -576,7 +578,7 @@ class BashDifferentialTests(GuardTestCase):
         except (OSError, NotImplementedError):
             self.skipTest("this machine cannot create symbolic links")
         done = subprocess.run(
-            [self.bash, "-c", match.group(1)], env={**os.environ, "GITHUB_WORKSPACE": workspace},
+            [self.bash, "-e", "-c", match.group(1)], env={**os.environ, "GITHUB_WORKSPACE": workspace},
             capture_output=True, text=True, timeout=30, check=False,
         )
         self.assertEqual(done.returncode, 0, done.stderr)
