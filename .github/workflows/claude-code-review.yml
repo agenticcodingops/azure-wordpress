@@ -52,17 +52,26 @@ jobs:
       # command without the grant was denied each time. So the exact-PR, exact-file rules in
       # claude_args do not bind that command: injected PR text could post on another PR, or post
       # `--body-file .git/config`. A deny rule cannot narrow a grant, so this hook does. It runs
-      # before every Bash and file-write call (the hook is in `settings` below) and is an
-      # allow-list, not a keyword match, so no spelling of a command can get around it. A shell
-      # command passes only if it is byte-for-byte one of the three `gh pr comment` forms
-      # claude_args names, or a single `gh pr view|diff|list`, `gh issue view|list` or
-      # `gh search <kind>` call whose words contain nothing the shell would expand or split,
-      # and no --jq, --template, -q or -t. A file write passes only for the summary file.
-      # Exit 2 blocks, and stderr tells the model why. The hook command adds `|| exit 2`, so a
-      # crash or a missing node blocks every call. A hook that times out does not block, so a
-      # watchdog armed on the script's first line blocks at 10 seconds, well inside the hook's
-      # 30-second timeout. The write rule matters because the guard script and the settings that
-      # install it are files: with an unrestricted Write the review could replace them.
+      # before every tool call (matcher `*`): the shell tools other than Bash, such as Monitor,
+      # reach a hook under a name that depends on the CLI version (measured: "Monitor" on 2.1.302,
+      # "Bash" on 2.1.316), and a tool added later would not be on any list. It is an allow-list,
+      # not a keyword match, so no spelling of a command and no unlisted tool can get around it.
+      # A shell command (Bash, Monitor or PowerShell) passes only if it is byte-for-byte one of
+      # the three `gh pr comment` forms claude_args names, or a single `gh pr view|diff|list`,
+      # `gh issue view|list` or `gh search <kind>` call whose words contain nothing the shell
+      # would expand or split, and no --jq, --template, -q or -t. A file write passes only for the
+      # summary file. Reading and searching the checkout, sub-agents, task tracking, the plugin's own
+      # review command (the Skill tool, by exact name: 2.1.281 needs it, 2.1.316 does not) and the
+      # inline-comment tool pass; every other tool is blocked. Exit 2 blocks, and stderr tells the
+      # model why. The hook command adds `|| exit 2`, so a crash or a missing node blocks every
+      # call. A hook that times out does not block, so a watchdog armed on the script's first line
+      # blocks at 10 seconds, well inside the hook's 30-second timeout. The write rule matters
+      # because the guard script and the settings that install it are files: with an unrestricted
+      # Write the review could replace them. The hook is no use if a pull request can switch it
+      # off. The checkout is the PR's head, and a `.claude/settings.json` in it with
+      # `disableAllHooks` stopped a loaded hook (measured on 2.1.316), so claude_args passes
+      # `--setting-sources user`, which keeps settings from the checkout out. The hook itself is
+      # installed in the user settings, by the `settings` input.
       - name: Write the review comment guard
         run: |
           cat > "$RUNNER_TEMP/review-comment-guard.js" <<'GUARD'
@@ -83,6 +92,20 @@ jobs:
           // gh's --jq and --template can read environment variables, and -q and -t are their short forms.
           const FILTER = /^(?:--(?:jq|template)(?:=|$)|-(?!-)[A-Za-z]*[qt])/;
           const FILE_TOOLS = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
+          // Tools that run a shell command. The name a hook is given for them depends on the CLI version: a
+          // Monitor call reaches a hook as "Bash" on 2.1.316 and as "Monitor" on 2.1.302, so all are listed.
+          const SHELL_TOOLS = ["Bash", "Monitor", "PowerShell"];
+          // Tools that neither run a command nor write a file, and that the review needs: reading and
+          // searching the checkout, launching sub-agents, tracking tasks, and loading tool schemas.
+          // Everything not named in this file is blocked, so a tool added to the CLI later fails closed.
+          const NO_IO = ["Read", "Grep", "Glob", "LS", "Agent", "Task", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
+            "TaskOutput", "TaskStop", "BashOutput", "KillShell", "TodoWrite", "ToolSearch"];
+          // Posts one inline comment. The action fixes the repository and pull request, and the body is text.
+          const INLINE = "mcp__github_inline_comment__create_inline_comment";
+          // The review starts from the plugin's slash command. The CLI expands it up front on 2.1.316, but on 2.1.281
+          // the model runs it through the Skill tool, and blocking that makes the model improvise a review without the
+          // plugin's steps. A skill's body can carry its own allowed-tools, so only this one command is allowed, by name.
+          const PLUGIN_COMMANDS = ["code-review:code-review", "code-review"];
 
           // Returns null to let the call go on to the normal permission check, or the reason to block it.
           function decide(tool, input, ctx) {
@@ -93,10 +116,14 @@ jobs:
               const ok = targets.length > 0 && targets.every((p) => typeof p === "string" && path.resolve(p) === path.resolve(file));
               return ok ? null : "the only file the review may write is " + file + ".";
             }
-            if (tool !== "Bash") return null;
+            if (tool === "Skill") {
+              return PLUGIN_COMMANDS.includes(input.skill) ? null : "the review may not run the " + String(input.skill) + " skill.";
+            }
+            if (NO_IO.includes(tool) || tool === INLINE) return null;
+            if (!SHELL_TOOLS.includes(tool)) return "the review may not use the " + tool + " tool.";
 
             const command = input.command;
-            if (typeof command !== "string") return "a Bash call without a command.";
+            if (typeof command !== "string") return "a " + tool + " call without a command.";
             const comments = [
               "gh pr comment " + ctx.pr + " --repo " + ctx.repo + " --body-file " + file,
               "gh pr comment " + ctx.pr + " --body-file " + file,
@@ -180,7 +207,7 @@ jobs:
               "hooks": {
                 "PreToolUse": [
                   {
-                    "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+                    "matcher": "*",
                     "hooks": [
                       {
                         "type": "command",
@@ -242,6 +269,7 @@ jobs:
           claude_args: |
             --allowedTools "Edit(/${{ github.workspace }}/.review-summary.md),mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file ${{ github.workspace }}/.review-summary.md),Bash(gh pr comment ${{ github.event.pull_request.number }} --body-file ${{ github.workspace }}/.review-summary.md),Bash(gh pr comment https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }} --body-file ${{ github.workspace }}/.review-summary.md),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*)"
             --disallowedTools "Read(./.git/**),Edit(/${{ runner.temp }}/**),Edit(~/.claude/**),Edit(/${{ github.workspace }}/.git/**),Bash(gh * --jq*),Bash(gh * -q*),Bash(gh * --template*),Bash(gh * -t*)"
+            --setting-sources user
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
 
