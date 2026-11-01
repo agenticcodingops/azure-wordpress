@@ -54,20 +54,37 @@ def extract_guard(text):
     return "\n".join(line[len(indent):] if line.startswith(indent) else line for line in lines) + "\n"
 
 
-def review_settings():
-    """The review step's `settings` input, parsed: the JSON the action writes into the user settings."""
+def review_block(key):
+    """The text of a multi-line input (`key: |`) of the review step, de-indented: what the action actually receives."""
     step = TEXT.index("id: claude-review")
     lines = TEXT[step:].split("\n")
-    start = next(i for i, line in enumerate(lines) if re.match(r"\s+settings:\s*\|\s*$", line))
+    start = next(i for i, line in enumerate(lines) if re.match(r"\s+" + re.escape(key) + r":\s*[|>][-+]?\s*$", line))
     key_indent = len(lines[start]) - len(lines[start].lstrip())
     body = []
     for line in lines[start + 1:]:
         if line.strip() and len(line) - len(line.lstrip()) <= key_indent:
             break
         body.append(line)
+    return textwrap.dedent("\n".join(body))
+
+
+def review_settings():
+    """The review step's `settings` input, parsed: the JSON the action writes into the user settings."""
     # The workflow expressions are left as written: inside the JSON strings they are plain text, and the tests
     # compare them exactly so the guard cannot be wired to the wrong pull request, repository or path.
-    return json.loads(textwrap.dedent("\n".join(body)))
+    return json.loads(review_block("settings"))
+
+
+def review_arguments():
+    """The review step's `claude_args`, one argument per line, as the action splits them. A comment is not an argument."""
+    return [line.strip() for line in review_block("claude_args").split("\n") if line.strip() and not line.strip().startswith("#")]
+
+
+def step_text(name):
+    """The text of one workflow step, from its `- name:` line to the next step."""
+    start = TEXT.index("- name: " + name)
+    end = TEXT.find("\n      - name:", start + 1)
+    return TEXT[start:end if end != -1 else len(TEXT)]
 
 
 # What the hook runs. The pull request number, repository and workspace are the ones of the run being reviewed.
@@ -96,15 +113,15 @@ class GuardTestCase(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def run_guard(self, tool, tool_input):
+    def run_guard(self, tool, tool_input, context=(PR, REPO, WS)):
         event = json.dumps({"tool_name": tool, "tool_input": tool_input})
         done = subprocess.run(
-            ["node", self.guard, PR, REPO, WS], input=event, capture_output=True, text=True, timeout=30, check=False
+            ["node", self.guard, *context], input=event, capture_output=True, text=True, timeout=30, check=False
         )
         return done.returncode, done.stderr
 
-    def verdict(self, tool, tool_input):
-        code, _ = self.run_guard(tool, tool_input)
+    def verdict(self, tool, tool_input, context=(PR, REPO, WS)):
+        code, _ = self.run_guard(tool, tool_input, context)
         self.assertIn(code, (0, 2), "the guard must exit 0 (allow) or 2 (block)")
         return "allow" if code == 0 else "block"
 
@@ -145,10 +162,20 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertEqual(hooks[0]["command"], EXPECTED_HOOK_COMMAND)
 
     def test_settings_from_the_checkout_cannot_turn_the_hook_off(self):
-        # A pull request can add .claude/settings.json with {"disableAllHooks": true}; measured on CLI 2.1.316, a
+        # A pull request can add a project settings file with {"disableAllHooks": true}; measured on CLI 2.1.316, a
         # project setting like that stopped a loaded hook. The action loads user, project and local settings
-        # unless told otherwise, and the hook is installed in the user settings.
-        self.assertRegex(TEXT, r"(?m)^\s+--setting-sources user\s*$")  # an argument line, not a comment
+        # unless told otherwise, and the hook is installed in the user settings. The argument must be one of the
+        # arguments the action receives (claude_args), not a line of text somewhere else in the file.
+        self.assertIn("--setting-sources user", review_arguments())
+        self.assertEqual([a for a in review_arguments() if a.startswith("--setting-sources")], ["--setting-sources user"])
+
+    def test_nothing_in_the_settings_can_switch_hooks_off(self):
+        # The settings the workflow itself writes are the user settings, so --setting-sources user does not protect
+        # against a switch placed in them. Only these two keys are allowed at the root, and the environment may
+        # carry only the one variable the workflow documents.
+        settings = review_settings()
+        self.assertLessEqual(set(settings), {"env", "hooks"}, "an unexpected settings key (for example disableAllHooks)")
+        self.assertLessEqual(set(settings.get("env", {})), {"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"})
 
     def test_the_hook_fails_closed(self):
         hook = self.hook_entry()["hooks"][0]
@@ -162,13 +189,22 @@ class WorkflowWiringTests(unittest.TestCase):
 
     def test_the_review_cannot_write_anywhere_but_the_summary(self):
         # A bare Write allows every use of the tool, and a Write(path) rule is never matched.
-        self.assertNotRegex(TEXT, r'--allowedTools "[^"]*(?<![A-Za-z(])Write[,"]')
-        self.assertNotIn("Write(", TEXT.split("claude_args:")[-1])
-        self.assertRegex(TEXT, r"--disallowedTools[^\n]*Edit\(/\$\{\{ runner\.temp \}\}/\*\*\)")
-        self.assertRegex(TEXT, r"--disallowedTools[^\n]*Edit\(~/\.claude/\*\*\)")
+        arguments = review_arguments()
+        allowed = [a for a in arguments if a.startswith("--allowedTools")]
+        denied = [a for a in arguments if a.startswith("--disallowedTools")]
+        self.assertTrue(all(not re.search(r'(?<![A-Za-z(])Write[,"]', a) for a in allowed), "a bare Write allow")
+        self.assertTrue(all("Write(" not in a for a in arguments), "a Write(path) rule is never matched; use Edit(path)")
+        self.assertEqual(len(denied), 1)
+        self.assertIn("Edit(/${{ runner.temp }}/**)", denied[0])
+        self.assertIn("Edit(~/.claude/**)", denied[0])
+
+    def test_the_protecting_steps_cannot_be_skipped(self):
+        # A step with a condition or continue-on-error can be skipped or fail without stopping the job.
+        for name in ("Clear the review summary path", "Write the review comment guard"):
+            self.assertIsNone(re.search(r"(?m)^\s+(if|continue-on-error):", step_text(name)), name + " must always run")
 
     def test_the_summary_path_is_cleared_before_the_review(self):
-        self.assertIn('rm -rf -- "$GITHUB_WORKSPACE/.review-summary.md"', TEXT)
+        self.assertIn('rm -rf -- "$GITHUB_WORKSPACE/.review-summary.md"', step_text("Clear the review summary path"))
         self.assertLess(TEXT.index("Clear the review summary path"), TEXT.index("Write the review comment guard"))
 
     def test_the_action_is_pinned_to_a_commit(self):
@@ -351,6 +387,41 @@ class GuardDecisionTests(GuardTestCase):
                 failures.append((expected, tool, tool_input))
         self.assertEqual(failures, [])
 
+    def test_each_review_context_accepts_only_its_own_comments(self):
+        # The cases above all use one pull request, repository and workspace, which cannot show that the guard
+        # really uses the arguments it is started with (a guard with them written in would pass). Two contexts
+        # that must each refuse the other's comment commands and summary file can.
+        first = ("48", "o/r", "/ws")
+        second = ("49", "other/repo", "/other/ws")
+
+        def comments(pr, repo, ws):
+            body = ws + "/.review-summary.md"
+            return [
+                "gh pr comment " + pr + " --repo " + repo + " --body-file " + body,
+                "gh pr comment " + pr + " --body-file " + body,
+                "gh pr comment https://github.com/" + repo + "/pull/" + pr + " --body-file " + body,
+            ]
+
+        failures = []
+        for own, other in ((first, second), (second, first)):
+            for command in comments(*own):
+                if self.verdict(BASH, {"command": command}, own) != "allow":
+                    failures.append(("own comment refused", own, command))
+            for command in comments(*other):
+                if self.verdict(BASH, {"command": command}, own) != "block":
+                    failures.append(("other context's comment accepted", own, command))
+            # right pull request with the other workspace's file, and right file with the other pull request
+            mixed = ["gh pr comment " + own[0] + " --body-file " + other[2] + "/.review-summary.md",
+                     "gh pr comment " + other[0] + " --body-file " + own[2] + "/.review-summary.md"]
+            for command in mixed:
+                if self.verdict(BASH, {"command": command}, own) != "block":
+                    failures.append(("mixed comment accepted", own, command))
+            if self.verdict("Write", {"file_path": own[2] + "/.review-summary.md"}, own) != "allow":
+                failures.append(("own summary write refused", own, None))
+            if self.verdict("Write", {"file_path": other[2] + "/.review-summary.md"}, own) != "block":
+                failures.append(("other context's summary write accepted", own, None))
+        self.assertEqual(failures, [])
+
     def test_a_bash_call_without_a_command_is_blocked(self):
         self.assertEqual(self.verdict(BASH, {}), "block")
 
@@ -446,6 +517,29 @@ class BashDifferentialTests(GuardTestCase):
         out, err = self.run_in_bash(command)
         lines = [line for line in out.split("\n") if line]
         return lines, err
+
+    def test_the_cleanup_step_removes_a_link_planted_by_the_pull_request(self):
+        # The exact comment command reads --body-file, so a summary path that is a link to .git/config would post
+        # the job token's config. The step that runs before the review must remove it, link and all.
+        match = re.search(r"(?m)^\s+run:\s*(.+)$", step_text("Clear the review summary path"))
+        self.assertIsNotNone(match, "the cleanup step has no run line")
+        workspace = os.path.join(self.tmp, "workspace")
+        os.makedirs(os.path.join(workspace, ".git"))
+        secret = os.path.join(workspace, ".git", "config")
+        with open(secret, "w", encoding="utf-8") as handle:
+            handle.write("[http]\n\textraheader = not-a-real-credential\n")
+        planted = os.path.join(workspace, ".review-summary.md")
+        try:
+            os.symlink(secret, planted)
+        except (OSError, NotImplementedError):
+            self.skipTest("this machine cannot create symbolic links")
+        done = subprocess.run(
+            [self.bash, "-c", match.group(1)], env={**os.environ, "GITHUB_WORKSPACE": workspace},
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertFalse(os.path.lexists(planted), "the planted link survived the cleanup step")
+        self.assertTrue(os.path.exists(secret), "the cleanup must remove the link, not what it points at")
 
     def test_the_reported_payloads_really_make_two_calls_in_bash(self):
         # If these stop making two calls, the harness can no longer see the bug class it exists for.
