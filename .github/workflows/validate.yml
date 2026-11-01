@@ -123,6 +123,9 @@ jobs:
       - name: Test the review comment guard
         run: python3 -m unittest discover -s scripts/tests -p 'test_review_comment_guard.py' -v
 
+      - name: Put each known bug back and require the test to catch it
+        run: python3 -B scripts/tests/mutate_review_guard.py
+
   docs:
     name: Documentation
     runs-on: ubuntu-latest
