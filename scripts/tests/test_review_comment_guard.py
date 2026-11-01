@@ -54,15 +54,28 @@ def extract_guard(text):
     return "\n".join(line[len(indent):] if line.startswith(indent) else line for line in lines) + "\n"
 
 
+def indent_of(line):
+    return len(line) - len(line.lstrip())
+
+
 def review_block(key):
-    """The text of a multi-line input (`key: |`) of the review step, de-indented: what the action actually receives."""
-    step = TEXT.index("id: claude-review")
-    lines = TEXT[step:].split("\n")
-    start = next(i for i, line in enumerate(lines) if re.match(r"\s+" + re.escape(key) + r":\s*[|>][-+]?\s*$", line))
-    key_indent = len(lines[start]) - len(lines[start].lstrip())
+    """The text of a multi-line input (`key: |`) in the `with:` mapping of the review step, de-indented.
+
+    This is what the action actually receives. The key must be a direct child of that step's `with:`: the same key
+    under `env:`, in another step, or in a comment is not an input of the action and does not count."""
+    step = step_text("Run Claude Code Review").split("\n")
+    with_line = next(i for i, line in enumerate(step) if re.match(r"\s+with:\s*$", line))
+    mapping = []
+    for line in step[with_line + 1:]:
+        if line.strip() and indent_of(line) <= indent_of(step[with_line]):
+            break
+        mapping.append(line)
+    key_indent = min(indent_of(line) for line in mapping if line.strip() and not line.strip().startswith("#"))
+    start = next(i for i, line in enumerate(mapping)
+                 if indent_of(line) == key_indent and re.match(r"\s+" + re.escape(key) + r":\s*[|>][-+]?\s*$", line))
     body = []
-    for line in lines[start + 1:]:
-        if line.strip() and len(line) - len(line.lstrip()) <= key_indent:
+    for line in mapping[start + 1:]:
+        if line.strip() and indent_of(line) <= key_indent:
             break
         body.append(line)
     return textwrap.dedent("\n".join(body))
@@ -236,6 +249,9 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertEqual(len(denied), 1)
         self.assertIn("Edit(/${{ runner.temp }}/**)", denied[0])
         self.assertIn("Edit(~/.claude/**)", denied[0])
+        # Reads inside the working directory need no approval, and the action's token sits in .git/config, so this
+        # deny is what keeps the review from copying it into the summary it is allowed to post.
+        self.assertIn("Read(./.git/**)", denied[0])
 
     def test_the_protecting_steps_cannot_be_skipped(self):
         # A step with a condition or continue-on-error can be skipped or fail without stopping the job.
@@ -410,6 +426,21 @@ class GuardDecisionTests(GuardTestCase):
         for expected, tool, tool_input in TOOL_CASES:
             if self.verdict(tool, tool_input) != expected:
                 failures.append((expected, tool, tool_input))
+        self.assertEqual(failures, [])
+
+    def test_formatting_flags_are_refused_on_every_allowed_read_command(self):
+        # --jq and --template can read environment variables, and -q and -t are their short forms. The table above
+        # tests them on one command; a filter applied to only some commands would pass it.
+        heads = ["gh pr view 48", "gh pr diff 48", "gh pr list", "gh issue view 12", "gh issue list", "gh search code foo"]
+        flags = ["--jq .x", "--jq=.x", "-q .x", "-qx", "-t x", "--template x", "--template=x", '"--jq" .x', "'-q' .x"]
+        failures = []
+        for head in heads:
+            for flag in flags:
+                command = head + " --json number " + flag
+                if self.verdict(BASH, {"command": command}) != "block":
+                    failures.append(command)
+            if self.verdict(BASH, {"command": head + " --json number"}) != "allow":
+                failures.append(head + " (plain form refused)")
         self.assertEqual(failures, [])
 
     def test_bash_commands(self):
