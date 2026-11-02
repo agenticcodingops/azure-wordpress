@@ -1,6 +1,6 @@
 # ============================================================================
 # scan-config.yaml — azure-wordpress (Terraform/OpenTofu module library)
-# Consumes the shared scan->fix platform agenticcodingops/auto-code-scanning: the scan pins v2.3.2 (terraform-scan.yml), the fix loop v2.3.6 (autonomous-fix.yml).
+# Consumes the shared scan->fix platform agenticcodingops/auto-code-scanning: the scan and fix loop pin v3.0.0.
 # Pure HCL: Terraform/IaC scanning only (Trivy-IaC + Checkov + tflint + fmt) + secrets.
 # See docs at the platform repo + LOCAL-HOOKS-TOGGLE.md for the off-switch below.
 # ============================================================================
@@ -42,13 +42,13 @@ languages:
       tflint:
         enabled: true
         version: ">=0.50.0"
-        config_file: ".tflint.hcl"
-        args: ["--config=.tflint.hcl"]
+        # Provision SCAN_TFLINT_CONFIG and SCAN_TFLINT_PLUGIN_DIR outside this checkout.
+        args: []
         stage: pre-push
       checkov:
         enabled: true
         version: ">=3.0.0"
-        config_file: ".checkov.yaml"
+        config_file: ".scanning/configs/.checkov.yaml"
         args: ["--framework=terraform", "--quiet", "--compact"]
         stage: pre-push
       # terraform validate needs per-module `init -backend=false`; kept to CI

@@ -1,6 +1,6 @@
 # ============================================================================
 # lefthook.yml — local pre-commit/pre-push scanning for azure-wordpress (Terraform).
-# Calls the vendored hooks/dispatcher.sh (auto-code-scanning @ v2.3.0).
+# Calls the vendored hooks/dispatcher.sh (auto-code-scanning @ v3.0.0).
 #
 # OFF-SWITCH: set `global.local_hooks_enabled: false` in scan-config.yaml (the
 # dispatcher honors it and skips everything), or `LEFTHOOK=0 git commit`. CI is
@@ -46,11 +46,8 @@ pre-commit:
 
 # Heavier IaC scans at push time (CI's reusable-scan.yml is the authoritative backstop).
 pre-push:
-  parallel: true
   commands:
-    checkov:
-      glob: "*.tf"
-      run: hooks/dispatcher.sh checkov
-    tflint:
-      glob: "*.tf"
-      run: hooks/dispatcher.sh tflint
+    scan-push-objects:
+      # One stdin reader retains all refs; never filter on the current index.
+      use_stdin: true
+      run: bash hooks/dispatcher.sh pre-push --hooks checkov,tflint

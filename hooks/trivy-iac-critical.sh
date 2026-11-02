@@ -3,7 +3,7 @@
 # Stage: pre-commit | Severity: CRITICAL only | --skip-check-update
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
 # Verify tool availability
@@ -12,7 +12,7 @@ require_tool "trivy" || exit 0
 start_timer
 
 # Detect scan directories (only dirs with staged .tf files)
-mapfile -t scan_dirs < <(detect_changed_dirs)
+read_nul_paths scan_dirs detect_changed_dirs
 
 if [[ ${#scan_dirs[@]} -eq 0 ]]; then
     hook_log "PASS: No Terraform files staged"
@@ -31,7 +31,7 @@ for dir in "${scan_dirs[@]}"; do
     fi
 
     # Build Trivy command as array — safe for paths with spaces/special chars
-    trivy_cmd=(trivy config "${dir}" --severity CRITICAL --exit-code 1 --format json --skip-check-update --quiet)
+    trivy_cmd=(trivy config --severity CRITICAL --exit-code 1 --format json --skip-check-update --quiet)
 
     # Check for config file
     config_file="$(resolve_config '.trivyignore' 2>/dev/null || true)"
@@ -43,6 +43,8 @@ for dir in "${scan_dirs[@]}"; do
     if [[ $# -gt 0 ]]; then
         trivy_cmd+=("$@")
     fi
+
+    trivy_cmd+=(-- "${dir}")
 
     # Run Trivy with retry logic
     set +e

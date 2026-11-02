@@ -25,6 +25,7 @@ if (-not (Test-Path '.sqlfluff')) {
 Start-ScanTimer
 Write-HookLog "Linting... ($(@($files).Count) SQL files, dialect=$dialectNote)"
 if ($ExtraArgs) { $sqlfluffArgs += $ExtraArgs }
+$sqlfluffArgs += '--'
 $sqlfluffArgs += $files
 
 $output = & sqlfluff @sqlfluffArgs 2>&1

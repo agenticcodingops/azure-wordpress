@@ -5,10 +5,10 @@
 # Working dir comes from scan-config.yaml (languages.typescript.build.working_dir).
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
-mapfile -t all_ts < <(get_staged_files ts tsx js jsx)
+read_nul_paths all_ts get_staged_files ts tsx js jsx
 if [[ ${#all_ts[@]} -eq 0 ]]; then
     hook_log "PASS: No TS/JS files staged"
     exit 0
@@ -33,6 +33,8 @@ done
 [[ -d "${working_dir}" ]] || { hook_warn "eslint: working_dir '${working_dir}' not found - allowing commit (fail-open)"; exit 0; }
 
 # Resolve an eslint runner; fail-open (skip) if the consumer has no eslint set up.
+# Repository binaries and executable configs require explicit trust.
+if [[ "${SCAN_TRUST_REPO_CODE:-0}" == 1 ]]; then
 runner=()
 if [[ -x "${working_dir%/}/node_modules/.bin/eslint" ]]; then
     runner=("${working_dir%/}/node_modules/.bin/eslint")
@@ -48,12 +50,21 @@ else
     exit 0
 fi
 
+else
+    require_trusted_app_tool eslint
+fi
+
 start_timer
 hook_log "Linting... (${#files[@]} TS/JS files in ${working_dir})"
 
 eslint_cmd=("${runner[@]}" --fix)
+if [[ "${SCAN_TRUST_REPO_CODE:-0}" != 1 ]]; then
+    [[ $# -eq 0 ]] || { hook_error "Extra arguments require SCAN_TRUST_REPO_CODE=1"; exit 1; }
+    eslint_cmd+=(--config "$trusted_config" --no-config-lookup)
+fi
+for file in "${files[@]}"; do assert_safe_write_path "${working_dir%/}/$file"; done
 [[ $# -gt 0 ]] && eslint_cmd+=("$@")
-eslint_cmd+=("${files[@]}")
+eslint_cmd+=(-- "${files[@]}")
 
 set +e
 output="$(cd "${working_dir}" && "${eslint_cmd[@]}" 2>&1)"

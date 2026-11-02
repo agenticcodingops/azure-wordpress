@@ -5,15 +5,17 @@
 # Solution + working dir come from scan-config.yaml (languages.csharp.build.*).
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
+
+run_push_snapshot "$@"
 
 require_tool "dotnet" || exit 0
 
-# Only run when C# files are staged (push) to avoid building on unrelated pushes.
-mapfile -t all_cs < <(get_staged_files cs csproj)
+# Select C# files from the immutable push tree (or explicit legacy index).
+read_nul_paths all_cs get_staged_files cs csproj
 if [[ ${#all_cs[@]} -eq 0 ]]; then
-    hook_log "PASS: No C# files staged"
+    hook_log "PASS: No C# files selected"
     exit 0
 fi
 
@@ -24,6 +26,10 @@ if [[ -z "${solution}" ]]; then
     [[ -n "${solution}" && "${working_dir}" != "." ]] && solution="${solution#"${working_dir%/}/"}"
 fi
 if [[ -z "${solution}" ]]; then
+    if [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 && "${SCAN_ALLOW_TOOL_ERRORS:-0}" != 1 ]]; then
+        hook_error 'No solution found in pushed tree; configure languages.csharp.build.solution'
+        exit 1
+    fi
     hook_warn "No .sln/.slnx found under '${working_dir}' (set languages.csharp.build.solution) - allowing push"
     exit 0
 fi

@@ -5,6 +5,8 @@ param([Parameter(ValueFromRemainingArguments)]$ExtraArgs)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\common.ps1"
 
+Invoke-PushSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
+
 # Verify tool availability
 if (-not (Test-ToolAvailable 'checkov')) { exit 0 }
 
@@ -13,7 +15,7 @@ Start-ScanTimer
 # Detect scan directories
 $scanDirs = Get-ChangedDirs
 if (-not $scanDirs -or $scanDirs.Count -eq 0) {
-    Write-HookLog "PASS: No Terraform files staged"
+    Write-HookLog "PASS: No Terraform files selected"
     exit 0
 }
 $fileCount = Get-TfFileCount -Directories $scanDirs
@@ -26,7 +28,7 @@ $totalMedium = 0
 $totalLow = 0
 
 foreach ($dir in $scanDirs) {
-    if (-not (Test-Path $dir -PathType Container)) { continue }
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
 
     # Build Checkov arguments with hard-fail
     $checkovArgs = @('-d', $dir, '--framework', 'terraform', '--output', 'json', '--compact', '--quiet', '--hard-fail-on', 'CRITICAL,HIGH')

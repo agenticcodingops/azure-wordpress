@@ -23,6 +23,9 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+. "$PSScriptRoot/../hooks/lib/common.ps1"
+Assert-SafeWritePath '.claude/scan-findings.json'
+
 $results = @()
 
 function Add-Result {

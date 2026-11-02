@@ -7,12 +7,12 @@
 # => auto-detect nearest .slnx/.sln under the working dir.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
 require_tool "dotnet" || exit 0
 
-mapfile -t all_cs < <(get_staged_files cs)
+read_nul_paths all_cs get_staged_files cs
 if [[ ${#all_cs[@]} -eq 0 ]]; then
     hook_log "PASS: No C# files staged"
     exit 0

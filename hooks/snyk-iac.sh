@@ -3,8 +3,10 @@
 # Stage: pre-push | Severity: all | Optional: fail-open if not installed/authenticated
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
+
+run_push_snapshot "$@"
 
 # Print actionable details for Snyk IaC findings so developers know what to fix.
 # Mirrors print_tflint_findings / print_checkov_findings in lib/common.sh.
@@ -55,11 +57,11 @@ fi
 
 start_timer
 
-# Detect scan directories (only dirs with staged .tf files)
-mapfile -t scan_dirs < <(detect_changed_dirs)
+# Detect Terraform directories in the selected object tree.
+read_nul_paths scan_dirs detect_changed_dirs
 
 if [[ ${#scan_dirs[@]} -eq 0 ]]; then
-    hook_log "PASS: No Terraform files staged"
+    hook_log "PASS: No Terraform files selected"
     exit 0
 fi
 
@@ -78,11 +80,11 @@ for dir in "${scan_dirs[@]}"; do
     fi
 
     # Build Snyk command as array
-    snyk_cmd=(snyk iac test "${dir}" --json)
+    snyk_cmd=(snyk iac test --json)
 
     # Check for .snyk policy file in repo root
     if [[ -f ".snyk" ]]; then
-        snyk_cmd+=(--policy-path=.)
+        snyk_cmd+=(--policy-path="$(pwd)")
     fi
 
     # Add any extra args passed through
@@ -92,7 +94,7 @@ for dir in "${scan_dirs[@]}"; do
 
     # Run Snyk
     set +e
-    output="$("${snyk_cmd[@]}" 2>&1)"
+    output="$(cd -- "${dir}" && "${snyk_cmd[@]}" 2>&1)"
     exit_code=$?
     set -e
 

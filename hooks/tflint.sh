@@ -3,19 +3,21 @@
 # Stage: pre-push | Severity: per config
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
+
+run_push_snapshot "$@"
 
 # Verify tool availability
 require_tool "tflint" || exit 0
 
 start_timer
 
-# Detect scan directories (only dirs with staged .tf files)
-mapfile -t scan_dirs < <(detect_changed_dirs)
+# Detect Terraform directories in the selected object tree.
+read_nul_paths scan_dirs detect_changed_dirs
 
 if [[ ${#scan_dirs[@]} -eq 0 ]]; then
-    hook_log "PASS: No Terraform files staged"
+    hook_log "PASS: No Terraform files selected"
     exit 0
 fi
 
@@ -35,22 +37,19 @@ for dir in "${scan_dirs[@]}"; do
     # Build tflint command as array — safe for paths with spaces/special chars
     tflint_cmd=(tflint --chdir="${dir}" --format json)
 
-    # Dispatcher directory first, then the repo-root file a plain tflint run loads.
-    # A relative --config is resolved against --chdir, so pass an absolute path.
-    config_file="$(resolve_config '.tflint.hcl' 2>/dev/null || true)"
-    if [[ -z "${config_file}" && -f .tflint.hcl ]]; then
-        config_file=".tflint.hcl"
-    fi
-    if [[ -n "${config_file}" ]]; then
-        config_dir="$(cd "$(dirname "${config_file}")" && pwd)"
-        config_file="${config_dir}/$(basename "${config_file}")"
-        tflint_cmd+=(--config "${config_file}")
-    fi
-
-    # Add any extra args passed through
-    if [[ $# -gt 0 ]]; then
-        tflint_cmd+=("$@")
-    fi
+    # Configuration and plugin cache are provisioned outside the scanned checkout.
+    config_file="${SCAN_TFLINT_CONFIG:-}"
+    [[ -f "$config_file" ]] || { hook_error 'SCAN_TFLINT_CONFIG must name a trusted external config'; exit 1; }
+    assert_external_path "$config_file"
+    [[ "$config_file" == *.hcl ]] || { hook_error 'Trusted config must end in .hcl'; exit 1; }
+    config_text="$(< "$config_file")"
+    [[ "$config_text" != *plugin_dir* ]] || { hook_error 'Remove plugin_dir; use SCAN_TFLINT_PLUGIN_DIR'; exit 1; }
+    export TFLINT_PLUGIN_DIR="${SCAN_TFLINT_PLUGIN_DIR:-}"
+    [[ -n "$TFLINT_PLUGIN_DIR" ]] || { hook_error 'Set SCAN_TFLINT_PLUGIN_DIR to an external plugin cache'; exit 1; }
+    assert_external_path "$TFLINT_PLUGIN_DIR"
+    assert_safe_write_path "$TFLINT_PLUGIN_DIR"
+    [[ $# -eq 0 ]] || { hook_error 'TFLint extra arguments are disabled'; exit 1; }
+    tflint_cmd+=(--config "$config_file")
 
     # Initialize tflint plugins (required before scanning)
     set +e
@@ -59,7 +58,9 @@ for dir in "${scan_dirs[@]}"; do
         init_cmd+=(--config "${config_file}")
     fi
     "${init_cmd[@]}" >/dev/null 2>&1
+    init_exit=$?
     set -e
+    if [[ "$init_exit" -ne 0 ]]; then hook_error "TFLint initialization failed"; exit 1; fi
 
     # Run tflint
     set +e
@@ -83,17 +84,9 @@ for dir in "${scan_dirs[@]}"; do
         # Show actionable details so developers know what to fix
         print_tflint_findings "${output}"
         overall_exit=1
-    elif [[ ${exit_code} -eq 3 ]] || [[ ${exit_code} -ge 4 ]]; then
-        # tflint exit 3+ = runtime error — fail-open.
-        # '|| true' so handle_exit_code's return doesn't trip set -e (fail-open
-        # must not terminate the script). Mirrors the PowerShell twin (tflint.ps1).
-        handle_exit_code ${exit_code} || true
-    elif [[ ${exit_code} -eq 1 ]]; then
-        # tflint exit 1 = errors — treat as infrastructure error for consistency.
-        # Some tflint versions use exit 1 for config errors. handle_exit_code returns
-        # 1 for exit 1, which would terminate under set -e — '|| true' keeps it
-        # fail-open as intended. Mirrors the PowerShell twin (tflint.ps1).
-        handle_exit_code ${exit_code} || true
+    elif [[ ${exit_code} -ne 0 ]]; then
+        # Operational statuses (including 1) use the shared infrastructure contract.
+        handle_exit_code 2 || exit 1
     fi
 done
 

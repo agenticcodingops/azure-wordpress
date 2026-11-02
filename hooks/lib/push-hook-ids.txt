@@ -1,0 +1,6 @@
+trivy-iac-full
+checkov
+checkov-strict
+tflint
+snyk-iac
+dotnet-build

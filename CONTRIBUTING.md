@@ -13,6 +13,8 @@ pull request.
    - terraform-docs 0.20.0
    - Checkov 3.3.22
    - Trivy
+   - Python 3.11 or newer, with PyYAML 6.0.3 and jsonschema 4.25.1
+   - Lefthook and the scanners configured in `lefthook.yml`
 4. Install the repository hooks once per clone:
 
    ```bash
@@ -59,10 +61,8 @@ Review the resulting diff and ensure a second run is idempotent.
 
 ## Run the compliance scan
 
-CI pins Checkov 3.3.22. Install it with a suffix so a plain `checkov` never lands on
-PATH. The local pre-push hook arms as soon as any binary named `checkov` is on PATH,
-regardless of its configuration, and then runs with no skip list. Keep any binary named
-`checkov` off PATH:
+CI parity uses Checkov 3.3.22. The v3.0.0 push hooks require a trusted executable
+named `checkov` on PATH and scan every pushed tree. For the suffixed parity command:
 
 ```bash
 pipx install --suffix=@3322 checkov==3.3.22
@@ -75,8 +75,22 @@ RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform --q
   --skip-check "$(sed -n 's/^ *skip_check: *\([^[:space:]]*\).*/\1/p' .github/workflows/validate.yml)"
 ```
 
-The skip list must remain sourced from the workflow rather than copied into another
-configuration file. The local hook also runs Trivy at its configured severity:
+The workflow is the canonical skip-list source. The tracked push policy at
+`.scanning/configs/.checkov.yaml` mirrors it, and the scan settings job rejects drift.
+Update the mirror whenever changing the workflow list. CI also reads that policy.
+
+Install hook validation dependencies with Python 3.11 or newer:
+
+```bash
+python -m pip install PyYAML==6.0.3 jsonschema==4.25.1
+```
+
+For tflint, provision a reviewed `.hcl` config and plugin cache outside the checkout,
+then set absolute `SCAN_TFLINT_CONFIG` and `SCAN_TFLINT_PLUGIN_DIR` paths. Start with
+the pinned platform release's `configs/azure/.tflint.hcl`, without any `plugin_dir`
+setting. Missing prerequisites now block local scans. The push off-switch is read
+from the pushed commit, while staged configuration validation always runs.
+There is no suppression registry or baseline here to migrate to schema 2.0. The local hook also runs Trivy at its configured severity:
 
 ```bash
 trivy config . --severity CRITICAL --skip-dirs .terraform

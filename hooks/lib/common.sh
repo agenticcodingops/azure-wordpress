@@ -9,6 +9,16 @@ _COMMON_SH_LOADED=1
 
 SCAN_HOOK_ID="${SCAN_HOOK_ID:-unknown}"
 
+# Pre-push wrappers re-enter only after the transaction runner has copied the
+# exact object tree. Legacy local-state selection requires an explicit opt-in.
+run_push_snapshot() {
+    [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 || "${SCAN_LEGACY_PUSH_STATE:-0}" == 1 ]] && return 0
+    local py
+    py="$(find_python)" || { hook_error 'Python is required for push snapshots'; exit 1; }
+    "$py" "${SCRIPT_DIR}/pre-push.py" --shell sh --hooks "$(basename "${BASH_SOURCE[1]}" .sh)" "$@"
+    exit $?
+}
+
 # ---------------------------------------------------------------------------
 # Output helpers
 # ---------------------------------------------------------------------------
@@ -32,13 +42,13 @@ hook_verbose() {
 }
 
 # ---------------------------------------------------------------------------
-# Exit code handling (fail-open)
+# Exit code handling (block incomplete scans unless explicitly opted out)
 # ---------------------------------------------------------------------------
 
 # Classify a tool exit code:
 #   exit 0 = no findings (pass)
 #   exit 1 = security findings found (block)
-#   exit 2+ = infrastructure error (fail-open, warn + allow)
+#   exit 2+ = infrastructure error (block; explicit local opt-in warns + allows)
 #
 # Usage: handle_exit_code $tool_exit_code
 # Returns: 0 (pass/fail-open) or 1 (findings found)
@@ -53,8 +63,12 @@ handle_exit_code() {
             return 1
             ;;
         *)
-            hook_warn "Tool error (exit code ${exit_code}) - allowing commit (fail-open)"
-            return 0
+            if [[ "${SCAN_ALLOW_TOOL_ERRORS:-0}" == 1 ]]; then
+                hook_warn "Tool error (exit code ${exit_code}); explicit local fail-open opt-in"
+                return 0
+            fi
+            hook_error "Tool error (exit code ${exit_code}); scan incomplete"
+            return 1
             ;;
     esac
 }
@@ -64,20 +78,102 @@ handle_exit_code() {
 # ---------------------------------------------------------------------------
 
 # Ensure the .scanning directory exists
-ensure_scanning_dir() {
-    local scan_dir=".scanning"
-    if [[ ! -d "${scan_dir}" ]]; then
-        mkdir -p "${scan_dir}"
+# Check every component without resolving away symlinks or Windows junctions.
+assert_safe_write_path() {
+    local py
+    if ! py="$(find_python)"; then
+        # POSIX has symlinks only. Windows junction checks require an interpreter.
+        case "${OSTYPE:-}" in msys*|cygwin*) hook_error 'Python required for Windows path checks'; exit 1 ;; esac
+        local component="$1"
+        [[ "$component" == /* ]] || component="$PWD/$component"
+        while [[ -n "$component" ]]; do
+            [[ ! -L "$component" ]] || { hook_error 'Refusing a symlink in output path'; exit 1; }
+            component="${component%/*}"
+        done
+        return 0
     fi
+    "$py" -I - "$1" <<'PYSAFE' || exit 1
+import os, pathlib, stat, sys
+p = pathlib.Path(os.path.abspath(sys.argv[1]))
+for part in (*reversed(p.parents), p):
+    try: info = part.lstat()
+    except FileNotFoundError: continue
+    if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
+        sys.exit("Refusing a symlink or reparse point in output path")
+PYSAFE
 }
 
-# Write scan results as JSON to .scanning/last-scan.json
-# Usage: write_scan_json "$json_content"
+ensure_scanning_dir() {
+    assert_safe_write_path .scanning/last-scan.json
+    mkdir -p .scanning
+}
+
 write_scan_json() {
-    local json_content="${1:?JSON content required}"
+    local json_content="${1:?JSON content required}" temporary
     ensure_scanning_dir
-    echo "${json_content}" > ".scanning/last-scan.json"
-    hook_verbose "Wrote scan results to .scanning/last-scan.json"
+    temporary="$(mktemp .scanning/.scan-write-XXXXXX)" || exit 1
+    printf '%s\n' "$json_content" > "$temporary"
+    assert_safe_write_path .scanning/last-scan.json
+    mv -f -- "$temporary" .scanning/last-scan.json
+}
+
+assert_external_path() {
+    local py
+    local external_path="$1"
+    if ! py="$(find_python)"; then
+        case "${OSTYPE:-}" in msys*|cygwin*) hook_error 'Python required for Windows path checks'; exit 1 ;; esac
+        [[ "$external_path" == /* && ! -L "$external_path" ]] || { hook_error 'Trusted path must be absolute and unlinked'; exit 1; }
+        local root parent canonical consumer_root
+        if [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 ]]; then
+            root="$PWD"
+        else
+            require_scan_git
+            root="$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)"
+        fi
+        root="$(cd "$root" && pwd -P)"
+        parent="$(cd "$(dirname -- "$external_path")" && pwd -P)" || exit 1
+        canonical="$parent/${external_path##*/}"
+        case "$canonical/" in "$root/"*) hook_error 'Trusted path must be outside the scanned checkout'; exit 1 ;; esac
+        if [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 && -n "${SCAN_CONSUMER_ROOT:-}" ]]; then
+            consumer_root="$(cd "$SCAN_CONSUMER_ROOT" && pwd -P)" || exit 1
+            case "$canonical/" in "$consumer_root/"*) hook_error 'Trusted path must be outside the consumer checkout'; exit 1 ;; esac
+        fi
+        return 0
+    fi
+    if command -v cygpath >/dev/null 2>&1; then external_path="$(cygpath -w "$external_path")"; fi
+    [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 ]] || require_scan_git
+    "$py" -I - "$external_path" <<'PYEXTERNAL'  || exit 1
+import os, pathlib, subprocess, sys
+try:
+    root = (pathlib.Path.cwd() if os.environ.get('SCAN_PUSH_SNAPSHOT') == '1' else
+            pathlib.Path(subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True).strip())).resolve()
+except subprocess.CalledProcessError:
+    root = pathlib.Path.cwd().resolve()
+p = pathlib.Path(sys.argv[1])
+roots = [root]
+if os.environ.get('SCAN_PUSH_SNAPSHOT') == '1' and os.environ.get('SCAN_CONSUMER_ROOT'):
+    roots.append(pathlib.Path(os.environ['SCAN_CONSUMER_ROOT']).resolve())
+if not p.is_absolute():
+    sys.exit("Trusted path must be absolute and outside the scanned checkout")
+for boundary in roots:
+    try:
+        p.resolve().relative_to(boundary)
+    except ValueError:
+        continue
+    sys.exit("Trusted path must be outside the scanned and consumer checkouts")
+PYEXTERNAL
+}
+
+# Trusted tools/configuration live outside the scanned checkout. The explicit
+# opt-in is for developer-owned projects whose executable configuration is trusted.
+require_trusted_app_tool() {
+    local tool="$1" bin_var="SCAN_${1^^}_BIN" config_var="SCAN_${1^^}_CONFIG" py
+    runner=("${!bin_var:-}")
+    trusted_config="${!config_var:-}"
+    [[ -n "${runner[0]}" && -n "$trusted_config" ]] || { hook_error "Set $bin_var and $config_var to external trusted paths"; exit 1; }
+    [[ -f "${runner[0]}" && -f "$trusted_config" ]] || { hook_error 'Trusted tool/config missing'; exit 1; }
+    assert_external_path "${runner[0]}"
+    assert_external_path "$trusted_config"
 }
 
 # Build a minimal last-scan.json for a passing scan
@@ -164,21 +260,44 @@ ENDJSON
 # (pre-commit); when it is empty (the usual case at pre-push) fall back to the push
 # range so pushed commits are still scanned. NUL output keeps paths with whitespace
 # or newlines intact. Best-effort — CI is the authoritative backstop.
-_changed_files_for_detect() {
-    # Read NUL-delimited paths into an ARRAY — a scalar `files="$(... -z)"` would have
-    # bash strip the NUL delimiters (command substitution drops NUL bytes), merging
-    # paths and defeating the downstream `grep -z` / `xargs -0`. Then re-emit
-    # NUL-delimited so callers keep whitespace/newline-safe paths.
-    local -a files=()
-    mapfile -d '' -t files < <(git diff --cached --name-only -z --diff-filter=ACMR 2>/dev/null)
-    if (( ${#files[@]} == 0 )); then
-        mapfile -d '' -t files < <(git diff --name-only -z --diff-filter=ACMR '@{push}' HEAD 2>/dev/null)
-        (( ${#files[@]} == 0 )) && mapfile -d '' -t files < <(git diff --name-only -z --diff-filter=ACMR '@{upstream}' HEAD 2>/dev/null)
+# Capture producer status before reading NUL paths; process substitution alone
+# loses that status and can mistake a failed enumeration for an empty change set.
+read_nul_paths() {
+    local destination="$1" listing
+    shift
+    listing="$(mktemp)" || exit 1
+    if ! "$@" > "$listing"; then
+        rm -f -- "$listing"
+        hook_error "Could not enumerate scan inputs"
+        exit 1
     fi
-    local f
-    for f in "${files[@]}"; do
-        printf '%s\0' "${f}"
-    done
+    mapfile -d '' -t "$destination" < "$listing"
+    rm -f -- "$listing"
+}
+
+require_scan_git() {
+    command -v git >/dev/null 2>&1 || { hook_error 'git is required to read scan inputs; scan incomplete'; exit 1; }
+}
+
+_changed_files_for_detect() {
+    if [[ -n "${SCAN_PUSH_FILES:-}" ]]; then
+        cat -- "$SCAN_PUSH_FILES"
+        return
+    fi
+    require_scan_git
+    local listing reference
+    listing="$(mktemp)" || return 1
+    git diff --cached --name-only -z --diff-filter=ACMR -- > "$listing" || { rm -f -- "$listing"; return 1; }
+    if [[ ! -s "$listing" ]]; then
+        for reference in '@{push}' '@{upstream}'; do
+            if git rev-parse --verify "$reference" >/dev/null 2>&1; then
+                git diff --name-only -z --diff-filter=ACMR "$reference" HEAD -- > "$listing" || { rm -f -- "$listing"; return 1; }
+                [[ -s "$listing" ]] && break
+            fi
+        done
+    fi
+    cat -- "$listing"
+    rm -f -- "$listing"
 }
 
 # Detect directories containing Terraform files that have changed
@@ -187,45 +306,29 @@ _changed_files_for_detect() {
 # Usage: mapfile -t scan_dirs < <(detect_changed_dirs)
 # Output: Newline-separated list of directories, or empty if none
 detect_changed_dirs() {
-    if ! command -v git >/dev/null 2>&1 || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        # Not a git repo — return empty so hooks skip rather than scan everything
-        return 0
+    if [[ -z "${SCAN_PUSH_FILES:-}" ]]; then
+        require_scan_git
+        if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            if [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 ]]; then
+                hook_error 'Could not enumerate push scan inputs; scan incomplete'
+                return 1
+            fi
+            # A local caller outside a repository has no selected inputs.
+            return 0
+        fi
     fi
 
-    local dirs
-    # Changed .tf dirs — staged at pre-commit, or the push range at pre-push.
-    # NUL-safe: filter .tf paths, dirname them, dedupe — without breaking on
-    # whitespace/newlines in paths (which would silently drop scan dirs).
-    dirs="$(_changed_files_for_detect \
-        | grep -z '\.tf$' \
-        | xargs -0 -r -I{} dirname {} 2>/dev/null \
-        | sort -u)"
-
-    if [[ -n "${dirs}" ]]; then
-        echo "${dirs}"
-    fi
-    # When no .tf files are staged, return empty — hooks will exit 0
+    _changed_files_for_detect | while IFS= read -r -d '' path; do
+        [[ "$path" == *.tf ]] || continue
+        if [[ "$path" == */* ]]; then printf '%s\0' "${path%/*}"; else printf '.\0'; fi
+    done | LC_ALL=C sort -zu
 }
 
-# Detect directories containing ANY staged files (not just .tf)
-# Used by secret detection hooks which scan all file types
-# Returns EMPTY when no files are staged at all
-# Usage: mapfile -t scan_dirs < <(detect_all_changed_dirs)
+# Directories remain NUL-delimited through every caller.
 detect_all_changed_dirs() {
-    if ! command -v git >/dev/null 2>&1 || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        return 0
-    fi
-
-    local dirs
-    # NUL-safe: dirname each changed path, dedupe — without breaking on
-    # whitespace/newlines in paths (which would silently drop scan dirs).
-    dirs="$(_changed_files_for_detect \
-        | xargs -0 -r -I{} dirname {} 2>/dev/null \
-        | sort -u)"
-
-    if [[ -n "${dirs}" ]]; then
-        echo "${dirs}"
-    fi
+    _changed_files_for_detect | while IFS= read -r -d '' path; do
+        if [[ "$path" == */* ]]; then printf '%s\0' "${path%/*}"; else printf '.\0'; fi
+    done | LC_ALL=C sort -zu
 }
 
 # Count .tf files in given directories
@@ -235,7 +338,9 @@ count_tf_files() {
     for dir in "$@"; do
         if [[ -d "${dir}" ]]; then
             local dir_count
-            dir_count="$(find "${dir}" -maxdepth 3 -name '*.tf' -not -path '*/.terraform/*' 2>/dev/null | wc -l)"
+            local search_dir="${dir}"
+            [[ "$search_dir" == /* ]] || search_dir="./$search_dir"
+            dir_count="$(find -- "${search_dir}" -maxdepth 3 -name '*.tf' -not -path '*/.terraform/*' -print0 2>/dev/null | tr -cd '\0' | wc -c)"
             count=$((count + dir_count))
         fi
     done
@@ -251,19 +356,21 @@ count_tf_files() {
 # Usage: mapfile -t files < <(get_staged_files cs csproj)
 #        mapfile -t files < <(get_staged_files)   # all staged files
 get_staged_files() {
-    local files
-    files="$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null)" || return 0
-    [[ -z "${files}" ]] && return 0
-    if [[ $# -eq 0 ]]; then
-        echo "${files}"
-        return 0
+    local path ext listing
+    listing="$(mktemp)" || return 1
+    if [[ -n "${SCAN_PUSH_FILES:-}" ]]; then
+        cat -- "$SCAN_PUSH_FILES" > "$listing" || { rm -f -- "$listing"; return 1; }
+    else
+        require_scan_git
+        git diff --cached --name-only -z --diff-filter=ACMR -- > "$listing" || { rm -f -- "$listing"; return 1; }
     fi
-    local pattern=""
-    local ext
-    for ext in "$@"; do
-        pattern+="${pattern:+|}\\.${ext}\$"
-    done
-    echo "${files}" | grep -iE "${pattern}" || true
+    while IFS= read -r -d '' path; do
+        if [[ $# -eq 0 ]]; then printf '%s\0' "$path"; continue; fi
+        for ext in "$@"; do
+            if [[ "${path,,}" == *."${ext,,}" ]]; then printf '%s\0' "$path"; break; fi
+        done
+    done < "$listing"
+    rm -f -- "$listing"
 }
 
 # Export the given staged files (from the git index, not the working tree) into a
@@ -271,24 +378,29 @@ get_staged_files() {
 # rm -rf it (and should set a trap).
 # Usage: tmpdir="$(export_staged_to_tmp "${files[@]}")"; trap 'rm -rf "$tmpdir"' EXIT
 export_staged_to_tmp() {
+    require_scan_git
     local tmpdir
-    tmpdir="$(mktemp -d)"
+    tmpdir="$(mktemp -d)" || return 1
     local file file_dir
     for file in "$@"; do
         [[ -z "${file}" ]] && continue
-        file_dir="$(dirname "${file}")"
+        file_dir="."; [[ "$file" == */* ]] && file_dir="${file%/*}"
         [[ "${file_dir}" != "." ]] && mkdir -p "${tmpdir}/${file_dir}"
-        git show ":${file}" > "${tmpdir}/${file}" 2>/dev/null || true
+        git show ":${file}" -- > "${tmpdir}/${file}" 2>/dev/null || {
+            rm -rf -- "$tmpdir"
+            hook_error "Could not export staged '$file'; scan incomplete"
+            return 1
+        }
     done
     echo "${tmpdir}"
 }
 
-# Find a Python interpreter that ACTUALLY runs (skips the broken Windows Store
-# `python3` shim, which is on PATH but errors out). Prints the command name.
+# Require Python 3.11+ with the same safe-path flags used by config reads.
+# Skip broken launcher shims and older interpreters. Prints the command name.
 find_python() {
     local c
     for c in python python3 py; do
-        if command -v "${c}" >/dev/null 2>&1 && "${c}" -c "" >/dev/null 2>&1; then
+        if command -v "${c}" >/dev/null 2>&1 && "${c}" -E -P -c "" >/dev/null 2>&1; then
             echo "${c}"
             return 0
         fi
@@ -296,9 +408,8 @@ find_python() {
     return 1
 }
 
-# Read a dotted key from scan-config.yaml (e.g. languages.csharp.build.solution).
-# Falls back to the default if the config, python, PyYAML, or key is missing — so
-# hooks degrade gracefully (e.g. empty solution => auto-detect) rather than break.
+# Read a dotted string key. Missing config/keys retain defaults; malformed
+# configuration blocks with a named error instead of silently using defaults.
 # Usage: solution="$(read_scan_config languages.csharp.build.solution '')"
 read_scan_config() {
     local key="${1:?key required}"
@@ -306,21 +417,8 @@ read_scan_config() {
     local cfg="${SCAN_CONFIG_FILE:-scan-config.yaml}"
     [[ -f "${cfg}" ]] || { echo "${default}"; return 0; }
     local py
-    py="$(find_python)" || { echo "${default}"; return 0; }
-    "${py}" - "${key}" "${default}" "${cfg}" <<'PYEOF' 2>/dev/null || echo "${default}"
-import sys
-key, default, cfg = sys.argv[1], sys.argv[2], sys.argv[3]
-try:
-    import yaml
-    with open(cfg, encoding="utf-8") as fh:
-        data = yaml.safe_load(fh) or {}
-    cur = data
-    for part in key.split("."):
-        cur = cur[part]
-    print(cur if cur is not None and cur != "" else default)
-except Exception:
-    print(default)
-PYEOF
+    py="$(find_python)" || { hook_error 'Python is required to read scan-config.yaml'; return 1; }
+    "${py}" -E -P "$(dirname -- "${BASH_SOURCE[0]}")/scan_config.py" "${key}" "${cfg}" "${default}"
 }
 
 # Python helper source (single-quoted -c arg avoids fragile heredocs-in-$()).
@@ -330,8 +428,10 @@ import sys, json
 try:
     with open(sys.argv[1], encoding="utf-8") as f:
         d = json.load(f)
+    if not isinstance(d, dict) or not isinstance(d.get("results"), list) or d.get("errors"):
+        raise ValueError("Incomplete scanner report")
     h = m = l = 0
-    for r in d.get("results", []):
+    for r in d["results"]:
         sev = str(r.get("extra", {}).get("severity") or "").upper()
         if sev == "ERROR": h += 1
         elif sev == "WARNING": m += 1
@@ -358,18 +458,17 @@ except Exception:
 # Prints "<high> <medium> <low> <total>" (ERROR->HIGH, WARNING->MEDIUM, INFO->LOW).
 count_semgrep_severities() {
     local json="${1:?json file required}"
-    [[ -f "${json}" ]] || { echo "0 0 0 0"; return 0; }
+    [[ -f "${json}" ]] || return 2
     local py result
     py="$(find_python 2>/dev/null)" || py=""
     if [[ -n "${py}" ]]; then
-        result="$("${py}" -c "${_SEMGREP_COUNT_PY}" "${json}" 2>/dev/null)"
+        result="$("${py}" -I -c "${_SEMGREP_COUNT_PY}" "${json}" 2>/dev/null)"
         if [[ $? -eq 0 && -n "${result}" ]]; then
             echo "${result}"
             return 0
         fi
     fi
-    # Fallback only if python is genuinely unavailable: detect finding presence.
-    if grep -q '"check_id"' "${json}" 2>/dev/null; then echo "1 0 0 1"; else echo "0 0 0 0"; fi
+    return 2
 }
 
 # Print a concise list of Semgrep findings from a --json output file.
@@ -378,7 +477,7 @@ print_semgrep_findings() {
     [[ -f "${json}" ]] || return 0
     local py out
     py="$(find_python 2>/dev/null)" || return 0
-    out="$("${py}" -c "${_SEMGREP_PRINT_PY}" "${json}" 2>/dev/null)" || return 0
+    out="$("${py}" -I -c "${_SEMGREP_PRINT_PY}" "${json}" 2>/dev/null)" || return 0
     [[ -n "${out}" ]] && printf '%s\n' "${out}"
 }
 
@@ -404,8 +503,8 @@ resolve_config() {
     local fallback="${3:-}"
 
     # Priority 1: Consuming repo's downloaded configs
-    if [[ -f "${SCAN_CONFIG_DIR}/${filename}" ]]; then
-        echo "${SCAN_CONFIG_DIR}/${filename}"
+    if [[ -f "${SCAN_CONFIG_DIR:-.scanning/configs}/${filename}" ]]; then
+        echo "${SCAN_CONFIG_DIR:-.scanning/configs}/${filename}"
         return 0
     fi
 
@@ -428,29 +527,19 @@ resolve_config() {
 # Pass arguments as separate words (NOT as a single string with eval).
 # Returns: Trivy exit code (0, 1, or 2 for fail-open on persistent lock)
 run_trivy_with_retry() {
-    local output
-    local exit_code
-
-    # First attempt — execute arguments directly without eval
-    output="$("$@" 2>&1)" && exit_code=0 || exit_code=$?
-
-    # Check for DB lock error
-    if echo "${output}" | grep -qi "database.*locked" 2>/dev/null; then
-        hook_warn "Trivy database locked, retrying in 2 seconds..."
-        sleep 2
-
-        # Retry once
-        output="$("$@" 2>&1)" && exit_code=0 || exit_code=$?
-
-        if echo "${output}" | grep -qi "database.*locked" 2>/dev/null; then
-            hook_warn "Trivy database still locked after retry"
-            echo "${output}"
-            return 2
+    local output exit_code diagnostics attempt
+    diagnostics="$(mktemp)" || return 2
+    for attempt in 1 2; do
+        output="$("$@" 2>"$diagnostics")" && exit_code=0 || exit_code=$?
+        if [[ "$exit_code" -ne 0 ]] && grep -qiE 'database.*locked|cache may be in use by another process' -- "$diagnostics"; then
+            [[ "$attempt" == 1 ]] && { hook_warn "Trivy database locked; retrying"; sleep 2; continue; }
+            exit_code=2
         fi
-    fi
-
-    echo "${output}"
-    return "${exit_code}"
+        cat -- "$diagnostics" >&2
+        rm -f -- "$diagnostics"
+        printf '%s\n' "$output"
+        return "$exit_code"
+    done
 }
 
 # ---------------------------------------------------------------------------
@@ -471,9 +560,16 @@ generate_id() {
 require_tool() {
     local tool="${1:?Tool name required}"
     if ! command -v "${tool}" >/dev/null 2>&1; then
-        hook_warn "${tool} not found on PATH - allowing commit (fail-open)"
+        if [[ "${SCAN_ALLOW_TOOL_ERRORS:-0}" != 1 ]]; then
+            hook_error "${tool} not found; scan incomplete"
+            exit 1
+        fi
+        hook_warn "${tool} unavailable; explicit local fail-open opt-in"
         return 2
     fi
+    local executable
+    executable="$(command -v "$tool")"
+    if [[ "$(type -t "$tool")" != function ]]; then assert_external_path "$executable"; fi
     return 0
 }
 

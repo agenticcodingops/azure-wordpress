@@ -103,6 +103,7 @@ jobs:
         with:
           directory: .
           framework: terraform
+          config_file: .scanning/configs/.checkov.yaml
           quiet: true
           soft_fail: false
           skip_check: CKV_TF_1,CKV_TF_2,CKV_AZURE_225,CKV_AZURE_13,CKV_AZURE_88,CKV_AZURE_222,CKV_AZURE_17,CKV_AZURE_94,CKV_AZURE_189,CKV_AZURE_109,CKV_AZURE_41,CKV_AZURE_211,CKV_AZURE_212,CKV_AZURE_206,CKV_AZURE_33,CKV_AZURE_59,CKV_AZURE_34,CKV2_AZURE_32,CKV2_AZURE_56,CKV2_AZURE_21,CKV2_AZURE_40,CKV2_AZURE_33,CKV2_AZURE_1
@@ -139,3 +140,23 @@ jobs:
           working-dir: modules/wordpress-site,modules/shared-infrastructure,modules/app-service,modules/database,modules/storage,modules/key-vault,modules/networking,modules/dns-zones,modules/cloudflare,modules/front-door,modules/monitoring
           output-file: README.md
           fail-on-diff: true
+
+  scan-config:
+    name: Scan configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.11'
+
+      - name: Install validation dependencies
+        run: python -m pip install PyYAML==6.0.3 jsonschema==4.25.1
+
+      - name: Validate staged scan configuration
+        run: bash hooks/dispatcher.sh validate-scan-config

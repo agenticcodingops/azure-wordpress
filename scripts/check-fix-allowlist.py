@@ -64,7 +64,7 @@ def _within(file_path: str, allow_path: str) -> bool:
 
     Boundary-aware: enforces a path-segment boundary so a sibling like
     `api/src-malicious/x` does NOT match the allowlist entry `api/src`
-    (a bare startswith would have let it through). See PR #145 review.
+    (a bare startswith would have let it through). See the reference consumer's review.
     """
     a = _norm(allow_path)
     f = _norm(file_path)
