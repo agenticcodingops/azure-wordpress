@@ -1,9 +1,9 @@
 # =============================================================================
-# Autonomous Fix (CALLER) — consumes the shared, hardened two-job fix-loop from
-# agenticcodingops/auto-code-scanning @ v2.3.2 (pinned by SHA).
+# Autonomous Fix (CALLER) — consumes the shared, hardened fix-loop from
+# agenticcodingops/auto-code-scanning @ v2.3.5 (pinned by SHA).
 #
 # Thin caller: owns ONLY the privilege boundary (who/when); all hardened logic
-# (two-job analyze/apply split, allowlist/gated gate, secret re-scan, .fix-attempts
+# (analyze/verify/apply split, allowlist/gated gate, secret re-scan, .fix-attempts
 # cap, flag-human-review) lives in the reusable workflow. Project specifics
 # (allowlist, gated paths, build-verify, max-turns, action pin) are in scan-config.yaml.
 #
