@@ -1,6 +1,6 @@
 # =============================================================================
 # Autonomous Fix (CALLER) — consumes the shared, hardened fix-loop from
-# agenticcodingops/auto-code-scanning @ v2.3.5 (pinned by SHA).
+# agenticcodingops/auto-code-scanning @ v2.3.6 (pinned by SHA).
 #
 # Thin caller: owns ONLY the privilege boundary (who/when); all hardened logic
 # (analyze/verify/apply split, allowlist/gated gate, secret re-scan, .fix-attempts
@@ -58,11 +58,11 @@ jobs:
         )
       )
     # PIN to the IMMUTABLE commit SHA (tags are mutable) — NEVER @main.
-    uses: agenticcodingops/auto-code-scanning/.github/workflows/autonomous-fix.yml@2c27dbf7583b9a0ef50a17a2cb7e8111675ba377 # v2.3.5
+    uses: agenticcodingops/auto-code-scanning/.github/workflows/autonomous-fix.yml@63c38759071a286cf278c3f4b4c18bd5f7e6e4d7 # v2.3.6
     with:
       pr_number: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
       config_path: scan-config.yaml
-      scanning_repo_ref: 2c27dbf7583b9a0ef50a17a2cb7e8111675ba377 # v2.3.5
+      scanning_repo_ref: 63c38759071a286cf278c3f4b4c18bd5f7e6e4d7 # v2.3.6
     # Least privilege: pass ONLY the secrets the reusable workflow declares.
     secrets:
       AUTOFIX_TOKEN: ${{ secrets.AUTOFIX_TOKEN }}
