@@ -9,6 +9,11 @@
   per-repo .claude hooks call into it. It fails open on missing tools (so a
   developer without trivy/semgrep is never hard-blocked) but fails CLOSED on
   real findings (non-zero exit) so the Stop hook can block "done".
+  C# scans run when languages.csharp.enabled is true or the working tree contains
+  .sln, .slnx or .csproj files (excluding .git, bin, obj and node_modules).
+  Explicit enabled: false always skips C#, including with -ScanType all.
+  When C# is in use, missing solutions/tools and builds that cannot start or fail
+  produce failed results.
 
 .PARAMETER ScanType
   secrets | semgrep | terraform | csharp | typescript | all
@@ -76,17 +81,77 @@ function Invoke-TerraformScan {
     Add-Result -Tool 'Trivy IaC' -ExitCode $code -Issues (Get-IssueLines $text) -OutputTail ($text.Substring([Math]::Max(0, $text.Length - 3000)))
 }
 
-function Invoke-CSharpScan {
-    if (-not (Test-Tool 'dotnet')) { return }
-    # Reuse the shared dotnet-build hook so config (solution/working_dir) drives it.
-    $hook = Join-Path $PSScriptRoot '..\hooks\dotnet-build.sh'
-    $env:SCAN_HOOK_ID = 'dotnet-build'
-    $disp = Join-Path $PSScriptRoot '..\hooks\dotnet-build.ps1'
-    if (Test-Path $disp) {
-        $out = & pwsh -NoProfile -ExecutionPolicy Bypass -File $disp 2>&1
-        $csText = ($out -join "`n")
-        Add-Result -Tool 'dotnet build (Roslyn)' -ExitCode $LASTEXITCODE -Issues (Get-IssueLines $csText) -OutputTail ($csText.Substring([Math]::Max(0, $csText.Length - 3000)))
+function Find-CSharpInput {
+    param([string]$WorkingDir = '.', [switch]$SolutionsOnly)
+    # Walk directories explicitly so excluded trees are never traversed. Do not
+    # follow directory links outside the working tree or into recursive cycles.
+    # Breadth-first discovery prefers the nearest solution without a depth cap.
+    $extensions = if ($SolutionsOnly) { @('.sln', '.slnx') } else { @('.sln', '.slnx', '.csproj') }
+    $pending = [System.Collections.Generic.Queue[string]]::new()
+    $pending.Enqueue((Get-Item -LiteralPath $WorkingDir -ErrorAction Stop).FullName)
+    while ($pending.Count -gt 0) {
+        foreach ($item in Get-ChildItem -LiteralPath $pending.Dequeue() -Force -ErrorAction Stop) {
+            if ($item.PSIsContainer) {
+                if ($item.Name -notin @('.git', 'bin', 'obj', 'node_modules') -and
+                    -not ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+                    $pending.Enqueue($item.FullName)
+                }
+            } elseif ($item.Extension -in $extensions) {
+                return $item.FullName
+            }
+        }
     }
+    return ''
+}
+
+function Invoke-CSharpScan {
+    $code = 1
+    $csText = ''
+    try {
+        $enabled = Read-ScanConfigValue -Key 'languages.csharp.enabled' -Default ''
+        if ($enabled -eq 'false') {
+            Write-Host '[scan-and-fix] C# disabled in scan-config.yaml; skipping C#'
+            return
+        }
+        if ($enabled -ne 'true' -and -not (Find-CSharpInput)) {
+            Write-Host '[scan-and-fix] No C# solution or project files found; skipping C#'
+            return
+        }
+        $workingDir = Read-ScanConfigValue -Key 'languages.csharp.build.working_dir' -Default '.'
+        $solution = Read-ScanConfigValue -Key 'languages.csharp.build.solution' -Default ''
+        # The push build hook rejects the same configured paths; keep both runners consistent.
+        foreach ($configured in @($workingDir, $solution)) {
+            $normalised = $configured.Replace('\', '/')
+            if ($normalised.StartsWith('/') -or $configured.Contains(':') -or ($normalised -split '/') -contains '..') {
+                throw "Build paths must remain inside the working tree: $configured"
+            }
+        }
+        if (-not (Test-Path -LiteralPath $workingDir -PathType Container)) {
+            throw "Build working directory not found: $workingDir"
+        }
+        # Discovery returns an absolute path; configured paths are relative to
+        # working_dir, just as they are in the push build hook.
+        if (-not $solution) { $solution = Find-CSharpInput -WorkingDir $workingDir -SolutionsOnly }
+        Push-Location -LiteralPath $workingDir -ErrorAction Stop
+        try {
+            if (-not $solution -or -not (Test-Path -LiteralPath $solution -PathType Leaf)) {
+                throw 'No solution found; configure languages.csharp.build.solution'
+            }
+            if (-not (Test-Tool 'dotnet')) { throw 'dotnet not found; build cannot start' }
+            # This path scans the live working tree. Push hooks still require
+            # a complete Git transaction and their materialised snapshot.
+            $global:LASTEXITCODE = $null
+            $out = & dotnet build $solution /p:AnalysisMode=AllEnabledByDefault --nologo 2>&1
+            if ($null -eq $LASTEXITCODE) { throw 'Build did not return an exit code' }
+            $code = $LASTEXITCODE
+            $csText = ($out -join "`n")
+        } finally {
+            Pop-Location
+        }
+    } catch {
+        $csText = $_.Exception.Message
+    }
+    Add-Result -Tool 'dotnet build (Roslyn)' -ExitCode $code -Issues (Get-IssueLines $csText) -OutputTail ($csText.Substring([Math]::Max(0, $csText.Length - 3000)))
 }
 
 function Invoke-TypeScriptScan {

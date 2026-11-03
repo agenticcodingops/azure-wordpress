@@ -49,6 +49,9 @@ def read_value(config, key, default):
         if part not in current:
             return default
         current = current[part]
+    if key == 'languages.csharp.enabled':
+        require(current, bool, key)
+        return str(current).lower()
     require(current, str, key)
     return current if current else default
 
