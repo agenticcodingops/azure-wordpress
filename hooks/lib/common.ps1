@@ -128,10 +128,45 @@ function Write-ScanJson {
     } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary } }
 }
 
+function Resolve-ExternalRealPath {
+    param([string]$Path)
+    $full = [IO.Path]::GetFullPath($Path)
+    for ($hop = 0; $hop -lt 40; $hop++) {
+        $current = $full
+        $resolved = $false
+        while ($current) {
+            $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+            if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                if ($item.PSObject.Methods['ResolveLinkTarget']) {
+                    $target = $item.ResolveLinkTarget($true)
+                    $target = if ($target) { $target.FullName } else { $null }
+                } else {
+                    # Windows PowerShell 5.1 exposes link targets as an adapted
+                    # property; .NET Framework has no ResolveLinkTarget method.
+                    $targets = @($item.Target)
+                    if ($targets.Count -ne 1) { throw 'Cannot resolve trusted path link' }
+                    $target = $targets[0]
+                    if ($target -and -not [IO.Path]::IsPathRooted($target)) {
+                        $target = Join-Path ([IO.Path]::GetDirectoryName($current)) $target
+                    }
+                }
+                if (-not $target) { throw 'Cannot resolve trusted path link' }
+                $suffix = $full.Substring($current.Length).TrimStart('/', '\')
+                $full = [IO.Path]::GetFullPath($(if ($suffix) { Join-Path $target $suffix } else { $target }))
+                $resolved = $true
+                break
+            }
+            $parent = [IO.Directory]::GetParent($current)
+            $current = if ($parent) { $parent.FullName } else { $null }
+        }
+        if (-not $resolved) { return $full }
+    }
+    throw 'Too many links in trusted path'
+}
+
 function Assert-ExternalPath {
     param([string]$Path)
     if (-not [IO.Path]::IsPathRooted($Path)) { throw 'Trusted path must be absolute' }
-    Assert-SafeWritePath $Path
     $root = if ($env:SCAN_PUSH_SNAPSHOT -eq '1') { (Get-Location).Path } else {
         Assert-GitAvailable
         & git rev-parse --show-toplevel 2>$null
@@ -141,9 +176,9 @@ function Assert-ExternalPath {
     if ($env:SCAN_PUSH_SNAPSHOT -eq '1' -and $env:SCAN_CONSUMER_ROOT) {
         $roots += $env:SCAN_CONSUMER_ROOT
     }
-    $full = [IO.Path]::GetFullPath($Path)
+    $full = Resolve-ExternalRealPath $Path
     foreach ($boundary in $roots) {
-        $boundary = [IO.Path]::GetFullPath($boundary).TrimEnd('/', '\')
+        $boundary = (Resolve-ExternalRealPath $boundary).TrimEnd('/', '\')
         if ($full -eq $boundary -or $full.StartsWith($boundary + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
             throw 'Trusted path must be outside the scanned and consumer checkouts'
         }
@@ -200,7 +235,7 @@ function Build-PassJson {
 {
   "schema_version": "1.0",
   "scan_id": "$scanId",
-  "timestamp": "$timestamp",
+  "scan_timestamp": "$timestamp",
   "duration_ms": $DurationMs,
   "scan_directory": "$safeScanDir",
   "tools_executed": ["$Tool"],
@@ -242,7 +277,7 @@ function Build-FindingsJson {
 {
   "schema_version": "1.0",
   "scan_id": "$scanId",
-  "timestamp": "$timestamp",
+  "scan_timestamp": "$timestamp",
   "duration_ms": $DurationMs,
   "scan_directory": "$safeScanDir",
   "tools_executed": ["$Tool"],
@@ -338,7 +373,7 @@ function Get-ChangedDirs {
             }
         }
 
-        $changedFiles = Get-ChangedFilesForDetect | Where-Object { $_ -match '\.tf$' }
+        $changedFiles = Get-ChangedFilesForDetect | Where-Object { $_ -match '\.tf(?:\.json)?$' }
 
         if (-not $changedFiles -or $changedFiles.Count -eq 0) {
             # No changed .tf files — return empty so hooks skip scanning
@@ -405,8 +440,8 @@ function Get-TfFileCount {
     $count = 0
     foreach ($dir in $Directories) {
         if (Test-Path -LiteralPath $dir -PathType Container) {
-            $count += (Get-ChildItem -LiteralPath $dir -Filter '*.tf' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -notmatch '[\\/]\.terraform[\\/]' }).Count
+            $count += (Get-ChildItem -LiteralPath $dir -File -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '\.tf(?:\.json)?$' -and $_.FullName -notmatch '[\\/]\.terraform[\\/]' }).Count
         }
     }
     return $count

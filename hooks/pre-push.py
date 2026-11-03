@@ -70,7 +70,7 @@ def policy_directory(root: Path) -> str:
     return portable.as_posix()
 
 
-def tips(records: str) -> list[str]:
+def tips(records: str) -> list[tuple[str, str]]:
     result = []
     for line in records.splitlines():
         fields = line.split()
@@ -83,12 +83,54 @@ def tips(records: str) -> list[str]:
             continue
         # Peel annotated tags. Reject blob tags and unavailable objects.
         git('rev-parse', '--verify', local + '^{tree}')
-        if local not in result:
-            result.append(local)
+        if (local, remote) not in result:
+            result.append((local, remote))
     return result
 
 
-def materialize(oid: str, destination: Path) -> list[str]:
+def changed_paths(local: str, remote: str, remote_name: str | None = None) -> list[str]:
+    """Select the transaction's range, independent of HEAD and the index."""
+    if set(remote) == {'0'}:
+        # A tag can point directly to a tree, which has no commit ancestry.
+        # rev-list silently emits nothing for it; scan its files instead.
+        if git('cat-file', '-t', local + '^{}').strip() == b'tree':
+            return [os.fsdecode(name) for name in git('ls-tree', '-rz', '--name-only',
+                    '--full-tree', local).split(b'\0') if name]
+        # Use the remote's advertised default branch when it is tracked locally.
+        defaults = git('for-each-ref', '--format=%(refname)', 'refs/remotes').decode().splitlines()
+        defaults = [ref for ref in defaults if ref.endswith('/HEAD')]
+        if remote_name is not None:
+            names = {remote_name}
+            for name in git('remote').decode().splitlines():
+                if git('remote', 'get-url', name).decode().strip() == remote_name:
+                    names.add(name)
+            defaults = [ref for ref in defaults if any(ref == f'refs/remotes/{name}/HEAD' for name in names)]
+        if len(defaults) == 1:
+            try:
+                base = git('merge-base', local, defaults[0]).decode().strip()
+            except subprocess.CalledProcessError as exc:
+                if exc.returncode != 1:
+                    raise
+            else:
+                return diff_paths(base, local)
+        # Without a usable default/merge base, only commits absent from every
+        # remote-tracking ref contribute paths. No remote refs means all commits.
+        commits = git('rev-list', local, '--not', '--remotes').decode().splitlines()
+        names = set()
+        for commit in commits:
+            names.update(filter(None, git('diff-tree', '--root', '-r', '-m', '--no-commit-id',
+                '--no-ext-diff', '--no-textconv', '--no-renames', '--name-only', '-z',
+                '--diff-filter=ACMT', commit, '--').split(b'\0')))
+        return sorted(os.fsdecode(name) for name in names)
+    return diff_paths(remote, local)
+
+
+def diff_paths(base: str, local: str) -> list[str]:
+    return [os.fsdecode(name) for name in git('diff', '--no-ext-diff', '--no-textconv',
+        '--no-renames', '--name-only', '-z', '--diff-filter=ACMT', base, local, '--').split(b'\0') if name]
+
+
+def materialize(oid: str, destination: Path, selected: set[str] | None = None) -> list[str]:
     """Copy blobs verbatim: no checkout filters, attributes, hooks or local index."""
     names = []
     entries = git('ls-tree', '-rz', '--full-tree', oid).split(b'\0')
@@ -99,6 +141,10 @@ def materialize(oid: str, destination: Path) -> list[str]:
                 meta, raw_name = entry.split(b'\t', 1)
                 mode, kind, blob = meta.split()
                 name = os.fsdecode(raw_name)
+                # Directory scanners must not pick up unchanged siblings or
+                # nested sources, regardless of their file type.
+                if selected is not None and name not in selected:
+                    continue
                 path = PurePosixPath(name)
                 if (path.is_absolute() or any(p in ('..', '.git') or ':' in p or '\\' in p
                                               for p in path.parts)):
@@ -180,7 +226,8 @@ def export_report(source: Path, destination: Path) -> None:
             prepared.unlink()
 
 
-def scan(records: str, hooks: list[tuple[str, list[str]]], shell: str, *, from_git: bool = False) -> int:
+def scan(records: str, hooks: list[tuple[str, list[str]]], shell: str, *, from_git: bool = False,
+         remote_name: str | None = None) -> int:
     root = Path(os.fsdecode(git('rev-parse', '--show-toplevel')).strip()).resolve()
     report = root / '.scanning/last-scan.json'
     # No report from an earlier transaction may survive a skipped or failed run.
@@ -193,7 +240,7 @@ def scan(records: str, hooks: list[tuple[str, list[str]]], shell: str, *, from_g
     status = 0
     implementation, executable = select_shell(shell)
     policy_dir = policy_directory(root)
-    for oid in objects:
+    for oid, remote in objects:
         clear_report(report)
         with tempfile.TemporaryDirectory(prefix='scan-push-') as temporary:
             # The system temp base is trusted and may have linked ancestors
@@ -202,7 +249,12 @@ def scan(records: str, hooks: list[tuple[str, list[str]]], shell: str, *, from_g
             temporary = Path(temporary).resolve(strict=True)
             snapshot = temporary / 'tree'
             snapshot.mkdir()
-            names = materialize(oid, snapshot)
+            selected = set(changed_paths(oid, remote, remote_name))
+            # Policy is read from the pushed tip even when it did not change.
+            required_policy = {'scan-config.yaml', '.snyk', str(PurePosixPath(policy_dir) / '.checkov.yaml'),
+                               str(PurePosixPath(policy_dir) / '.trivyignore')}
+            available = materialize(oid, snapshot, selected | required_policy)
+            names = [name for name in available if name in selected]
             config = {}
             if (snapshot / 'scan-config.yaml').is_file():
                 config = load_scan_config(snapshot / 'scan-config.yaml')
@@ -221,7 +273,7 @@ def scan(records: str, hooks: list[tuple[str, list[str]]], shell: str, *, from_g
             for hook, extra in hooks:
                 if hook not in HOOKS:
                     raise ValueError('Unknown pre-push scanner')
-                extensions = ('.cs', '.csproj') if hook == 'dotnet-build' else ('.tf',)
+                extensions = ('.cs', '.csproj') if hook == 'dotnet-build' else ('.tf', '.tf.json')
                 if not any(name.lower().endswith(extensions) for name in names):
                     continue
                 clear_report(report)
@@ -252,12 +304,24 @@ def scan(records: str, hooks: list[tuple[str, list[str]]], shell: str, *, from_g
                         path = PurePosixPath(configured.replace('\\', '/'))
                         if path.is_absolute() or '..' in path.parts or ':' in configured:
                             raise ValueError('Build paths must remain inside the pushed snapshot')
+                if hook in ('dotnet-build', 'tflint'):
+                    # Builds and module linting need unchanged inputs as context.
+                    # TFLint filters findings to the transaction's selected files.
+                    complete = temporary / 'complete'
+                    if not complete.exists():
+                        complete.mkdir()
+                        materialize(oid, complete)
+                    hook_snapshot = complete
+                else:
+                    hook_snapshot = snapshot
+                snapshot_report = hook_snapshot / '.scanning/last-scan.json'
+                clear_report(snapshot_report)
                 print(f'[pre-push] {hook}: scanning object {oid}', flush=True)
                 script = str(HERE / f'{hook}.{implementation}')
                 command = ([executable, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script] if implementation == 'ps1'
                            else [executable, script])
                 try:
-                    result = subprocess.run(command + extra, cwd=snapshot, env=env)
+                    result = subprocess.run(command + extra, cwd=hook_snapshot, env=env)
                 finally:
                     export_report(snapshot_report, report)
                 status = max(status, int(result.returncode != 0))
@@ -391,6 +455,7 @@ def main() -> int:
     parser.add_argument('--install-pre-commit', action='store_true')
     parser.add_argument('--pre-commit-runner', action='store_true')
     parser.add_argument('--stdin-from-git', action='store_true')
+    parser.add_argument('--remote', help='destination remote name or URL supplied by Git')
     parser.add_argument('--shell', choices=('auto', 'sh', 'ps1'), default='auto')
     parser.add_argument('--hooks', default='checkov,tflint,dotnet-build')
     args, extra = parser.parse_known_args()
@@ -402,7 +467,8 @@ def main() -> int:
         original = os.fsdecode(git('rev-parse', '--git-path', 'hooks/pre-push.pre-commit')).strip()
         source = Path(original).read_text(encoding='utf-8')
         hooks, forwarded = push_configuration(runner_configuration(source))
-        status = scan(records, hooks, args.shell, from_git=True)
+        status = scan(records, hooks, args.shell, from_git=True,
+                      remote_name=args.remote or (extra[0] if extra else None))
         if status:
             return status
         source = source.replace('# end templated', '# end templated\nARGS+=(--config "$SCAN_PUSH_FILTERED_CONFIG")', 1)
@@ -415,7 +481,14 @@ def main() -> int:
             # legacy chaining. Only its config is overridden in this invocation.
             return subprocess.run([bash(), '-c', source, original, *extra],
                                   input=records, text=True, env=env).returncode
-    return scan(records, [(h, extra) for h in args.hooks.split(',')], args.shell, from_git=args.stdin_from_git)
+    remote_name = args.remote
+    if len(extra) == 2 and all(not value.startswith('-') for value in extra):
+        # Directly installed shell wrappers receive Git's remote name and URL.
+        # Consume them here rather than forwarding them as scanner options.
+        remote_name = remote_name or extra[0]
+        extra = []
+    return scan(records, [(h, extra) for h in args.hooks.split(',')], args.shell,
+                from_git=args.stdin_from_git, remote_name=remote_name)
 
 
 if __name__ == '__main__':

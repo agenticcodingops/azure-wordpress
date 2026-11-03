@@ -111,8 +111,8 @@ if not isinstance(data, list):
 findings = []
 details = []
 for item in data:
-    if not isinstance(item, dict):
-        continue
+    if not isinstance(item, dict) or not isinstance(item.get('RuleID'), str) or not item['RuleID']:
+        sys.exit(2)
     rule = str(item.get("RuleID") or "")
     path = str(item.get("File") or "")
     try:
@@ -153,7 +153,7 @@ PY
     total_high="${total_high//$'\n'/}"
 elif command -v jq >/dev/null 2>&1; then
     set +e
-    jq -e 'type == "array"' "${report_file}" >/dev/null 2>&1
+    jq -e 'type == "array" and all(.[]; type == "object" and (.RuleID | type == "string" and length > 0))' "${report_file}" >/dev/null 2>&1
     parse_status=$?
     set -e
     if [[ ${parse_status} -eq 0 ]]; then
@@ -165,8 +165,7 @@ elif command -v jq >/dev/null 2>&1; then
 else
     # No Python and no jq. `[]` is a clean report. Any other JSON array is a
     # findings report we cannot read: block, and do not copy the report.
-    # Failing open here would allow the staged credentials. A non-array
-    # report (a config Gitleaks cannot load) stays fail-open below.
+    # An unreadable report must never become a clean pass.
     if [[ "${report_compact}" == "[]" ]]; then
         parse_status=0
         total_high=0
@@ -180,17 +179,22 @@ else
     fi
 fi
 
-# A missing or non-array report is a tool failure. Gitleaks uses exit 1 for
-# that case (a config it cannot parse), so the exit code alone cannot mean
-# "finding". pre-commit blocks every non-zero status, so fail-open is a
-# warning and process exit 0, matching handle_exit_code.
-if [[ ${parse_status} -ne 0 ]]; then
-    hook_warn "gitleaks exited ${exit_code} without a JSON findings report - allowing commit (fail-open)"
-    duration_ms="$(stop_timer)"
-    hook_log "PASS: No findings above threshold"
-    write_scan_json "$(build_pass_json "gitleaks" "." "${duration_ms}")"
-    exit 0
+# Array-shaped corruption may contain findings. Like an unparsed findings
+# array, it must block even when infrastructure errors are explicitly tolerated.
+if [[ ${parse_status} -ne 0 && "${report_compact}" == \[* ]]; then
+    hook_error 'Gitleaks findings report could not be validated; commit blocked'
+    exit 1
 fi
+
+# Normalize ambiguous exit 1 without findings to an infrastructure error.
+if [[ ${parse_status} -ne 0 || ( ${exit_code} -ne 0 && "${total_high:-0}" -eq 0 ) ]]; then
+    hook_warn "gitleaks exited ${exit_code} without a complete valid scan"
+    handle_exit_code 2
+    exit $?
+fi
+
+# A valid nonempty report always blocks, even if the tool also failed and the
+# adopter explicitly tolerates infrastructure errors. Never discard known leaks.
 
 duration_ms="$(stop_timer)"
 

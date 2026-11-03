@@ -20,19 +20,19 @@ permissions:
 jobs:
   terraform-scan:
     # PIN to the IMMUTABLE commit SHA. Bump deliberately, and move scanning-repo-ref with it.
-    uses: agenticcodingops/auto-code-scanning/.github/workflows/reusable-scan.yml@75eb2614df373f92dcab55d14ca46bdf52c14ebe # v3.0.0
+    uses: agenticcodingops/auto-code-scanning/.github/workflows/reusable-scan.yml@a738cd1274c86c2e661be92e7d2f8d0b73efe4fa # v3.0.1
     needs: checkov-settings
     with:
       terraform-directory: "."
       cloud-provider: "azure"
       severity: "CRITICAL,HIGH"
-      scanning-repo-ref: "75eb2614df373f92dcab55d14ca46bdf52c14ebe" # v3.0.0
+      scanning-repo-ref: "a738cd1274c86c2e661be92e7d2f8d0b73efe4fa" # v3.0.1
       checkov-skip-checks: ${{ needs.checkov-settings.outputs.skip-checks }}
       checkov-render-iter-count: ${{ needs.checkov-settings.outputs.render-iter-count }}
 
   # The Checkov skip list and the render setting are written once, in validate.yml's Checkov
-  # step. This job reads them from there and hands them to the shared scan, so the two cannot
-  # drift. It fails on a missing or malformed value instead of scanning with a silently short list.
+  # step. Proposed policy is checked for drift separately; only trusted base values
+  # reach the shared scan on pull requests. Missing or malformed values fail closed.
   checkov-settings:
     name: Read the Checkov settings
     runs-on: ubuntu-latest
@@ -52,6 +52,17 @@ jobs:
             .scanning/configs/.checkov.yaml
           sparse-checkout-cone-mode: false
 
+      - name: Checkout trusted scan policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: .trusted-scan-policy
+          persist-credentials: false
+          sparse-checkout: |
+            .github/workflows/validate.yml
+            .scanning/configs/.checkov.yaml
+          sparse-checkout-cone-mode: false
+
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
@@ -60,11 +71,12 @@ jobs:
       - name: Install YAML reader
         run: python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
 
-      - name: Read the Checkov step in validate.yml
+      - name: Check proposed policy drift and read trusted settings
         id: read
         run: |
           python3 - <<'PY'
           import os, re, sys
+          from pathlib import Path
           import yaml
 
           # The shared scan accepts only these IDs, comma-separated with no spaces, and a positive integer.
@@ -74,38 +86,47 @@ jobs:
               print(f"::error file=.github/workflows/validate.yml::{message}")
               sys.exit(1)
 
-          with open(".github/workflows/validate.yml", encoding="utf-8") as stream:
-              workflow = yaml.safe_load(stream)
-          steps = [
-              step
-              for step in (workflow.get("jobs", {}).get("checkov", {}).get("steps") or [])
-              if str(step.get("uses", "")).startswith("bridgecrewio/checkov-action@")
-          ]
-          if len(steps) != 1:
-              fail(f"expected exactly one bridgecrewio/checkov-action step in the checkov job, found {len(steps)}")
-          step = steps[0]
+          def read_settings(root, require_policy):
+              with open(root / ".github/workflows/validate.yml", encoding="utf-8") as stream:
+                  workflow = yaml.safe_load(stream)
+              steps = [
+                  step
+                  for step in (workflow.get("jobs", {}).get("checkov", {}).get("steps") or [])
+                  if str(step.get("uses", "")).startswith("bridgecrewio/checkov-action@")
+              ]
+              if len(steps) != 1:
+                  fail(f"expected exactly one bridgecrewio/checkov-action step in the checkov job, found {len(steps)}")
+              step = steps[0]
 
-          raw = (step.get("with") or {}).get("skip_check")
-          if isinstance(raw, list):
-              raw = ",".join(str(entry) for entry in raw)
-          if not isinstance(raw, str) or not raw.strip():
-              fail("the Checkov step has no skip_check; not scanning with a silently empty list")
-          ids = list(dict.fromkeys(entry.strip() for entry in raw.strip().split(",")))
-          bad = [entry for entry in ids if not CHECK_ID.fullmatch(entry)]
-          if bad:
-              fail(f"skip_check entries the shared scan cannot take: {bad}")
+              raw = (step.get("with") or {}).get("skip_check")
+              if isinstance(raw, list):
+                  raw = ",".join(str(entry) for entry in raw)
+              if not isinstance(raw, str) or not raw.strip():
+                  fail("the Checkov step has no skip_check; not scanning with a silently empty list")
+              ids = list(dict.fromkeys(entry.strip() for entry in raw.strip().split(",")))
+              bad = [entry for entry in ids if not CHECK_ID.fullmatch(entry)]
+              if bad:
+                  fail(f"skip_check entries the shared scan cannot take: {bad}")
 
-          policy_path = (step.get("with") or {}).get("config_file")
-          if policy_path != ".scanning/configs/.checkov.yaml":
-              fail("the Checkov step must use the tracked push-snapshot policy")
-          with open(policy_path, encoding="utf-8") as stream:
-              policy = yaml.safe_load(stream)
-          if policy.get("skip-check") != ids:
-              fail("push-snapshot policy skip-check must mirror validate.yml skip_check")
+              policy_path = (step.get("with") or {}).get("config_file")
+              # The pre-migration base has no mirror; its workflow skip list is still trusted.
+              # Proposed revisions must always carry the mirror and pass drift validation.
+              if require_policy or policy_path is not None:
+                  if policy_path != ".scanning/configs/.checkov.yaml":
+                      fail("the Checkov step must use the tracked push-snapshot policy")
+                  with open(root / policy_path, encoding="utf-8") as stream:
+                      policy = yaml.safe_load(stream)
+                  if not isinstance(policy, dict) or policy.get("skip-check") != ids:
+                      fail("push-snapshot policy skip-check must mirror validate.yml skip_check")
 
-          render = str((step.get("env") or {}).get("RENDER_EDGES_DUPLICATE_ITER_COUNT", ""))
-          if not re.fullmatch(r"[0-9]+", render) or not render.strip("0"):
-              fail(f"RENDER_EDGES_DUPLICATE_ITER_COUNT must be a positive integer on the Checkov step, got {render!r}")
+              render = str((step.get("env") or {}).get("RENDER_EDGES_DUPLICATE_ITER_COUNT", ""))
+              if not re.fullmatch(r"[0-9]+", render) or not render.strip("0"):
+                  fail(f"RENDER_EDGES_DUPLICATE_ITER_COUNT must be a positive integer on the Checkov step, got {render!r}")
+
+              return ids, render
+
+          read_settings(Path("."), require_policy=True)
+          ids, render = read_settings(Path(".trusted-scan-policy"), require_policy=False)
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write("skip-checks=" + ",".join(ids) + "\n")

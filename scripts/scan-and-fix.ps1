@@ -24,7 +24,6 @@ param(
 
 $ErrorActionPreference = 'Continue'
 . "$PSScriptRoot/../hooks/lib/common.ps1"
-Assert-SafeWritePath '.claude/scan-findings.json'
 
 $results = @()
 
@@ -113,6 +112,7 @@ $failed = @($results | Where-Object { -not $_.passed })
 $hasErrors = $failed.Count -gt 0
 
 if ($AutoFix -and $hasErrors) {
+    Assert-SafeWritePath '.claude/scan-findings.json'
     if (-not (Test-Path '.claude')) { New-Item -ItemType Directory -Path '.claude' -Force | Out-Null }
     $doc = [pscustomobject]@{
         schemaVersion   = 1

@@ -36,6 +36,14 @@ for dir in "${scan_dirs[@]}"; do
 
     # Build tflint command as array — safe for paths with spaces/special chars
     tflint_cmd=(tflint --chdir="${dir}" --format json)
+    if [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 ]]; then
+        read_nul_paths changed_sources get_staged_files tf tf.json
+        for path in "${changed_sources[@]}"; do
+            parent='.'
+            [[ "$path" != */* ]] || parent="${path%/*}"
+            [[ "$parent" != "$dir" ]] || tflint_cmd+=("--filter=${path##*/}")
+        done
+    fi
 
     # Configuration and plugin cache are provisioned outside the scanned checkout.
     config_file="${SCAN_TFLINT_CONFIG:-}"

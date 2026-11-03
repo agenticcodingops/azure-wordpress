@@ -33,7 +33,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from safe_io import write_text
-from scan_policy import apply_exceptions, occurrence_fingerprint, suppression_file, load_suppression_entries, baseline_keys, scanner_path
+from scan_policy import apply_exceptions, occurrence_fingerprint, suppression_file, load_suppression_entries, baseline_keys, scanner_path, checkov_checks
 from scan_reports import validate_report
 
 # Severity normalization mappings
@@ -236,7 +236,7 @@ def run_trivy(scan_dir, severity_filter=None):
     return findings, False
 
 
-def run_checkov(scan_dir, auto_fix=False, config_file=None):
+def run_checkov(scan_dir, auto_fix=False, config_file=None, trusted_root=None):
     """Run Checkov scan and return normalized findings."""
     findings = []
 
@@ -245,7 +245,6 @@ def run_checkov(scan_dir, auto_fix=False, config_file=None):
         "--directory", str(scan_dir),
         "--output", "json",
         "--compact",
-        "--quiet",
     ]
 
     if config_file and Path(config_file).exists():
@@ -275,11 +274,11 @@ def run_checkov(scan_dir, auto_fix=False, config_file=None):
         if not isinstance(check_type, dict):
             continue
 
-        failed_checks = check_type["results"]["failed_checks"] + check_type["results"].get("skipped_checks", [])
+        failed_checks = checkov_checks(check_type["results"], policy_root(scan_dir), trusted_root, scan_dir)
         for check in failed_checks:
             rule_id = check.get("check_id", "")
-            raw_severity = check.get("severity", "MEDIUM")
-            normalized = map_checkov_severity(raw_severity) if raw_severity else "MEDIUM"
+            raw_severity = check.get("severity") or "HIGH"
+            normalized = map_checkov_severity(raw_severity)
 
             is_fixable = check.get("fixed", False) or check.get("fixable", False)
             is_fixed = check.get("fixed", False)
@@ -478,6 +477,7 @@ def build_report(findings, scan_dir, tools_executed, duration_ms, auto_fix, fix_
 
 
 def main():
+    """Run selected scanners and gate their complete, policy-filtered reports."""
     parser = argparse.ArgumentParser(
         description="Terraform security scanning interface",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -561,10 +561,11 @@ def main():
                 checkov_config = str(candidate)
                 break
 
-    print(f"Scanning {scan_dir} with {', '.join(tools_to_run)}...")
+    progress = sys.stderr if args.format == 'json' else sys.stdout
+    print(f"Scanning {scan_dir} with {', '.join(tools_to_run)}...", file=progress)
     if cloud_provider:
-        print(f"  Cloud provider: {cloud_provider}")
-    print()
+        print(f"  Cloud provider: {cloud_provider}", file=progress)
+    print(file=progress)
 
     start_time = time.time()
     all_findings = []
@@ -584,7 +585,7 @@ def main():
     # Run Checkov
     if "checkov" in tools_to_run:
         checkov_findings, checkov_error, fix_count = run_checkov(
-            scan_dir, auto_fix=args.auto_fix, config_file=checkov_config
+            scan_dir, auto_fix=args.auto_fix, config_file=checkov_config, trusted_root=args.policy_root
         )
         if checkov_error:
             had_error = True

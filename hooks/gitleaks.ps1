@@ -89,7 +89,9 @@ function ConvertFrom-GitleaksReport {
         }
         $rows = New-Object System.Collections.Generic.List[object]
         foreach ($item in @($data)) {
-            if ($null -eq $item -or -not $item.RuleID) { continue }
+            if ($null -eq $item -or -not ($item.RuleID -is [string]) -or -not $item.RuleID) {
+                return @{ Ok = $false; Unparsed = $true; Rows = @() }
+            }
             $start = 0
             if ($null -ne $item.StartLine) { $start = [int]$item.StartLine }
             $end = $start
@@ -123,7 +125,9 @@ function ConvertFrom-GitleaksReport {
         }
         $rows = New-Object System.Collections.Generic.List[object]
         foreach ($item in $doc.RootElement.EnumerateArray()) {
-            if ($item.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) { continue }
+            if ($item.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
+                return @{ Ok = $false; Unparsed = $true; Rows = @() }
+            }
             $rule = ''
             $path = ''
             $desc = ''
@@ -142,7 +146,7 @@ function ConvertFrom-GitleaksReport {
                     $end = $prop.Value.GetInt32()
                 }
             }
-            if (-not $rule) { continue }
+            if (-not $rule) { return @{ Ok = $false; Unparsed = $true; Rows = @() } }
             if ($end -eq 0) { $end = $start }
             $rows.Add([pscustomobject]@{
                 RuleId      = $rule
@@ -170,9 +174,7 @@ if ($null -ne $stdout) {
 }
 $parsed = ConvertFrom-GitleaksReport -ReportText $text
 
-# A non-array report is a tool failure. Gitleaks uses exit 1 for a config it
-# cannot load, so that exit alone cannot mean "finding". pre-commit blocks
-# every non-zero status, so fail-open is a warning and process exit 0.
+# A missing/non-array report is a tool failure, never a clean scan.
 # An array-shaped report that cannot be parsed is different: the scan wrote
 # findings and failing open would allow them. Block, and do not print the
 # report. The bash hook does the same when neither Python nor jq is installed.
@@ -190,12 +192,16 @@ if (-not $parsed.Ok) {
         Write-ScanJson (Build-FindingsJson -Tool 'gitleaks' -DurationMs $durationMs -FindingsArray $findingsJson -High 1)
         exit 1
     }
-    Write-HookWarn "gitleaks exited $exitCode without a JSON findings report - allowing commit (fail-open)"
-    Write-GitleaksPass -DurationMs (Stop-ScanTimer)
-    exit 0
+    Write-HookWarn "gitleaks exited $exitCode without a complete valid scan"
+    exit (Get-HookExitCode -ToolExitCode 2)
 }
 
 $rows = @($parsed.Rows | Where-Object { $null -ne $_ })
+if ($exitCode -ne 0 -and $rows.Count -eq 0) {
+    Write-HookWarn "gitleaks exited $exitCode without a complete valid scan"
+    exit (Get-HookExitCode -ToolExitCode 2)
+}
+# Known findings take precedence over the explicit infrastructure-error override.
 $durationMs = Stop-ScanTimer
 if ($rows.Count -eq 0) {
     Write-GitleaksPass -DurationMs $durationMs

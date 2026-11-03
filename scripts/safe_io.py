@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import stat
 import tempfile
+import secrets
 
 
 def assert_safe_path(path):
@@ -27,14 +28,34 @@ def assert_safe_tree(path):
     return path
 
 
+def new_file_mode(parent):
+    """Probe the umask with an empty file that never receives output contents."""
+    while True:
+        probe = parent / ('.scan-mode-' + secrets.token_hex(16))
+        try:
+            descriptor = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+            break
+        except FileExistsError:
+            continue
+    try:
+        return stat.S_IMODE(os.fstat(descriptor).st_mode)
+    finally:
+        os.close(descriptor)
+        os.unlink(probe)
+
+
 def write_text(path, text, encoding='utf-8'):
     path = assert_safe_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     assert_safe_path(path)
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else new_file_mode(path.parent)
+    # The content-bearing file is private from creation, so no reader can retain
+    # an open descriptor from a permissive create-before-chmod window.
     descriptor, temporary = tempfile.mkstemp(prefix='.scan-write-', dir=path.parent)
     try:
         with os.fdopen(descriptor, 'w', encoding=encoding) as stream:
             stream.write(text)
+        os.chmod(temporary, mode)
         assert_safe_path(path)
         os.replace(temporary, path)
     finally:

@@ -54,6 +54,15 @@ foreach ($dir in $scanDirs) {
 
     # Build tflint arguments
     $tflintArgs = @('--chdir', $dir, '--format', 'json')
+    if ($env:SCAN_PUSH_SNAPSHOT -eq '1') {
+        foreach ($path in @(Get-StagedFiles -Extensions @('tf', 'tf.json'))) {
+            $parent = [IO.Path]::GetDirectoryName($path).Replace('\', '/')
+            if (-not $parent) { $parent = '.' }
+            if ($parent -ceq $dir.Replace('\', '/')) {
+                $tflintArgs += "--filter=$([IO.Path]::GetFileName($path))"
+            }
+        }
+    }
     if ($configFile) {
         $tflintArgs += @('--config', $configFile)
     }

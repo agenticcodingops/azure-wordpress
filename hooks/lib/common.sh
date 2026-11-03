@@ -193,7 +193,7 @@ build_pass_json() {
 {
   "schema_version": "1.0",
   "scan_id": "$(generate_id)",
-  "timestamp": "${timestamp}",
+  "scan_timestamp": "${timestamp}",
   "duration_ms": ${duration_ms},
   "scan_directory": "${scan_dir}",
   "tools_executed": ["${tool}"],
@@ -234,7 +234,7 @@ build_findings_json() {
 {
   "schema_version": "1.0",
   "scan_id": "$(generate_id)",
-  "timestamp": "${timestamp}",
+  "scan_timestamp": "${timestamp}",
   "duration_ms": ${duration_ms},
   "scan_directory": "${scan_dir}",
   "tools_executed": ["${tool}"],
@@ -319,7 +319,7 @@ detect_changed_dirs() {
     fi
 
     _changed_files_for_detect | while IFS= read -r -d '' path; do
-        [[ "$path" == *.tf ]] || continue
+        [[ "${path,,}" == *.tf || "${path,,}" == *.tf.json ]] || continue
         if [[ "$path" == */* ]]; then printf '%s\0' "${path%/*}"; else printf '.\0'; fi
     done | LC_ALL=C sort -zu
 }
@@ -340,7 +340,7 @@ count_tf_files() {
             local dir_count
             local search_dir="${dir}"
             [[ "$search_dir" == /* ]] || search_dir="./$search_dir"
-            dir_count="$(find -- "${search_dir}" -maxdepth 3 -name '*.tf' -not -path '*/.terraform/*' -print0 2>/dev/null | tr -cd '\0' | wc -c)"
+            dir_count="$(find -- "${search_dir}" -maxdepth 3 \( -iname '*.tf' -o -iname '*.tf.json' \) -not -path '*/.terraform/*' -print0 2>/dev/null | tr -cd '\0' | wc -c)"
             count=$((count + dir_count))
         fi
     done
