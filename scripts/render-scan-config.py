@@ -15,6 +15,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from safe_io import assert_safe_path, write_text
 
 KNOWN_LANGUAGES = {"terraform", "csharp", "typescript", "sql"}
 
@@ -47,7 +48,7 @@ def main(argv) -> int:
         print(f"ERROR: template not found: {template}", file=sys.stderr)
         return 1
 
-    out = Path(args.out)
+    out = assert_safe_path(args.out)
     if out.exists() and not args.force:
         print(f"[render-scan-config] {out} already exists; leaving as-is (use --force to overwrite)")
         return 0
@@ -62,7 +63,7 @@ def main(argv) -> int:
     if args.enable_fix_loop:
         text = enable_fix_loop(text)
 
-    out.write_text(text, encoding="utf-8")
+    write_text(out, text)
     print(f"[render-scan-config] wrote {out} (tier={args.tier}, languages={langs}, fix_loop={args.enable_fix_loop})")
     return 0
 

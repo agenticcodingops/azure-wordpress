@@ -3,12 +3,12 @@
 # Stage: pre-commit | Mode: staged .sql only
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
 require_tool "sqlfluff" || exit 0
 
-mapfile -t files < <(get_staged_files sql)
+read_nul_paths files get_staged_files sql
 if [[ ${#files[@]} -eq 0 ]]; then
     hook_log "PASS: No SQL files staged"
     exit 0
@@ -26,7 +26,7 @@ fi
 start_timer
 hook_log "Linting... (${#files[@]} SQL files, dialect=${dialect_note})"
 [[ $# -gt 0 ]] && sqlfluff_cmd+=("$@")
-sqlfluff_cmd+=("${files[@]}")
+sqlfluff_cmd+=(-- "${files[@]}")
 
 set +e
 output="$("${sqlfluff_cmd[@]}" 2>&1)"

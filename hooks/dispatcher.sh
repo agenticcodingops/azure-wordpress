@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 HOOK_ID="${1:?Error: hook-id argument is required}"
@@ -16,10 +16,18 @@ export SCAN_HOOK_ID="${HOOK_ID}"
 export SCAN_VERBOSE="${SCAN_VERBOSE:-0}"
 export SCAN_CONFIG_DIR="${SCAN_CONFIG_DIR:-.scanning/configs}"
 
+# One stdin consumer fans the complete transaction out to every push scanner.
+if [[ "$HOOK_ID" == pre-push ]]; then
+    source "${SCRIPT_DIR}/lib/common.sh"
+    PY="$(find_python)" || { echo 'Python is required for push snapshots' >&2; exit 1; }
+    exec "$PY" "${SCRIPT_DIR}/pre-push.py" --stdin-from-git "$@"
+fi
+
 # ---------------------------------------------------------------------------
 # Global kill-switch. If scan-config.yaml sets `local_hooks_enabled: false`, skip
-# ALL local pre-commit / pre-push hooks here (CI scanning via the reusable workflows
-# is unaffected). Opt-OUT: only an explicit `false` disables; a missing key keeps
+# pre-commit scanner hooks here (CI scanning via the reusable workflows
+# is unaffected). Push hooks read this switch from each pushed object; staged
+# config validation always runs. Only an explicit `false` disables; a missing key keeps
 # scanning on. Lets you pause local scanning during in-progress work without
 # uninstalling lefthook: set `global.local_hooks_enabled: false` (or top-level
 # `local_hooks_enabled: false`) in scan-config.yaml to disable, remove it to re-enable.
@@ -27,7 +35,11 @@ export SCAN_CONFIG_DIR="${SCAN_CONFIG_DIR:-.scanning/configs}"
 # the toggle works regardless of the hook's current working directory.
 # ---------------------------------------------------------------------------
 SCAN_CONFIG_FILE="${SCAN_CONFIG_FILE:-${REPO_ROOT}/scan-config.yaml}"
-if [ -f "${SCAN_CONFIG_FILE}" ] && \
+# Share the push scanner IDs with the transaction adapter. The manifest parity
+# test requires this list to match every pre-push hook in .pre-commit-hooks.yaml.
+if [[ "$HOOK_ID" != validate-scan-config ]] && \
+   ! grep -Fxq -- "$HOOK_ID" "${SCRIPT_DIR}/lib/push-hook-ids.txt" && \
+   [ -f "${SCAN_CONFIG_FILE}" ] && \
    grep -qE '^[[:space:]]*local_hooks_enabled:[[:space:]]*false([[:space:]]|#|$)' "${SCAN_CONFIG_FILE}" 2>/dev/null; then
     echo "[${HOOK_ID}] local scanning disabled (scan-config.yaml: local_hooks_enabled: false) — skipping"
     exit 0

@@ -5,6 +5,8 @@ param([Parameter(ValueFromRemainingArguments)]$ExtraArgs)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\common.ps1"
 
+Invoke-PushSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
+
 # Verify tool availability
 if (-not (Test-ToolAvailable 'tflint')) { exit 0 }
 
@@ -13,7 +15,7 @@ Start-ScanTimer
 # Detect scan directories
 $scanDirs = Get-ChangedDirs
 if (-not $scanDirs -or $scanDirs.Count -eq 0) {
-    Write-HookLog "PASS: No Terraform files staged"
+    Write-HookLog "PASS: No Terraform files selected"
     exit 0
 }
 $fileCount = Get-TfFileCount -Directories $scanDirs
@@ -25,35 +27,42 @@ $totalMedium = 0
 $totalLow = 0
 
 foreach ($dir in $scanDirs) {
-    if (-not (Test-Path $dir -PathType Container)) { continue }
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
 
-    # Dispatcher directory first, then the repo-root file a plain tflint run loads.
-    # A relative --config is resolved against --chdir, so pass an absolute path.
-    $configFile = Resolve-ScanConfig -Filename '.tflint.hcl'
-    if (-not $configFile -and (Test-Path -LiteralPath '.tflint.hcl')) {
-        $configFile = '.tflint.hcl'
+    # Configuration and plugin cache are provisioned outside the scanned checkout.
+    $configFile = $env:SCAN_TFLINT_CONFIG
+    if (-not $configFile -or -not (Test-Path -LiteralPath $configFile -PathType Leaf)) {
+        throw 'SCAN_TFLINT_CONFIG must name a trusted external config'
     }
-    if ($configFile) {
-        $configFile = (Resolve-Path -LiteralPath $configFile).Path
-    }
+    Assert-TrustedTflintConfig $configFile
+    $env:TFLINT_PLUGIN_DIR = $env:SCAN_TFLINT_PLUGIN_DIR
+    if (-not $env:TFLINT_PLUGIN_DIR) { throw 'Set SCAN_TFLINT_PLUGIN_DIR to an external plugin cache' }
+    Assert-ExternalPath $env:TFLINT_PLUGIN_DIR
+    if ($ExtraArgs) { throw 'TFLint extra arguments are disabled' }
 
     # Initialize tflint plugins
     $initArgs = @('--chdir', $dir, '--init')
     if ($configFile) {
         $initArgs += @('--config', $configFile)
     }
+    $initExit = 2
     try {
         & tflint @initArgs 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Write-HookWarn "tflint --init failed (exit $LASTEXITCODE) in '$dir' - continuing (fail-open)"
-        }
-    } catch {
-        # Don't silently swallow init failures — log and continue fail-open.
-        Write-HookWarn "tflint --init threw in '$dir': $($_.Exception.Message) - continuing (fail-open)"
-    }
+        $initExit = $LASTEXITCODE
+    } catch { $initExit = 2 }
+    if ($initExit -ne 0) { throw 'TFLint initialization failed' }
 
     # Build tflint arguments
     $tflintArgs = @('--chdir', $dir, '--format', 'json')
+    if ($env:SCAN_PUSH_SNAPSHOT -eq '1') {
+        foreach ($path in @(Get-StagedFiles -Extensions @('tf', 'tf.json'))) {
+            $parent = [IO.Path]::GetDirectoryName($path).Replace('\', '/')
+            if (-not $parent) { $parent = '.' }
+            if ($parent -ceq $dir.Replace('\', '/')) {
+                $tflintArgs += "--filter=$([IO.Path]::GetFileName($path))"
+            }
+        }
+    }
     if ($configFile) {
         $tflintArgs += @('--config', $configFile)
     }
@@ -87,10 +96,10 @@ foreach ($dir in $scanDirs) {
         $overallExit = 1
     } elseif ($exitCode -ge 3) {
         # Runtime error — fail-open
-        $null = Get-HookExitCode -ToolExitCode $exitCode
+        $null = Get-HookExitCode -ToolExitCode 2
     } elseif ($exitCode -eq 1) {
         # Config errors — fail-open
-        $null = Get-HookExitCode -ToolExitCode $exitCode
+        $null = Get-HookExitCode -ToolExitCode 2
     }
 }
 

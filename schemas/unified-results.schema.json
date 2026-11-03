@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Unified Scan Results",
+  "description": "Schema for normalized scan results across Trivy, Checkov, tflint, and other security tools. Findings are deduplicated cross-tool and annotated with suppression/baseline status.",
+  "type": "object",
+  "required": ["schema_version", "scan_id", "scan_timestamp", "findings"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "scan_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this scan run"
+    },
+    "scan_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total scan duration in milliseconds"
+    },
+    "scan_directory": {
+      "type": "string"
+    },
+    "tools_executed": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["trivy", "checkov", "tflint", "psscriptanalyzer", "shellcheck", "hadolint", "gitleaks", "snyk"]
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total_findings", "by_severity", "by_tool"],
+      "properties": {
+        "total_findings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_severity": {
+          "type": "object",
+          "properties": {
+            "CRITICAL": { "type": "integer", "minimum": 0, "default": 0 },
+            "HIGH": { "type": "integer", "minimum": 0, "default": 0 },
+            "MEDIUM": { "type": "integer", "minimum": 0, "default": 0 },
+            "LOW": { "type": "integer", "minimum": 0, "default": 0 }
+          },
+          "additionalProperties": false
+        },
+        "by_tool": {
+          "type": "object",
+          "description": "Finding counts keyed by tool name",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "suppressed": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Number of findings matching an active suppression"
+        },
+        "baselined": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Number of findings matching the baseline"
+        }
+      },
+      "additionalProperties": false
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": ["id", "tool", "rule_id", "severity", "title", "file"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique finding identifier (UUID). Merged findings get a new UUID."
+        },
+        "tool": {
+          "type": "string",
+          "enum": ["trivy", "checkov", "tflint", "psscriptanalyzer", "shellcheck", "hadolint", "gitleaks", "snyk"],
+          "description": "Primary tool that detected this finding"
+        },
+        "rule_id": {
+          "type": "string",
+          "description": "Tool-specific check/rule ID (e.g., AVD-AWS-0057, CKV_AWS_18)"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+          "description": "Normalized severity level"
+        },
+        "original_severity": {
+          "type": "string",
+          "description": "Tool's original severity before normalization mapping"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable finding message"
+        },
+        "file": {
+          "type": "string",
+          "description": "Relative file path from repository root"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resource": {
+          "type": "string",
+          "description": "Terraform resource address (e.g., aws_s3_bucket.example)"
+        },
+        "remediation": {
+          "type": "string",
+          "description": "Remediation guidance text"
+        },
+        "remediation_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to remediation documentation. Auto-generated for Checkov (docs.checkov.io/docs/{CHECK_ID})."
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Reference URL for the finding rule"
+        },
+        "suppressed": {
+          "type": "boolean",
+          "default": false,
+          "description": "True if this finding matches an active suppression entry"
+        },
+        "suppression_reason": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Business justification from the suppression entry, or null if not suppressed"
+        },
+        "baseline": {
+          "type": "boolean",
+          "default": false,
+          "description": "True if this finding exists in the baseline"
+        },
+        "detected_by": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Array of tool names that detected this finding. Single-tool findings have a 1-element array. Cross-tool deduplication merges into multiple entries."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

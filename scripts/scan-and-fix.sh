@@ -5,6 +5,7 @@
 #
 # Usage: scan-and-fix.sh [secrets|semgrep|terraform|all] [--auto-fix]
 set -uo pipefail
+source "$(cd "$(dirname -- "${BASH_SOURCE[0]}")/../hooks/lib" && pwd)/common.sh"
 
 # Parse args independently of position: --auto-fix/--fix is a flag, anything else
 # is the scan type. This way `scan-and-fix.sh --auto-fix` and
@@ -82,6 +83,7 @@ case "${SCAN_TYPE}" in
 esac
 
 if [[ ${AUTO_FIX} -eq 1 && ${has_errors} -ne 0 ]]; then
+    assert_safe_write_path .claude/scan-findings.json
     mkdir -p .claude
     {
         echo '{'

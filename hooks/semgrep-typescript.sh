@@ -3,7 +3,7 @@
 # Stage: pre-commit | Mode: scan ONLY staged ts/tsx/js/jsx files
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
 require_tool "semgrep" || exit 0
@@ -11,7 +11,7 @@ require_tool "semgrep" || exit 0
 export PYTHONUTF8=1
 export SEMGREP_SEND_METRICS=off
 
-mapfile -t files < <(get_staged_files ts tsx js jsx)
+read_nul_paths files get_staged_files ts tsx js jsx
 if [[ ${#files[@]} -eq 0 ]]; then
     hook_log "PASS: No TypeScript/JavaScript files staged"
     exit 0
@@ -26,7 +26,7 @@ tmpjson="$(mktemp)"
 trap 'rm -f "${tmpjson}"' EXIT
 semgrep_cmd=(semgrep scan --config "${ruleset}" --metrics off --json --output "${tmpjson}")
 [[ $# -gt 0 ]] && semgrep_cmd+=("$@")
-semgrep_cmd+=("${files[@]}")
+semgrep_cmd+=(-- "${files[@]}")
 
 set +e
 "${semgrep_cmd[@]}" >/dev/null 2>&1
@@ -35,14 +35,15 @@ set -e
 
 duration_ms="$(stop_timer)"
 
-if [[ ${sg_exit} -ne 0 && ! -s "${tmpjson}" ]]; then
-    handle_exit_code ${sg_exit}
+if [[ ${sg_exit} -gt 1 ]]; then
+    handle_exit_code ${sg_exit} || exit 1
     hook_log "PASS: scanner error, allowing commit (fail-open)"
     write_scan_json "$(build_pass_json "semgrep-typescript" "." "${duration_ms}")"
     exit 0
 fi
 
-read -r high medium low total < <(count_semgrep_severities "${tmpjson}")
+counts="$(count_semgrep_severities "${tmpjson}")" || { hook_error "Invalid scanner report"; exit 1; }
+read -r high medium low total <<< "$counts"
 if [[ "${total:-0}" -eq 0 ]]; then
     hook_log "PASS: No findings (${duration_ms}ms)"
     write_scan_json "$(build_pass_json "semgrep-typescript" "." "${duration_ms}")"

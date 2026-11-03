@@ -3,19 +3,21 @@
 # Stage: pre-push | Severity: CRITICAL + HIGH hard-fail
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
+
+run_push_snapshot "$@"
 
 # Verify tool availability
 require_tool "checkov" || exit 0
 
 start_timer
 
-# Detect scan directories (only dirs with staged .tf files)
-mapfile -t scan_dirs < <(detect_changed_dirs)
+# Detect Terraform directories in the selected object tree.
+read_nul_paths scan_dirs detect_changed_dirs
 
 if [[ ${#scan_dirs[@]} -eq 0 ]]; then
-    hook_log "PASS: No Terraform files staged"
+    hook_log "PASS: No Terraform files selected"
     exit 0
 fi
 

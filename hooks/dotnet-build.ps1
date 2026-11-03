@@ -7,11 +7,13 @@ param([Parameter(ValueFromRemainingArguments)]$ExtraArgs)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\common.ps1"
 
+Invoke-PushSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
+
 if (-not (Test-ToolAvailable 'dotnet')) { exit 0 }
 
 $staged = Get-StagedFiles -Extensions @('cs', 'csproj')
 if (@($staged).Count -eq 0) {
-    Write-HookLog "PASS: No C# files staged"
+    Write-HookLog "PASS: No C# files selected"
     exit 0
 }
 
@@ -27,6 +29,9 @@ if (-not $solution) {
     }
 }
 if (-not $solution) {
+    if ($env:SCAN_PUSH_SNAPSHOT -eq '1' -and $env:SCAN_ALLOW_TOOL_ERRORS -ne '1') {
+        throw 'No solution found in pushed tree; configure languages.csharp.build.solution'
+    }
     Write-HookWarn "No .sln/.slnx found under '$workingDir' (set languages.csharp.build.solution) - allowing push"
     exit 0
 }

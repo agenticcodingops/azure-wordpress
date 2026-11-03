@@ -4,7 +4,7 @@
 # Exports staged content to a temp directory so only changed files are scanned.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
 # Verify tool availability
@@ -13,7 +13,7 @@ require_tool "trivy" || exit 0
 # Get list of staged files (all types — secrets can be in any file).
 # NUL-delimited (-z + mapfile -d '') so filenames containing newlines can't
 # escape the scan.
-mapfile -d '' -t staged_files < <(git diff --cached --name-only -z --diff-filter=ACMR 2>/dev/null)
+read_nul_paths staged_files get_staged_files
 
 if [[ ${#staged_files[@]} -eq 0 ]]; then
     hook_log "PASS: No files staged"
@@ -31,13 +31,13 @@ trap 'rm -rf "${tmpdir}"' EXIT
 skipped=0
 for file in "${staged_files[@]}"; do
     # Create parent directories in temp
-    file_dir="$(dirname "${file}")"
+    file_dir="."; [[ "$file" == */* ]] && file_dir="${file%/*}"
     if [[ "${file_dir}" != "." ]]; then
         mkdir -p "${tmpdir}/${file_dir}"
     fi
     # Export staged content (from git index). On failure, count + warn so secret-scan
     # coverage gaps are visible rather than silently dropped.
-    if ! git show ":${file}" > "${tmpdir}/${file}" 2>/dev/null; then
+    if ! git show ":${file}" -- > "${tmpdir}/${file}" 2>/dev/null; then
         skipped=$((skipped + 1))
         hook_warn "could not export staged '${file}' for secret scan (skipped)"
     fi
@@ -45,12 +45,14 @@ done
 [[ ${skipped} -gt 0 ]] && hook_warn "${skipped} staged file(s) skipped from the secret scan"
 
 # Build Trivy command — scan the temp dir (contains only staged files)
-trivy_cmd=(trivy fs "${tmpdir}" --scanners secret --exit-code 1 --format json --skip-db-update --quiet)
+trivy_cmd=(trivy fs --scanners secret --exit-code 1 --format json --skip-db-update --quiet)
 
 # Add any extra args passed through
 if [[ $# -gt 0 ]]; then
     trivy_cmd+=("$@")
 fi
+
+trivy_cmd+=(-- "${tmpdir}")
 
 # Run Trivy with retry logic
 set +e

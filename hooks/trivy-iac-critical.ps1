@@ -23,10 +23,10 @@ $overallExit = 0
 $totalCritical = 0
 
 foreach ($dir in $scanDirs) {
-    if (-not (Test-Path $dir -PathType Container)) { continue }
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
 
     # Build Trivy arguments as array — safe for paths with spaces/special chars
-    $trivyArgs = @('config', $dir, '--severity', 'CRITICAL', '--exit-code', '1', '--format', 'json', '--skip-check-update', '--quiet')
+    $trivyArgs = @('config', '--severity', 'CRITICAL', '--exit-code', '1', '--format', 'json', '--skip-check-update', '--quiet')
 
     # Check for config file
     $configFile = Resolve-ScanConfig -Filename '.trivyignore'
@@ -38,6 +38,8 @@ foreach ($dir in $scanDirs) {
     if ($ExtraArgs) {
         $trivyArgs += $ExtraArgs
     }
+
+$trivyArgs += @('--', $dir)
 
     # Run Trivy with retry
     $result = Invoke-TrivyWithRetry -ArgumentList $trivyArgs

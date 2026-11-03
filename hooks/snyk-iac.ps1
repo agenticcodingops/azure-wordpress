@@ -5,6 +5,8 @@ param([Parameter(ValueFromRemainingArguments)]$ExtraArgs)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\common.ps1"
 
+Invoke-PushSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
+
 # Verify tool availability (fail-open if snyk not installed)
 if (-not (Test-ToolAvailable 'snyk')) { exit 0 }
 
@@ -24,10 +26,10 @@ if (-not $env:SNYK_TOKEN) {
 
 Start-ScanTimer
 
-# Detect scan directories (only dirs with staged .tf files)
+# Detect Terraform directories in the selected object tree.
 $scanDirs = Get-ChangedDirs
 if (-not $scanDirs -or $scanDirs.Count -eq 0) {
-    Write-HookLog "PASS: No Terraform files staged"
+    Write-HookLog "PASS: No Terraform files selected"
     exit 0
 }
 $fileCount = Get-TfFileCount -Directories $scanDirs
@@ -40,14 +42,14 @@ $totalMedium = 0
 $totalLow = 0
 
 foreach ($dir in $scanDirs) {
-    if (-not (Test-Path $dir -PathType Container)) { continue }
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
 
     # Build Snyk arguments
-    $snykArgs = @('iac', 'test', $dir, '--json')
+    $snykArgs = @('iac', 'test', '--json')
 
     # Check for .snyk policy file
     if (Test-Path '.snyk') {
-        $snykArgs += @('--policy-path=.')
+        $snykArgs += @('--policy-path', (Get-Location).Path)
     }
 
     # Add extra args
@@ -56,8 +58,11 @@ foreach ($dir in $scanDirs) {
     }
 
     # Run Snyk
-    $output = & snyk @snykArgs 2>&1
-    $exitCode = $LASTEXITCODE
+    Push-Location -LiteralPath $dir
+    try {
+        $output = & snyk @snykArgs 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally { Pop-Location }
 
     if ($exitCode -eq 1) {
         # Parse findings

@@ -24,6 +24,7 @@ Write-HookLog "Scanning... ($(@($files).Count) TS/JS files, $ruleset)"
 $tmpJson = New-TemporaryFile
 $semgrepArgs = @('scan', '--config', $ruleset, '--metrics', 'off', '--json', '--output', $tmpJson)
 if ($ExtraArgs) { $semgrepArgs += $ExtraArgs }
+$semgrepArgs += '--'
 $semgrepArgs += $files
 
 & semgrep @semgrepArgs *> $null
@@ -31,7 +32,7 @@ $sgExit = $LASTEXITCODE
 $durationMs = Stop-ScanTimer
 
 try {
-    if ($sgExit -ne 0 -and ((Get-Item $tmpJson).Length -eq 0)) {
+    if ($sgExit -notin @(0, 1)) {
         $null = Get-HookExitCode -ToolExitCode $sgExit
         Write-HookLog "PASS: scanner error, allowing commit (fail-open)"
         Write-ScanJson (Build-PassJson -Tool 'semgrep-typescript' -DurationMs $durationMs)

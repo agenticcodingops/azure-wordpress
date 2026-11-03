@@ -33,6 +33,9 @@ if ($files.Count -eq 0) {
 # and check the POSIX binary too so macOS/Linux find the local install.
 $workingDirPath = (Resolve-Path -LiteralPath $workingDir -ErrorAction SilentlyContinue).Path
 if (-not $workingDirPath) { $workingDirPath = $workingDir }
+# Repository binaries and executable configs require explicit trust.
+$trustedConfig = $null
+if ($env:SCAN_TRUST_REPO_CODE -eq '1') {
 $localBinCmd = Join-Path $workingDirPath 'node_modules/.bin/prettier.cmd'   # Windows
 $localBinPosix = Join-Path $workingDirPath 'node_modules/.bin/prettier'     # macOS/Linux
 $runner = $null; $runnerArgs = @()
@@ -45,12 +48,27 @@ else {
     exit 0
 }
 
+} else {
+    $runner, $trustedConfig = Get-TrustedAppTool 'prettier'
+    $runnerArgs = @()
+}
+
 Start-ScanTimer
 Write-HookLog "Formatting... ($($files.Count) files in $workingDir)"
 
 $prettierArgs = $runnerArgs + @('--write', '--ignore-unknown')
+if ($env:SCAN_TRUST_REPO_CODE -ne '1') {
+    if ($ExtraArgs) { throw 'Extra arguments require SCAN_TRUST_REPO_CODE=1' }
+    $prettierArgs += @('--config', $trustedConfig)
+}
+foreach ($file in $files) { Assert-SafeWritePath (Join-Path $workingDirPath $file) }
 if ($ExtraArgs) { $prettierArgs += $ExtraArgs }
-$prettierArgs += $files
+$prettierArgs += '--'
+$executionDir = $workingDirPath
+if ($env:SCAN_TRUST_REPO_CODE -ne '1') {
+    $executionDir = [IO.Path]::GetDirectoryName($trustedConfig)
+    $prettierArgs += @($files | ForEach-Object { [IO.Path]::GetFullPath((Join-Path $workingDirPath $_)) })
+} else { $prettierArgs += $files }
 
 # Guard Push-Location: under $ErrorActionPreference='Stop' a missing dir throws.
 # Fail-open (skip) if the working dir is gone.
@@ -59,7 +77,7 @@ if (-not (Test-Path -LiteralPath $workingDirPath -PathType Container)) {
     exit 0
 }
 
-Push-Location -LiteralPath $workingDirPath
+Push-Location -LiteralPath $executionDir
 try {
     $output = & $runner @prettierArgs 2>&1
     $exitCode = $LASTEXITCODE

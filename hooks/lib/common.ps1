@@ -8,6 +8,16 @@ $global:_CommonPS1Loaded = $true
 
 $ErrorActionPreference = 'Stop'
 
+function Invoke-PushSnapshot {
+    param([string]$HookPath, [object[]]$HookArguments)
+    if ($env:SCAN_PUSH_SNAPSHOT -eq '1' -or $env:SCAN_LEGACY_PUSH_STATE -eq '1') { return }
+    $py = Find-WorkingPython
+    if (-not $py) { throw 'Python is required for push snapshots' }
+    $runner = Join-Path (Split-Path -Parent $HookPath) 'pre-push.py'
+    & $py $runner --shell ps1 --hooks ([IO.Path]::GetFileNameWithoutExtension($HookPath)) @HookArguments
+    exit $LASTEXITCODE
+}
+
 # ---------------------------------------------------------------------------
 # Output helpers
 # ---------------------------------------------------------------------------
@@ -35,13 +45,13 @@ function Write-HookVerbose {
 }
 
 # ---------------------------------------------------------------------------
-# Exit code handling (fail-open)
+# Exit code handling (block incomplete scans unless explicitly opted out)
 # ---------------------------------------------------------------------------
 
 # Classify a tool exit code:
 #   exit 0 = no findings (pass)
 #   exit 1 = security findings found (block)
-#   exit 2+ = infrastructure error (fail-open, warn + allow)
+#   exit 2+ = infrastructure error (block; explicit local opt-in warns + allows)
 function Get-HookExitCode {
     param(
         [Parameter(Mandatory)]
@@ -52,8 +62,11 @@ function Get-HookExitCode {
         0 { return 0 }
         1 { return 1 }
         default {
-            Write-HookWarn "Tool error (exit code $ToolExitCode) - allowing commit (fail-open)"
-            return 0
+            if ($env:SCAN_ALLOW_TOOL_ERRORS -eq '1') {
+                Write-HookWarn "Tool error (exit code $ToolExitCode); explicit local fail-open opt-in"
+                return 0
+            }
+            throw "Tool error (exit code $ToolExitCode); scan incomplete"
         }
     }
 }
@@ -62,22 +75,138 @@ function Get-HookExitCode {
 # JSON output
 # ---------------------------------------------------------------------------
 
+function Resolve-HookPath {
+    param([string]$Path)
+    return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+
+function Assert-SafeWritePath {
+    param([string]$Path)
+    $current = Resolve-HookPath $Path
+    while ($current) {
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+        if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw 'Refusing a symlink or reparse point in output path'
+        }
+        $parent = [IO.Directory]::GetParent($current)
+        $current = if ($parent) { $parent.FullName } else { $null }
+    }
+}
+
+function Assert-SafeTree {
+    param([string]$Path)
+    Assert-SafeWritePath $Path
+    if (Test-Path -LiteralPath $Path -PathType Container) {
+        foreach ($item in Get-ChildItem -LiteralPath $Path -Force -Recurse -ErrorAction Stop) {
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw 'Refusing a symlink or reparse point in output tree'
+            }
+        }
+    }
+}
+
 function Ensure-ScanningDir {
-    $scanDir = '.scanning'
-    if (-not (Test-Path $scanDir)) {
-        New-Item -ItemType Directory -Path $scanDir -Force | Out-Null
+    Assert-SafeWritePath '.scanning/last-scan.json'
+    if (-not (Test-Path -LiteralPath '.scanning')) {
+        New-Item -ItemType Directory -Path '.scanning' | Out-Null
     }
 }
 
 function Write-ScanJson {
-    param(
-        [Parameter(Mandatory)]
-        [string]$JsonContent
-    )
-
+    param([Parameter(Mandatory)][string]$JsonContent)
     Ensure-ScanningDir
-    $JsonContent | Set-Content -Path '.scanning/last-scan.json' -Encoding UTF8 -NoNewline
-    Write-HookVerbose "Wrote scan results to .scanning/last-scan.json"
+    $temporary = Resolve-HookPath (Join-Path '.scanning' ('.scan-write-' + [guid]::NewGuid()))
+    $destination = Resolve-HookPath '.scanning/last-scan.json'
+    try {
+        [IO.File]::WriteAllText($temporary, $JsonContent)
+        Assert-SafeWritePath '.scanning/last-scan.json'
+        if ([IO.File]::Exists($destination)) {
+            [IO.File]::Replace($temporary, $destination, [NullString]::Value)
+        } else {
+            [IO.File]::Move($temporary, $destination)
+        }
+    } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary } }
+}
+
+function Resolve-ExternalRealPath {
+    param([string]$Path)
+    $full = [IO.Path]::GetFullPath($Path)
+    for ($hop = 0; $hop -lt 40; $hop++) {
+        $current = $full
+        $resolved = $false
+        while ($current) {
+            $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+            if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                if ($item.PSObject.Methods['ResolveLinkTarget']) {
+                    $target = $item.ResolveLinkTarget($true)
+                    $target = if ($target) { $target.FullName } else { $null }
+                } else {
+                    # Windows PowerShell 5.1 exposes link targets as an adapted
+                    # property; .NET Framework has no ResolveLinkTarget method.
+                    $targets = @($item.Target)
+                    if ($targets.Count -ne 1) { throw 'Cannot resolve trusted path link' }
+                    $target = $targets[0]
+                    if ($target -and -not [IO.Path]::IsPathRooted($target)) {
+                        $target = Join-Path ([IO.Path]::GetDirectoryName($current)) $target
+                    }
+                }
+                if (-not $target) { throw 'Cannot resolve trusted path link' }
+                $suffix = $full.Substring($current.Length).TrimStart('/', '\')
+                $full = [IO.Path]::GetFullPath($(if ($suffix) { Join-Path $target $suffix } else { $target }))
+                $resolved = $true
+                break
+            }
+            $parent = [IO.Directory]::GetParent($current)
+            $current = if ($parent) { $parent.FullName } else { $null }
+        }
+        if (-not $resolved) { return $full }
+    }
+    throw 'Too many links in trusted path'
+}
+
+function Assert-ExternalPath {
+    param([string]$Path)
+    if (-not [IO.Path]::IsPathRooted($Path)) { throw 'Trusted path must be absolute' }
+    $root = if ($env:SCAN_PUSH_SNAPSHOT -eq '1') { (Get-Location).Path } else {
+        Assert-GitAvailable
+        & git rev-parse --show-toplevel 2>$null
+    }
+    if (-not $root) { $root = (Get-Location).Path }
+    $roots = @($root)
+    if ($env:SCAN_PUSH_SNAPSHOT -eq '1' -and $env:SCAN_CONSUMER_ROOT) {
+        $roots += $env:SCAN_CONSUMER_ROOT
+    }
+    $full = Resolve-ExternalRealPath $Path
+    foreach ($boundary in $roots) {
+        $boundary = (Resolve-ExternalRealPath $boundary).TrimEnd('/', '\')
+        if ($full -eq $boundary -or $full.StartsWith($boundary + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Trusted path must be outside the scanned and consumer checkouts'
+        }
+    }
+}
+
+function Assert-TrustedTflintConfig {
+    param([string]$Path)
+    Assert-ExternalPath $Path
+    if (-not $Path.EndsWith('.hcl', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Trusted linter configuration must be an HCL file ending in .hcl'
+    }
+    if ((Get-Content -LiteralPath $Path -Raw) -cmatch 'plugin_dir') {
+        throw 'Remove plugin_dir from the trusted config; use SCAN_TFLINT_PLUGIN_DIR'
+    }
+}
+
+function Get-TrustedAppTool {
+    param([string]$Tool)
+    $bin = [Environment]::GetEnvironmentVariable("SCAN_$($Tool.ToUpper())_BIN")
+    $config = [Environment]::GetEnvironmentVariable("SCAN_$($Tool.ToUpper())_CONFIG")
+    foreach ($path in @($bin, $config)) {
+        if (-not $path -or -not [IO.Path]::IsPathRooted($path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Set SCAN_$($Tool.ToUpper())_BIN and SCAN_$($Tool.ToUpper())_CONFIG to external trusted files"
+        }
+        Assert-ExternalPath $path
+    }
+    return @($bin, $config)
 }
 
 function New-ScanId {
@@ -106,7 +235,7 @@ function Build-PassJson {
 {
   "schema_version": "1.0",
   "scan_id": "$scanId",
-  "timestamp": "$timestamp",
+  "scan_timestamp": "$timestamp",
   "duration_ms": $DurationMs,
   "scan_directory": "$safeScanDir",
   "tools_executed": ["$Tool"],
@@ -148,7 +277,7 @@ function Build-FindingsJson {
 {
   "schema_version": "1.0",
   "scan_id": "$scanId",
-  "timestamp": "$timestamp",
+  "scan_timestamp": "$timestamp",
   "duration_ms": $DurationMs,
   "scan_directory": "$safeScanDir",
   "tools_executed": ["$Tool"],
@@ -173,31 +302,78 @@ function Build-FindingsJson {
 # Changed files for dir-detection: the staged index (pre-commit), or the push range
 # when the index is empty (the usual case at pre-push), so pushed commits are still
 # scanned. Best-effort — CI is the authoritative backstop.
+# Read the native stdout stream intact before splitting on NUL. PowerShell's
+# native command pipeline otherwise splits newline-containing pathnames.
+function Assert-GitAvailable {
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        throw 'git is required to read scan inputs; scan incomplete'
+    }
+}
+
+function Invoke-GitPaths {
+    param([string[]]$Arguments)
+    Assert-GitAvailable
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = 'git'
+    $info.Arguments = $Arguments -join ' '
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $info.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $info
+    try {
+        $null = $process.Start()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        $output = $process.StandardOutput.ReadToEnd()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) { throw 'Could not enumerate scan inputs' }
+        return @($output.Split([char]0) | Where-Object { $_ -ne '' })
+    } finally { $process.Dispose() }
+}
+
 function Get-ChangedFilesForDetect {
-    $files = @(git diff --cached --name-only --diff-filter=ACMR 2>$null)
-    if (-not $files -or $files.Count -eq 0) {
-        $files = @(git diff --name-only --diff-filter=ACMR '@{push}' HEAD 2>$null)
-        if ($LASTEXITCODE -ne 0 -or -not $files -or $files.Count -eq 0) {
-            $files = @(git diff --name-only --diff-filter=ACMR '@{upstream}' HEAD 2>$null)
-            if ($LASTEXITCODE -ne 0) { $files = @() }
+    if ($env:SCAN_PUSH_FILES) {
+        return @([IO.File]::ReadAllText($env:SCAN_PUSH_FILES).Split([char]0) | Where-Object { $_ -ne '' })
+    }
+    $files = @(Invoke-GitPaths -Arguments @('diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR', '--'))
+    if ($files.Count -eq 0) {
+        git rev-parse --verify '@{push}' 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $files = @(Invoke-GitPaths -Arguments @('diff', '--name-only', '-z', '--diff-filter=ACMR', '@{push}', 'HEAD', '--'))
+        }
+        if ($files.Count -eq 0) {
+            git rev-parse --verify '@{upstream}' 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                $files = @(Invoke-GitPaths -Arguments @('diff', '--name-only', '-z', '--diff-filter=ACMR', '@{upstream}', 'HEAD', '--'))
+            }
         }
     }
-    return @($files | Where-Object { $_ })
+    return $files
+}
+
+function Get-OrdinalUniquePaths {
+    param([string[]]$Paths)
+    $unique = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($path in $Paths) { $null = $unique.Add($path) }
+    [string[]]$ordered = @($unique)
+    [Array]::Sort($ordered, [System.StringComparer]::Ordinal)
+    return $ordered
 }
 
 function Get-ChangedDirs {
     try {
-        $gitAvailable = Get-Command git -ErrorAction SilentlyContinue
-        if (-not $gitAvailable) {
-            return @()
+        if (-not $env:SCAN_PUSH_FILES) {
+            Assert-GitAvailable
+            $isGitRepo = git rev-parse --is-inside-work-tree 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                if ($env:SCAN_PUSH_SNAPSHOT -eq '1') { throw 'Could not enumerate push scan inputs; scan incomplete' }
+                return @()
+            }
         }
 
-        $isGitRepo = git rev-parse --is-inside-work-tree 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            return @()
-        }
-
-        $changedFiles = Get-ChangedFilesForDetect | Where-Object { $_ -match '\.tf$' }
+        $changedFiles = Get-ChangedFilesForDetect | Where-Object { $_ -match '\.tf(?:\.json)?$' }
 
         if (-not $changedFiles -or $changedFiles.Count -eq 0) {
             # No changed .tf files — return empty so hooks skip scanning
@@ -205,20 +381,19 @@ function Get-ChangedDirs {
         }
 
         $dirs = $changedFiles | ForEach-Object {
-            $parent = Split-Path $_ -Parent
+            $parent = Split-Path -LiteralPath $_
             # Split-Path returns '' for root-level files — map to '.' (repo root)
             # so root files are scanned rather than dropped.
             if ($parent -eq '') { '.' } else { $parent }
-        } | Sort-Object -Unique
+        }
+        $dirs = @(Get-OrdinalUniquePaths -Paths @($dirs))
 
         if (-not $dirs -or $dirs.Count -eq 0) {
             return @()
         }
 
         return $dirs
-    } catch {
-        return @()
-    }
+    } catch { throw }
 }
 
 # Detect directories containing ANY staged files (not just .tf)
@@ -226,11 +401,14 @@ function Get-ChangedDirs {
 # Returns empty array when no files are staged
 function Get-AllChangedDirs {
     try {
-        $gitAvailable = Get-Command git -ErrorAction SilentlyContinue
-        if (-not $gitAvailable) { return @() }
-
-        $isGitRepo = git rev-parse --is-inside-work-tree 2>$null
-        if ($LASTEXITCODE -ne 0) { return @() }
+        if (-not $env:SCAN_PUSH_FILES) {
+            Assert-GitAvailable
+            $isGitRepo = git rev-parse --is-inside-work-tree 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                if ($env:SCAN_PUSH_SNAPSHOT -eq '1') { throw 'Could not enumerate push scan inputs; scan incomplete' }
+                return @()
+            }
+        }
 
         $changedFiles = Get-ChangedFilesForDetect
 
@@ -239,20 +417,19 @@ function Get-AllChangedDirs {
         }
 
         $dirs = $changedFiles | ForEach-Object {
-            $parent = Split-Path $_ -Parent
+            $parent = Split-Path -LiteralPath $_
             # Split-Path returns '' for root-level files — map to '.' (repo root)
             # so root files are scanned rather than dropped.
             if ($parent -eq '') { '.' } else { $parent }
-        } | Sort-Object -Unique
+        }
+        $dirs = @(Get-OrdinalUniquePaths -Paths @($dirs))
 
         if (-not $dirs -or $dirs.Count -eq 0) {
             return @()
         }
 
         return $dirs
-    } catch {
-        return @()
-    }
+    } catch { throw }
 }
 
 function Get-TfFileCount {
@@ -262,9 +439,9 @@ function Get-TfFileCount {
 
     $count = 0
     foreach ($dir in $Directories) {
-        if (Test-Path $dir -PathType Container) {
-            $count += (Get-ChildItem -Path $dir -Filter '*.tf' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -notmatch '[\\/]\.terraform[\\/]' }).Count
+        if (Test-Path -LiteralPath $dir -PathType Container) {
+            $count += (Get-ChildItem -LiteralPath $dir -File -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '\.tf(?:\.json)?$' -and $_.FullName -notmatch '[\\/]\.terraform[\\/]' }).Count
         }
     }
     return $count
@@ -281,17 +458,17 @@ function Get-StagedFiles {
     param([string[]]$Extensions = @())
 
     try {
-        if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return @() }
-        $files = git diff --cached --name-only --diff-filter=ACMR 2>$null
+        $files = if ($env:SCAN_PUSH_FILES) { @(Get-ChangedFilesForDetect) } else {
+            Assert-GitAvailable
+            @(Invoke-GitPaths -Arguments @('diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR', '--'))
+        }
         if (-not $files) { return @() }
         $files = @($files)
         if ($Extensions.Count -eq 0) { return $files }
         $patterns = $Extensions | ForEach-Object { [regex]::Escape(".$_") + '$' }
         $rx = [regex]::new(($patterns -join '|'), 'IgnoreCase')
         return @($files | Where-Object { $rx.IsMatch($_) })
-    } catch {
-        return @()
-    }
+    } catch { throw }
 }
 
 # Export staged files (from the git index) into a fresh temp dir, preserving paths.
@@ -299,11 +476,12 @@ function Get-StagedFiles {
 function Export-StagedFilesToTempDir {
     param([string[]]$Files)
 
+    Assert-GitAvailable
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "scan-staged-$(Get-Random)"
     New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
     foreach ($file in @($Files)) {
         if (-not $file) { continue }
-        $fileDir = Split-Path $file -Parent
+        $fileDir = Split-Path -LiteralPath $file
         if ($fileDir) {
             $targetDir = Join-Path $tmpDir $fileDir
             if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force | Out-Null }
@@ -316,20 +494,20 @@ function Export-StagedFilesToTempDir {
             if ($LASTEXITCODE -ne 0) { throw "git show exit $LASTEXITCODE" }
             $content | Set-Content -LiteralPath $targetFile -Encoding UTF8
         } catch {
-            # WARN, never stay silent: a dropped staged file makes secret/IaC hooks
-            # scan missing content and report a false CLEAN. Surface the gap.
-            Write-HookWarn "could not export staged '$file' to temp dir (skipped from scan)"
+            Remove-Item -LiteralPath $tmpDir -Recurse -Force
+            throw "Could not export staged '$file'; scan incomplete"
         }
     }
     return $tmpDir
 }
 
-# Find a Python that ACTUALLY runs (skips the broken Windows Store python3 shim).
+# Require Python 3.11+ using the config reader's safe-path flags; skip broken
+# launcher shims and older interpreters without disabling trusted user packages.
 function Find-WorkingPython {
     foreach ($cand in @('python', 'python3', 'py')) {
         if (Get-Command $cand -ErrorAction SilentlyContinue) {
             try {
-                & $cand -c "" 2>$null
+                & $cand -E -P -c "pass" 2>$null
                 if ($LASTEXITCODE -eq 0) { return $cand }
             } catch { }
         }
@@ -337,7 +515,7 @@ function Find-WorkingPython {
     return $null
 }
 
-# Read a dotted key from scan-config.yaml; returns $Default if missing/unparseable.
+# Read a dotted string key; defaults apply only to missing config/keys.
 # Usage: $solution = Read-ScanConfigValue -Key 'languages.csharp.build.solution' -Default ''
 function Read-ScanConfigValue {
     param(
@@ -349,33 +527,13 @@ function Read-ScanConfigValue {
     if (-not (Test-Path $cfg)) { return $Default }
 
     $py = Find-WorkingPython
-    if (-not $py) { return $Default }
-
-    $script = @'
-import sys
-key, default, cfg = sys.argv[1], sys.argv[2], sys.argv[3]
-try:
-    import yaml
-    with open(cfg, encoding="utf-8") as fh:
-        data = yaml.safe_load(fh) or {}
-    cur = data
-    for part in key.split("."):
-        cur = cur[part]
-    print(cur if cur is not None and cur != "" else default)
-except Exception:
-    print(default)
-'@
-    $tmp = New-TemporaryFile
-    try {
-        Set-Content -Path $tmp -Value $script -Encoding UTF8
-        $out = & $py $tmp $Key $Default $cfg 2>$null
-        if ($LASTEXITCODE -ne 0 -or -not $out) { return $Default }
-        return ($out | Select-Object -First 1).ToString().Trim()
-    } catch {
-        return $Default
-    } finally {
-        Remove-Item $tmp -ErrorAction SilentlyContinue
+    if (-not $py) {
+        [Console]::Error.WriteLine('[scan-config] ERROR: Python is required to read scan-config.yaml')
+        exit 1
     }
+    & $py -E -P "$PSScriptRoot/scan_config.py" $Key $cfg $Default |
+        ForEach-Object { $_.ToString().Trim() }
+    if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 
 # Count Semgrep findings by severity from a --json output file (native parse).
@@ -385,6 +543,7 @@ function Get-SemgrepCounts {
     $res = @{ High = 0; Medium = 0; Low = 0; Total = 0 }
     try {
         $doc = Get-Content $JsonPath -Raw -ErrorAction Stop | ConvertFrom-Json
+        if ($null -eq $doc.results -or $doc.errors) { throw 'Incomplete scanner report' }
         foreach ($r in @($doc.results)) {
             switch (("" + $r.extra.severity).ToUpper()) {
                 'ERROR'   { $res.High++ }
@@ -393,7 +552,7 @@ function Get-SemgrepCounts {
             }
         }
         $res.Total = $res.High + $res.Medium + $res.Low
-    } catch { }
+    } catch { throw }
     return $res
 }
 
@@ -458,28 +617,23 @@ function Invoke-TrivyWithRetry {
         [string[]]$ArgumentList
     )
 
-    # First attempt — invoke trivy directly with array splatting, no cmd /c
-    $output = & trivy @ArgumentList 2>&1
-    $exitCode = $LASTEXITCODE
-
-    # Check for DB lock
-    $outputText = $output -join "`n"
-    if ($outputText -match 'database.*locked') {
-        Write-HookWarn "Trivy database locked, retrying in 2 seconds..."
-        Start-Sleep -Seconds 2
-
-        # Retry once
-        $output = & trivy @ArgumentList 2>&1
-        $exitCode = $LASTEXITCODE
-        $outputText = $output -join "`n"
-
-        if ($outputText -match 'database.*locked') {
-            Write-HookWarn "Trivy database still locked after retry"
-            return @{ Output = $outputText; ExitCode = 2 }
+    $diagnostics = New-TemporaryFile
+    try {
+        for ($attempt = 1; $attempt -le 2; $attempt++) {
+            $output = & trivy @ArgumentList 2> $diagnostics
+            $exitCode = $LASTEXITCODE
+            $stderr = [System.IO.File]::ReadAllText($diagnostics)
+            if ($exitCode -ne 0 -and $stderr -match 'database.*locked|cache may be in use by another process') {
+                if ($attempt -eq 1) {
+                    Write-HookWarn 'Trivy database locked; retrying'
+                    Start-Sleep -Seconds 2
+                    continue
+                }
+                $exitCode = 2
+            }
+            return @{ Output = ($output -join "`n"); Stderr = $stderr; ExitCode = $exitCode }
         }
-    }
-
-    return @{ Output = $outputText; ExitCode = $exitCode }
+    } finally { Remove-Item -LiteralPath $diagnostics -ErrorAction SilentlyContinue }
 }
 
 # ---------------------------------------------------------------------------
@@ -493,9 +647,12 @@ function Test-ToolAvailable {
     )
 
     if (-not (Get-Command $ToolName -ErrorAction SilentlyContinue)) {
-        Write-HookWarn "$ToolName not found on PATH - allowing commit (fail-open)"
+        if ($env:SCAN_ALLOW_TOOL_ERRORS -ne '1') { throw "$ToolName not found; scan incomplete" }
+        Write-HookWarn "$ToolName unavailable; explicit local fail-open opt-in"
         return $false
     }
+    $command = Get-Command $ToolName -ErrorAction Stop
+    if ($command.CommandType -in @('Application', 'ExternalScript')) { Assert-ExternalPath $command.Source }
     return $true
 }
 

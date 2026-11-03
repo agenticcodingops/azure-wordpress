@@ -8,6 +8,10 @@
   "comment-additionalProperties": "false at the root catches typos like 'fx_loop' that would silently leave the fix-loop disabled. All known top-level keys are declared below.",
   "additionalProperties": false,
   "properties": {
+    "local_hooks_enabled": {
+      "type": "boolean",
+      "description": "Root-level local scanner switch. For pre-push scanning, used only when global.local_hooks_enabled is absent; change the global setting when both are present. Staged configuration validation still runs (CI + fix-loop unaffected)."
+    },
     "schema_version": {
       "type": "string",
       "description": "Config schema version (e.g. '1.0')."
@@ -113,7 +117,11 @@
       "additionalProperties": true,
       "properties": {
         "enabled": { "type": "boolean" },
-        "version": { "type": "string" },
+        "version": {
+          "type": "string",
+          "deprecated": true,
+          "description": "Ignored: nothing reads it. CI uses the scanner versions pinned in the auto-code-scanning release; local hooks run whatever is on PATH. Still accepted so existing configs validate."
+        },
         "description": { "type": "string" },
         "config_file": { "type": "string" },
         "auto_fix": { "type": "boolean" },
@@ -152,12 +160,12 @@
         },
         "claude_code_action_ref": {
           "type": "string",
-          "description": "SHA-pinned claude-code-action ref; MUST be >= v1.0.93 (CVE-2025-66032).",
+          "description": "SHA-pinned claude-code-action ref. Its bundled CLI must be past CLI 1.0.93, the fix for CVE-2025-66032.",
           "pattern": "^anthropics/claude-code-action@[0-9a-f]{40}$"
         },
         "build_verify_cmd": {
           "type": "string",
-          "description": "Authoritative re-verify command in apply-and-push (e.g. 'dotnet build api/App.slnx'). '' = secret scan only."
+          "description": "Authoritative re-verify command, run on the patched code by the verify job, which holds no secrets (e.g. 'dotnet build api/App.slnx'). '' = path gate and secret scan only."
         },
         "required_secrets": {
           "type": "array",

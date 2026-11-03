@@ -11,11 +11,7 @@ if (-not (Test-ToolAvailable 'trivy')) { exit 0 }
 
 # Get list of staged files (all types — secrets can be in any file).
 # Use -z (NUL-delimited) so filenames containing newlines are handled correctly.
-$rawStaged = git diff --cached --name-only --diff-filter=ACMR -z 2>$null
-$stagedFiles = @()
-if ($rawStaged) {
-    $stagedFiles = @(($rawStaged -join '') -split "`0" | Where-Object { $_ })
-}
+$stagedFiles = @(Get-StagedFiles)
 if (@($stagedFiles).Count -eq 0) {
     Write-HookLog "PASS: No files staged"
     exit 0
@@ -34,7 +30,7 @@ try {
     $skipped = 0
     foreach ($file in @($stagedFiles)) {
         # Create parent directories in temp
-        $fileDir = Split-Path $file -Parent
+        $fileDir = Split-Path -LiteralPath $file
         if ($fileDir) {
             $targetDir = Join-Path $tmpDir $fileDir
             if (-not (Test-Path -LiteralPath $targetDir)) {
@@ -49,7 +45,7 @@ try {
         try {
             $psi = [System.Diagnostics.ProcessStartInfo]::new()
             $psi.FileName = 'git'
-            $psi.Arguments = "show `":$file`""
+            $psi.Arguments = "show `":$file`" --"
             $psi.RedirectStandardOutput = $true
             $psi.RedirectStandardError = $true
             $psi.UseShellExecute = $false
@@ -86,14 +82,16 @@ try {
     if ($skipped -gt 0) { Write-HookWarn "$skipped staged file(s) skipped from the secret scan" }
 
     # Build Trivy command — scan the temp dir (contains only staged files)
-    $trivyArgs = @('fs', $tmpDir, '--scanners', 'secret', '--exit-code', '1', '--format', 'json', '--skip-db-update', '--quiet')
+    $trivyArgs = @('fs', '--scanners', 'secret', '--exit-code', '1', '--format', 'json', '--skip-db-update', '--quiet')
 
     # Add extra args
     if ($ExtraArgs) {
         $trivyArgs += $ExtraArgs
     }
 
-    # Run Trivy with retry
+    $trivyArgs += @('--', $tmpDir)
+
+# Run Trivy with retry
     $result = Invoke-TrivyWithRetry -ArgumentList $trivyArgs
 
     $totalCritical = 0

@@ -7,10 +7,10 @@
 # Working dir comes from scan-config.yaml (languages.typescript.build.working_dir).
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
-mapfile -t all_files < <(get_staged_files ts tsx js jsx json css scss md)
+read_nul_paths all_files get_staged_files ts tsx js jsx json css scss md
 if [[ ${#all_files[@]} -eq 0 ]]; then
     hook_log "PASS: No formattable files staged"
     exit 0
@@ -32,6 +32,8 @@ done
 # format failure and BLOCK the commit. A missing dir is an infra error, not a finding.
 [[ -d "${working_dir}" ]] || { hook_warn "prettier: working_dir '${working_dir}' not found - allowing commit (fail-open)"; exit 0; }
 
+# Repository binaries and executable configs require explicit trust.
+if [[ "${SCAN_TRUST_REPO_CODE:-0}" == 1 ]]; then
 runner=()
 if [[ -x "${working_dir%/}/node_modules/.bin/prettier" ]]; then
     runner=("${working_dir%/}/node_modules/.bin/prettier")
@@ -47,15 +49,32 @@ else
     exit 0
 fi
 
+else
+    require_trusted_app_tool prettier
+fi
+
 start_timer
 hook_log "Formatting... (${#files[@]} files in ${working_dir})"
 
 prettier_cmd=("${runner[@]}" --write --ignore-unknown)
+if [[ "${SCAN_TRUST_REPO_CODE:-0}" != 1 ]]; then
+    [[ $# -eq 0 ]] || { hook_error "Extra arguments require SCAN_TRUST_REPO_CODE=1"; exit 1; }
+    prettier_cmd+=(--config "$trusted_config")
+fi
+for file in "${files[@]}"; do assert_safe_write_path "${working_dir%/}/$file"; done
 [[ $# -gt 0 ]] && prettier_cmd+=("$@")
-prettier_cmd+=("${files[@]}")
+execution_dir="$working_dir"
+if [[ "${SCAN_TRUST_REPO_CODE:-0}" != 1 ]]; then
+    execution_dir="$(dirname -- "$trusted_config")"
+    absolute_working_dir="$(cd "$working_dir" && pwd -P)"
+    prettier_cmd+=(--)
+    for file in "${files[@]}"; do prettier_cmd+=("$absolute_working_dir/$file"); done
+else
+    prettier_cmd+=(-- "${files[@]}")
+fi
 
 set +e
-output="$(cd "${working_dir}" && "${prettier_cmd[@]}" 2>&1)"
+output="$(cd "${execution_dir}" && "${prettier_cmd[@]}" 2>&1)"
 exit_code=$?
 set -e
 

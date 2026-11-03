@@ -36,6 +36,9 @@ if ($files.Count -eq 0) {
 # POSIX binary too so macOS/Linux find the local install.
 $workingDirPath = (Resolve-Path -LiteralPath $workingDir -ErrorAction SilentlyContinue).Path
 if (-not $workingDirPath) { $workingDirPath = $workingDir }
+# Repository binaries and executable configs require explicit trust.
+$trustedConfig = $null
+if ($env:SCAN_TRUST_REPO_CODE -eq '1') {
 $localBinCmd = Join-Path $workingDirPath 'node_modules/.bin/eslint.cmd'   # Windows
 $localBinPosix = Join-Path $workingDirPath 'node_modules/.bin/eslint'     # macOS/Linux
 $runner = $null; $runnerArgs = @()
@@ -48,11 +51,22 @@ else {
     exit 0
 }
 
+} else {
+    $runner, $trustedConfig = Get-TrustedAppTool 'eslint'
+    $runnerArgs = @()
+}
+
 Start-ScanTimer
 Write-HookLog "Linting... ($($files.Count) TS/JS files in $workingDir)"
 
 $eslintArgs = $runnerArgs + @('--fix')
+if ($env:SCAN_TRUST_REPO_CODE -ne '1') {
+    if ($ExtraArgs) { throw 'Extra arguments require SCAN_TRUST_REPO_CODE=1' }
+    $eslintArgs += @('--config', $trustedConfig, '--no-config-lookup')
+}
+foreach ($file in $files) { Assert-SafeWritePath (Join-Path $workingDirPath $file) }
 if ($ExtraArgs) { $eslintArgs += $ExtraArgs }
+$eslintArgs += '--'
 $eslintArgs += $files
 
 # Guard Push-Location: under $ErrorActionPreference='Stop' a missing dir throws.

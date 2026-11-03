@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Scan Report",
+  "description": "Schema for AI agent scanning interface output. Written to .scanning/last-scan.json by scan.py. Subset of Unified Result with agent-specific auto-fix fields.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "scan_id",
+    "scan_timestamp",
+    "summary",
+    "findings"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "scan_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this scan run"
+    },
+    "scan_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total scan duration in milliseconds"
+    },
+    "scan_directory": {
+      "type": "string",
+      "description": "Directory that was scanned"
+    },
+    "tools_executed": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "trivy",
+          "checkov",
+          "tflint",
+          "gitleaks",
+          "snyk"
+        ]
+      },
+      "description": "List of tools that were executed during this scan"
+    },
+    "auto_fix_applied": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether --auto-fix was used during this scan"
+    },
+    "auto_fix_count": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Number of findings auto-remediated by Checkov --fix"
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "total_findings",
+        "by_severity"
+      ],
+      "properties": {
+        "total_findings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_severity": {
+          "type": "object",
+          "properties": {
+            "CRITICAL": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "HIGH": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "MEDIUM": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "LOW": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "by_tool": {
+          "type": "object",
+          "description": "Finding counts keyed by tool name",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "fixable": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Number of findings that Checkov can auto-fix"
+        },
+        "unfixable": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Number of findings that require manual remediation"
+        }
+      },
+      "additionalProperties": false
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/agent_finding"
+      }
+    },
+    "scan_complete": {
+      "type": "boolean",
+      "description": "False when any required scanner or policy failed"
+    }
+  },
+  "$defs": {
+    "agent_finding": {
+      "type": "object",
+      "required": [
+        "rule_id",
+        "tool",
+        "severity",
+        "file",
+        "message"
+      ],
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "description": "Tool-specific check/rule ID (e.g., AVD-AWS-0057, CKV_AWS_18)"
+        },
+        "tool": {
+          "type": "string",
+          "enum": [
+            "trivy",
+            "checkov",
+            "tflint",
+            "gitleaks",
+            "snyk"
+          ],
+          "description": "Tool that detected this finding"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "CRITICAL",
+            "HIGH",
+            "MEDIUM",
+            "LOW"
+          ],
+          "description": "Normalized severity level"
+        },
+        "file": {
+          "type": "string",
+          "description": "Relative file path from repository root"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable finding description"
+        },
+        "remediation_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to remediation documentation"
+        },
+        "fixable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether Checkov can auto-fix this finding"
+        },
+        "fixed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether auto-fix was applied to this finding"
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^v1:[0-9a-f]{64}$"
+        },
+        "resource": {
+          "type": "string"
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "suppressed": {
+          "type": "boolean"
+        },
+        "baseline": {
+          "type": "boolean"
+        },
+        "suppression_reason": {
+          "type": "string"
+        },
+        "reported_file": {
+          "type": "string",
+          "description": "Original scanner path retained only for explicit legacy baseline matching"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
