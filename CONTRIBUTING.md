@@ -61,7 +61,7 @@ Review the resulting diff and ensure a second run is idempotent.
 
 ## Run the compliance scan
 
-CI parity uses Checkov 3.3.22. The v3.0.2 push hooks require a trusted executable
+CI parity uses Checkov 3.3.22. The v3.0.3 push hooks require a trusted executable
 named `checkov` on PATH and scan files changed by each pushed ref. New refs compare with the destination
 remote default; fallback selection counts only that destination's remote-tracking refs. Keep those refs current before pushing. For the suffixed parity command:
 
@@ -78,7 +78,7 @@ RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform --q
 
 The workflow is the canonical skip-list source. The tracked push policy at
 `.scanning/configs/.checkov.yaml` mirrors it, and the scan settings job rejects drift.
-Update the mirror whenever changing the workflow list. CI also reads that policy.
+Update the mirror whenever changing the workflow list. CI also reads that policy. Only passive Checkov keys are accepted. Pre-commit security scanners read staged index blobs; pre-push scanners read pushed object tips and their changed paths, so staged-but-unpushed content is excluded from push scans. SQLFluff uses the working tree. Scanner binaries and trusted executable configuration must resolve outside the checkout. Semgrep ruleset overrides may use registry references, staged files inside the checkout, or external paths.
 
 Install hook validation dependencies with Python 3.11 or newer:
 

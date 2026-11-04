@@ -14,8 +14,43 @@ function Invoke-PushSnapshot {
     $py = Find-WorkingPython
     if (-not $py) { throw 'Python is required for push snapshots' }
     $runner = Join-Path (Split-Path -Parent $HookPath) 'pre-push.py'
-    & $py $runner --shell ps1 --hooks ([IO.Path]::GetFileNameWithoutExtension($HookPath)) @HookArguments
+    & $py -I $runner --shell ps1 --hooks ([IO.Path]::GetFileNameWithoutExtension($HookPath)) @HookArguments
     exit $LASTEXITCODE
+}
+
+function Invoke-StagedSnapshot {
+    param([string]$HookPath, [object[]]$HookArguments)
+    if ($env:SCAN_INDEX_SNAPSHOT -eq '1') { return }
+    $py = Find-WorkingPython
+    if (-not $py) { throw 'Python is required for index snapshots' }
+    $runner = Join-Path (Split-Path -Parent $HookPath) 'pre-commit.py'
+    & $py -I $runner --shell ps1 ([IO.Path]::GetFileNameWithoutExtension($HookPath)) @HookArguments
+    exit $LASTEXITCODE
+}
+
+function New-PassiveCheckovPolicy {
+    param([object[]]$ExtraArgs)
+    # Consume only Git's conventional remote pair in the explicit legacy mode.
+    if ($env:SCAN_LEGACY_PUSH_STATE -eq '1' -and $env:SCAN_PUSH_SNAPSHOT -ne '1' -and
+        @($ExtraArgs).Count -eq 2 -and $ExtraArgs[0] -and $ExtraArgs[1] -and
+        -not ([string]$ExtraArgs[0]).StartsWith('-') -and -not ([string]$ExtraArgs[1]).StartsWith('-')) {
+        $ExtraArgs = @()
+    }
+    if ($ExtraArgs) { throw 'Checkov extra arguments are disabled' }
+    $py = Find-WorkingPython
+    if (-not $py) { throw 'Python is required for passive Checkov policy' }
+    $source = Resolve-ScanConfig -Filename '.checkov.yaml'
+    $helper = Join-Path $PSScriptRoot 'checkov_policy.py'
+    $policy = & $py -E -P $helper $source
+    if ($LASTEXITCODE -ne 0) { throw 'Checkov policy rejected; scan incomplete' }
+    $temporary = [IO.Path]::GetTempFileName()
+    try {
+        [IO.File]::WriteAllText($temporary, ($policy -join "`n"))
+        return $temporary
+    } catch {
+        Remove-Item -LiteralPath $temporary -Force
+        throw
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -167,13 +202,14 @@ function Resolve-ExternalRealPath {
 function Assert-ExternalPath {
     param([string]$Path)
     if (-not [IO.Path]::IsPathRooted($Path)) { throw 'Trusted path must be absolute' }
-    $root = if ($env:SCAN_PUSH_SNAPSHOT -eq '1') { (Get-Location).Path } else {
+    $snapshot = $env:SCAN_PUSH_SNAPSHOT -eq '1' -or $env:SCAN_INDEX_SNAPSHOT -eq '1'
+    $root = if ($snapshot) { (Get-Location).Path } else {
         Assert-GitAvailable
         & git rev-parse --show-toplevel 2>$null
     }
     if (-not $root) { $root = (Get-Location).Path }
     $roots = @($root)
-    if ($env:SCAN_PUSH_SNAPSHOT -eq '1' -and $env:SCAN_CONSUMER_ROOT) {
+    if ($snapshot -and $env:SCAN_CONSUMER_ROOT) {
         $roots += $env:SCAN_CONSUMER_ROOT
     }
     $full = Resolve-ExternalRealPath $Path
@@ -339,12 +375,12 @@ function Get-ChangedFilesForDetect {
     }
     $files = @(Invoke-GitPaths -Arguments @('diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR', '--'))
     if ($files.Count -eq 0) {
-        git rev-parse --verify '@{push}' 2>$null | Out-Null
+        git rev-parse --verify -q '@{push}' 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) {
             $files = @(Invoke-GitPaths -Arguments @('diff', '--name-only', '-z', '--diff-filter=ACMR', '@{push}', 'HEAD', '--'))
         }
         if ($files.Count -eq 0) {
-            git rev-parse --verify '@{upstream}' 2>$null | Out-Null
+            git rev-parse --verify -q '@{upstream}' 2>$null | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 $files = @(Invoke-GitPaths -Arguments @('diff', '--name-only', '-z', '--diff-filter=ACMR', '@{upstream}', 'HEAD', '--'))
             }

@@ -5,6 +5,8 @@ param([Parameter(ValueFromRemainingArguments)]$ExtraArgs)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\common.ps1"
 
+Invoke-StagedSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
+
 if (-not (Test-ToolAvailable 'semgrep')) { exit 0 }
 
 # Native Windows path (Fall-2025) + UTF-8 so Semgrep runs without WSL.

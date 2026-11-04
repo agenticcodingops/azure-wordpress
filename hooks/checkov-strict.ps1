@@ -27,49 +27,43 @@ $totalHigh = 0
 $totalMedium = 0
 $totalLow = 0
 
-foreach ($dir in $scanDirs) {
-    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
+$policyFile = New-PassiveCheckovPolicy -ExtraArgs $ExtraArgs
+try {
+    foreach ($dir in $scanDirs) {
+        if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
 
-    # Build Checkov arguments with hard-fail
-    $checkovArgs = @('-d', $dir, '--framework', 'terraform', '--output', 'json', '--compact', '--quiet', '--hard-fail-on', 'CRITICAL,HIGH')
+        # Build Checkov arguments with hard-fail
+        $checkovArgs = @('-d', $dir, '--framework', 'terraform', '--output', 'json', '--compact', '--quiet', '--hard-fail-on', 'CRITICAL,HIGH')
 
-    # Check for config file
-    $configFile = Resolve-ScanConfig -Filename '.checkov.yaml'
-    if ($configFile) {
-        $checkovArgs += @('--config-file', $configFile)
-    }
+        # Run Checkov
+        $output = & checkov @checkovArgs --config-file $policyFile 2>&1
+        $exitCode = $LASTEXITCODE
 
-    # Add extra args
-    if ($ExtraArgs) {
-        $checkovArgs += $ExtraArgs
-    }
-
-    # Run Checkov
-    $output = & checkov @checkovArgs 2>&1
-    $exitCode = $LASTEXITCODE
-
-    if ($exitCode -eq 1) {
-        # Parse findings
-        try {
-            $outputText = $output -join "`n"
-            $json = $outputText | ConvertFrom-Json
-            $failedChecks = $json.results.failed_checks
-            if ($failedChecks) {
-                $totalCritical += @($failedChecks | Where-Object { $_.severity -eq 'CRITICAL' }).Count
-                $totalHigh += @($failedChecks | Where-Object { $_.severity -eq 'HIGH' }).Count
-                $totalMedium += @($failedChecks | Where-Object { $_.severity -eq 'MEDIUM' }).Count
-                $totalLow += @($failedChecks | Where-Object { $_.severity -eq 'LOW' -or $null -eq $_.severity }).Count
+        if ($exitCode -eq 1) {
+            # Parse findings
+            try {
+                $outputText = $output -join "`n"
+                $json = $outputText | ConvertFrom-Json
+                $failedChecks = $json.results.failed_checks
+                if ($failedChecks) {
+                    $totalCritical += @($failedChecks | Where-Object { $_.severity -eq 'CRITICAL' }).Count
+                    $totalHigh += @($failedChecks | Where-Object { $_.severity -eq 'HIGH' }).Count
+                    $totalMedium += @($failedChecks | Where-Object { $_.severity -eq 'MEDIUM' }).Count
+                    $totalLow += @($failedChecks | Where-Object { $_.severity -eq 'LOW' -or $null -eq $_.severity }).Count
+                }
+            } catch {
+                $totalCritical += 1
             }
-        } catch {
-            $totalCritical += 1
+            # Show actionable details so developers know what to fix
+            Show-CheckovFindings -JsonOutput ($output -join "`n")
+            $overallExit = 1
+        } elseif ($exitCode -ge 2) {
+            # Infrastructure error — fail-open
+            $null = Get-HookExitCode -ToolExitCode $exitCode
         }
-        # Show actionable details so developers know what to fix
-        Show-CheckovFindings -JsonOutput ($output -join "`n")
-        $overallExit = 1
-    } elseif ($exitCode -ge 2) {
-        # Infrastructure error — fail-open
-        $null = Get-HookExitCode -ToolExitCode $exitCode
     }
+} finally {
+    Remove-Item -LiteralPath $policyFile -Force
 }
 
 $durationMs = Stop-ScanTimer

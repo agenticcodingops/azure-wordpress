@@ -18,6 +18,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / 'lib'))
 try:
     from scan_config import load_scan_config, load_yaml, require
+    from checkov_policy import passive_policy
     HOOKS = tuple((HERE / 'lib/push-hook-ids.txt').read_text().split())
 except (OSError, ValueError, ImportError) as exc:
     print('[pre-push] ERROR: ' + ' '.join(str(exc).splitlines()) + '; scan incomplete', file=sys.stderr)
@@ -353,6 +354,10 @@ def scan(records: str, hooks: list[tuple[str, list[str]]], shell: str, *, from_g
                 policy = {'checkov': '.checkov.yaml', 'checkov-strict': '.checkov.yaml'}.get(hook)
                 if policy and not (snapshot / policy_dir / policy).is_file():
                     raise ValueError(f'{hook} requires tracked {policy_dir}/{policy}; no fallback policy is allowed')
+                if policy:
+                    passive_policy(snapshot / policy_dir / policy)
+                    if extra:
+                        raise ValueError('Checkov extra arguments are disabled; configure passive policy instead')
                 if hook == 'dotnet-build':
                     build = config.get('languages', {}).get('csharp', {}).get('build', {})
                     for field in ('working_dir', 'solution'):

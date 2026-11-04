@@ -42,7 +42,8 @@
           "checkov",
           "tflint",
           "gitleaks",
-          "snyk"
+          "snyk",
+          "sqlfluff"
         ]
       },
       "description": "List of tools that were executed during this scan"

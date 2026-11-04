@@ -6,6 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
+run_staged_snapshot "$@"
+
 require_tool "semgrep" || exit 0
 
 # Native path (Fall-2025) + UTF-8 so Semgrep runs without WSL on Windows.

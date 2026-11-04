@@ -59,6 +59,16 @@ def _norm(path: str) -> str:
     return p.rstrip("/")
 
 
+def _valid_path(path: str, *, directory=False) -> bool:
+    p = path.strip().replace("\\", "/")
+    while p.startswith("./"):
+        p = p[2:]
+    if directory:
+        p = p.removesuffix("/")
+    return bool(p) and not any(part in ("", ".", "..") or ":" in part or "\0" in part
+                               for part in p.split("/"))
+
+
 def _within(file_path: str, allow_path: str) -> bool:
     """True iff file_path is the allow_path itself or a path UNDER it.
 
@@ -68,15 +78,16 @@ def _within(file_path: str, allow_path: str) -> bool:
     """
     a = _norm(allow_path)
     f = _norm(file_path)
-    return bool(a) and (f == a or f.startswith(a + "/"))
+    return (_valid_path(allow_path, directory=True) and _valid_path(file_path)
+            and (f == a or f.startswith(a + "/")))
 
 
 def check(files, allow, gated):
     """Return (ok: bool, reason: str)."""
     for raw in files:
+        if not _valid_path(raw):
+            return False, f"invalid relative path: {raw}"
         f = _norm(raw)
-        if not f:
-            continue
         if not any(_within(f, a) for a in allow):
             return False, f"non-fixable path (outside allowlist): {f}"
         low = f.lower()

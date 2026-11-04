@@ -15,8 +15,33 @@ run_push_snapshot() {
     [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 || "${SCAN_LEGACY_PUSH_STATE:-0}" == 1 ]] && return 0
     local py
     py="$(find_python)" || { hook_error 'Python is required for push snapshots'; exit 1; }
-    "$py" "${SCRIPT_DIR}/pre-push.py" --shell sh --hooks "$(basename "${BASH_SOURCE[1]}" .sh)" "$@"
+    "$py" -I "${SCRIPT_DIR}/pre-push.py" --shell sh --hooks "$(basename "${BASH_SOURCE[1]}" .sh)" "$@"
     exit $?
+}
+
+# Re-enter passive commit scanners after one batch export of index blobs.
+run_staged_snapshot() {
+    [[ "${SCAN_INDEX_SNAPSHOT:-0}" == 1 ]] && return 0
+    local py
+    py="$(find_python)" || { hook_error 'Python is required for index snapshots'; exit 1; }
+    "$py" -I "${SCRIPT_DIR}/pre-commit.py" --shell sh "$(basename "${BASH_SOURCE[1]}" .sh)" "$@"
+    exit $?
+}
+
+prepare_checkov_policy() {
+    local py source
+    # Direct legacy Git hooks receive the remote name and URL, never tool flags.
+    if [[ "${SCAN_LEGACY_PUSH_STATE:-0}" == 1 && "${SCAN_PUSH_SNAPSHOT:-0}" != 1 && $# -eq 2 &&
+          -n "$1" && "$1" != -* && -n "$2" && "$2" != -* ]]; then
+        set --
+    fi
+    [[ $# -eq 0 ]] || { hook_error 'Checkov extra arguments are disabled'; exit 1; }
+    py="$(find_python)" || { hook_error 'Python is required for passive Checkov policy'; exit 1; }
+    source="$(resolve_config '.checkov.yaml' 2>/dev/null || true)"
+    checkov_policy_dir="$(mktemp -d)" || exit 1
+    trap 'rm -rf -- "$checkov_policy_dir"' EXIT
+    "$py" -E -P "${SCRIPT_DIR}/lib/checkov_policy.py" "$source" > "$checkov_policy_dir/policy.yaml" || exit 1
+    checkov_policy_file="$checkov_policy_dir/policy.yaml"
 }
 
 # ---------------------------------------------------------------------------
@@ -124,7 +149,7 @@ assert_external_path() {
         case "${OSTYPE:-}" in msys*|cygwin*) hook_error 'Python required for Windows path checks'; exit 1 ;; esac
         [[ "$external_path" == /* && ! -L "$external_path" ]] || { hook_error 'Trusted path must be absolute and unlinked'; exit 1; }
         local root parent canonical consumer_root
-        if [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 ]]; then
+        if [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 || "${SCAN_INDEX_SNAPSHOT:-0}" == 1 ]]; then
             root="$PWD"
         else
             require_scan_git
@@ -134,24 +159,24 @@ assert_external_path() {
         parent="$(cd "$(dirname -- "$external_path")" && pwd -P)" || exit 1
         canonical="$parent/${external_path##*/}"
         case "$canonical/" in "$root/"*) hook_error 'Trusted path must be outside the scanned checkout'; exit 1 ;; esac
-        if [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 && -n "${SCAN_CONSUMER_ROOT:-}" ]]; then
+        if [[ -n "${SCAN_CONSUMER_ROOT:-}" && ( "${SCAN_PUSH_SNAPSHOT:-0}" == 1 || "${SCAN_INDEX_SNAPSHOT:-0}" == 1 ) ]]; then
             consumer_root="$(cd "$SCAN_CONSUMER_ROOT" && pwd -P)" || exit 1
             case "$canonical/" in "$consumer_root/"*) hook_error 'Trusted path must be outside the consumer checkout'; exit 1 ;; esac
         fi
         return 0
     fi
     if command -v cygpath >/dev/null 2>&1; then external_path="$(cygpath -w "$external_path")"; fi
-    [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 ]] || require_scan_git
+    [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 || "${SCAN_INDEX_SNAPSHOT:-0}" == 1 ]] || require_scan_git
     "$py" -I - "$external_path" <<'PYEXTERNAL'  || exit 1
 import os, pathlib, subprocess, sys
 try:
-    root = (pathlib.Path.cwd() if os.environ.get('SCAN_PUSH_SNAPSHOT') == '1' else
+    root = (pathlib.Path.cwd() if any(os.environ.get(key) == '1' for key in ('SCAN_PUSH_SNAPSHOT', 'SCAN_INDEX_SNAPSHOT')) else
             pathlib.Path(subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True).strip())).resolve()
 except subprocess.CalledProcessError:
     root = pathlib.Path.cwd().resolve()
 p = pathlib.Path(sys.argv[1])
 roots = [root]
-if os.environ.get('SCAN_PUSH_SNAPSHOT') == '1' and os.environ.get('SCAN_CONSUMER_ROOT'):
+if any(os.environ.get(key) == '1' for key in ('SCAN_PUSH_SNAPSHOT', 'SCAN_INDEX_SNAPSHOT')) and os.environ.get('SCAN_CONSUMER_ROOT'):
     roots.append(pathlib.Path(os.environ['SCAN_CONSUMER_ROOT']).resolve())
 if not p.is_absolute():
     sys.exit("Trusted path must be absolute and outside the scanned checkout")
@@ -290,7 +315,7 @@ _changed_files_for_detect() {
     git diff --cached --name-only -z --diff-filter=ACMR -- > "$listing" || { rm -f -- "$listing"; return 1; }
     if [[ ! -s "$listing" ]]; then
         for reference in '@{push}' '@{upstream}'; do
-            if git rev-parse --verify "$reference" >/dev/null 2>&1; then
+            if git rev-parse --verify -q "$reference" >/dev/null 2>&1; then
                 git diff --name-only -z --diff-filter=ACMR "$reference" HEAD -- > "$listing" || { rm -f -- "$listing"; return 1; }
                 [[ -s "$listing" ]] && break
             fi
