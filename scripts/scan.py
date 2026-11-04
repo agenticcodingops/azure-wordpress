@@ -239,6 +239,13 @@ def run_trivy(scan_dir, severity_filter=None):
 def run_checkov(scan_dir, auto_fix=False, config_file=None, trusted_root=None):
     """Run Checkov scan and return normalized findings."""
     findings = []
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'hooks/lib'))
+        import yaml
+        from checkov_policy import prepared_policy
+    except ImportError as exc:
+        print(f'  [WARN] Checkov policy support unavailable: {exc}', file=sys.stderr)
+        return findings, True, 0
 
     cmd = [
         "checkov",
@@ -247,13 +254,20 @@ def run_checkov(scan_dir, auto_fix=False, config_file=None, trusted_root=None):
         "--compact",
     ]
 
-    if config_file and Path(config_file).exists():
-        cmd.extend(["--config-file", str(config_file)])
-
     if auto_fix:
         cmd.append("--fix")
 
-    rc, stdout, stderr = run_cmd(cmd, timeout=600)
+    if trusted_root is not None:
+        # An explicit policy checkout replaces every consumer-policy candidate.
+        candidate = Path(trusted_root) / '.scanning/configs/.checkov.yaml'
+        config_file = candidate if candidate.is_file() else None
+    try:
+        with prepared_policy(config_file) as config:
+            cmd.extend(['--config-file', str(config)])
+            rc, stdout, stderr = run_cmd(cmd, timeout=600)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        print(f'  [WARN] Checkov policy rejected: {exc}', file=sys.stderr)
+        return findings, True, 0
 
     if rc not in (0, 1):
         print(f"  [WARN] Checkov scan failed (exit {rc}): {stderr.strip()[:200]}", file=sys.stderr)

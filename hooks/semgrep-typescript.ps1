@@ -5,6 +5,8 @@ param([Parameter(ValueFromRemainingArguments)]$ExtraArgs)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\common.ps1"
 
+Invoke-StagedSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
+
 if (-not (Test-ToolAvailable 'semgrep')) { exit 0 }
 
 $env:PYTHONUTF8 = '1'

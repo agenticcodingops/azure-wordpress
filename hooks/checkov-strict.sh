@@ -21,6 +21,8 @@ if [[ ${#scan_dirs[@]} -eq 0 ]]; then
     exit 0
 fi
 
+prepare_checkov_policy "$@"
+
 file_count="$(count_tf_files "${scan_dirs[@]}")"
 hook_log "Scanning... (${file_count} files in ${#scan_dirs[@]} directories)"
 
@@ -38,16 +40,7 @@ for dir in "${scan_dirs[@]}"; do
     # Build Checkov command as array with hard-fail on CRITICAL,HIGH
     checkov_cmd=(checkov -d "${dir}" --framework terraform --output json --compact --quiet --hard-fail-on CRITICAL,HIGH)
 
-    # Check for config file
-    config_file="$(resolve_config '.checkov.yaml' 2>/dev/null || true)"
-    if [[ -n "${config_file}" ]]; then
-        checkov_cmd+=(--config-file "${config_file}")
-    fi
-
-    # Add any extra args passed through
-    if [[ $# -gt 0 ]]; then
-        checkov_cmd+=("$@")
-    fi
+    checkov_cmd+=(--config-file "$checkov_policy_file")
 
     # Run Checkov
     set +e

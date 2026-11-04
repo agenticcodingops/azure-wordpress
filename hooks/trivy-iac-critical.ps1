@@ -5,6 +5,8 @@ param([Parameter(ValueFromRemainingArguments)]$ExtraArgs)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\common.ps1"
 
+Invoke-StagedSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
+
 # Verify tool availability
 if (-not (Test-ToolAvailable 'trivy')) { exit 0 }
 

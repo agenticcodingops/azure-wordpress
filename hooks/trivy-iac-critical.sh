@@ -6,6 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
+run_staged_snapshot "$@"
+
 # Verify tool availability
 require_tool "trivy" || exit 0
 

@@ -27,8 +27,8 @@ param(
     [switch]$AutoFix
 )
 
-$ErrorActionPreference = 'Continue'
 . "$PSScriptRoot/../hooks/lib/common.ps1"
+$ErrorActionPreference = 'Continue'
 
 $results = @()
 
