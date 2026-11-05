@@ -61,7 +61,7 @@ Review the resulting diff and ensure a second run is idempotent.
 
 ## Run the compliance scan
 
-CI parity uses Checkov 3.3.22. The v3.0.3 push hooks require a trusted executable
+CI parity uses Checkov 3.3.22. The v3.0.4 push hooks require a trusted executable
 named `checkov` on PATH and scan files changed by each pushed ref. New refs compare with the destination
 remote default; fallback selection counts only that destination's remote-tracking refs. Keep those refs current before pushing. For the suffixed parity command:
 

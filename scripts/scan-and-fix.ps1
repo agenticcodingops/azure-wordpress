@@ -178,7 +178,7 @@ $hasErrors = $failed.Count -gt 0
 
 if ($AutoFix -and $hasErrors) {
     Assert-SafeWritePath '.claude/scan-findings.json'
-    if (-not (Test-Path '.claude')) { New-Item -ItemType Directory -Path '.claude' -Force | Out-Null }
+    if (-not (Test-Path '.claude')) { New-Item -ItemType Directory -Path '.claude' -Force -ErrorAction Stop | Out-Null }
     $doc = [pscustomobject]@{
         schemaVersion   = 1
         generatedAtUtc  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
@@ -188,7 +188,7 @@ if ($AutoFix -and $hasErrors) {
         hasErrors       = $hasErrors
         findings        = $results
     }
-    $doc | ConvertTo-Json -Depth 6 | Set-Content -Path '.claude/scan-findings.json' -Encoding UTF8
+    $doc | ConvertTo-Json -Depth 6 | Set-Content -Path '.claude/scan-findings.json' -Encoding UTF8 -ErrorAction Stop
 }
 
 foreach ($r in $results) {

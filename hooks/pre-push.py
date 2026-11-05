@@ -499,8 +499,8 @@ def install() -> int:
             prepared = Path(output.name)
             output.write('#!/usr/bin/env bash\n' + marker + '\n'
                          'for py in python3 python py; do\n'
-                         '  if command -v "$py" >/dev/null && "$py" -c "" 2>/dev/null; then\n'
-                         '    exec "$py" hooks/pre-push.py --pre-commit-runner "$@"\n'
+                         '  if command -v "$py" >/dev/null && "$py" -E -P -c "" 2>/dev/null; then\n'
+                         '    exec "$py" -E -P hooks/pre-push.py --pre-commit-runner "$@"\n'
                          '  fi\ndone\necho "Python is required for push snapshots" >&2\nexit 1\n')
         prepared.chmod(0o755)
         shutil.copy2(path, original)
