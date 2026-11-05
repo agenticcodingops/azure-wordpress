@@ -9,7 +9,8 @@ param([Parameter(ValueFromRemainingArguments)]$ExtraArgs)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\common.ps1"
 
-if (-not (Test-ToolAvailable 'dotnet')) { exit 0 }
+$scanner = Test-ToolAvailable 'dotnet'
+if (-not $scanner) { exit 0 }
 
 $allCs = Get-StagedFiles -Extensions @('cs')
 if (@($allCs).Count -eq 0) {
@@ -65,7 +66,7 @@ if ($ExtraArgs) { $formatArgs += $ExtraArgs }
 
 Push-Location $workingDir
 try {
-    $output = & dotnet @formatArgs 2>&1
+    $output = & $scanner @formatArgs 2>&1
     $exitCode = $LASTEXITCODE
 } finally {
     Pop-Location

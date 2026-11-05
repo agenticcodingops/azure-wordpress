@@ -38,7 +38,7 @@ for dir in "${scan_dirs[@]}"; do
     fi
 
     # Build Checkov command as array — safe for paths with spaces/special chars
-    checkov_cmd=(checkov -d "${dir}" --framework terraform --output json --compact --quiet)
+    checkov_cmd=("$SCAN_TOOL" -d "${dir}" --framework terraform --output json --compact --quiet)
 
     checkov_cmd+=(--config-file "$checkov_policy_file")
 

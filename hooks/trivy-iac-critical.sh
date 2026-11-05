@@ -41,7 +41,7 @@ for dir in "${scan_dirs[@]}"; do
     fi
 
     # Build Trivy command as array — safe for paths with spaces/special chars
-    trivy_cmd=(trivy config --severity CRITICAL --exit-code 1 --format json --skip-check-update --quiet)
+    trivy_cmd=("$SCAN_TOOL" config --severity CRITICAL --exit-code 1 --format json --skip-check-update --quiet)
     if [[ "${SCAN_INDEX_SNAPSHOT:-0}" == 1 ]]; then
         append_staged_tfvars "$dir"
     fi

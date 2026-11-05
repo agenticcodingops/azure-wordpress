@@ -9,6 +9,8 @@ _COMMON_SH_LOADED=1
 
 SCAN_HOOK_ID="${SCAN_HOOK_ID:-unknown}"
 
+source "$(dirname -- "${BASH_SOURCE[0]}")/tool-paths.sh"
+
 # Pre-push wrappers re-enter only after the transaction runner has copied the
 # exact object tree. Legacy local-state selection requires an explicit opt-in.
 run_push_snapshot() {
@@ -134,14 +136,30 @@ ensure_scanning_dir() {
     mkdir -p .scanning
 }
 
-write_scan_json() {
-    local json_content="${1:?JSON content required}" temporary
+write_scan_json() (
+    local json_content="${1:?JSON content required}" temporary attempt started
     ensure_scanning_dir
     temporary="$(mktemp .scanning/.scan-write-XXXXXX)" || exit 1
-    printf '%s\n' "$json_content" > "$temporary"
-    assert_safe_write_path .scanning/last-scan.json
-    mv -f -- "$temporary" .scanning/last-scan.json
-}
+    # A subshell keeps cleanup local and preserves the caller's traps.
+    trap 'rm -f -- "$temporary"' EXIT
+    printf '%s\n' "$json_content" > "$temporary" || exit 1
+    started=-1
+    for ((attempt=0; attempt<20; attempt++)); do
+        assert_safe_write_path .scanning/last-scan.json
+        # mv otherwise treats a directory as an output folder and reports success.
+        [[ ! -d .scanning/last-scan.json ]] || { hook_error 'Report destination is a directory'; exit 1; }
+        if mv -f -- "$temporary" .scanning/last-scan.json; then
+            exit 0
+        fi
+        # Windows can deny rename while another hook is publishing the report.
+        # Some mv implementations also retry internally; cap elapsed time as well.
+        if (( started < 0 )); then started=$SECONDS; fi
+        if (( attempt == 19 || SECONDS - started >= 2 )); then break; fi
+        sleep 0.05
+    done
+    hook_error 'Could not publish scan report after bounded retries'
+    exit 1
+)
 
 assert_external_path() {
     local py
@@ -424,10 +442,40 @@ export_staged_to_tmp() {
 # Require Python 3.11+ with the same safe-path flags used by config reads.
 # Skip broken launcher shims and older interpreters. Prints the command name.
 find_python() {
-    local c
+    local c candidate
     for c in python python3 py; do
-        if command -v "${c}" >/dev/null 2>&1 && "${c}" -E -P -c "" >/dev/null 2>&1; then
-            echo "${c}"
+        type -P -- "$c" >/dev/null 2>&1 || continue
+        candidate="$(resolve_verified_tool "$c")" || return 1
+        if [[ "$c" == py && "${OSTYPE:-}" == @(msys*|cygwin*|mingw*|win*) ]]; then
+            local interpreter listing line defaults=()
+            if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+                interpreter="$VIRTUAL_ENV/Scripts/python.exe"
+            else
+                listing="$("$candidate" -0p 2>/dev/null)" || {
+                    hook_error 'Cannot verify py selection; put python or python3 on PATH'; return 1;
+                }
+                while IFS= read -r line; do
+                    line="${line%$'\r'}"
+                    if [[ "$line" =~ ^[[:space:]]*-[^[:space:]]+[[:space:]]+\*[[:space:]]+(.+)$ ]]; then
+                        defaults+=("${BASH_REMATCH[1]}")
+                    fi
+                done <<< "$listing"
+                [[ ${#defaults[@]} -eq 1 ]] || {
+                    hook_error 'Cannot verify py selection; put python or python3 on PATH'; return 1;
+                }
+                interpreter="${defaults[0]}"
+                interpreter="${interpreter#\"}"; interpreter="${interpreter%\"}"
+            fi
+            if [[ "${OSTYPE:-}" == cygwin* ]]; then
+                interpreter="$(cygpath -u -- "$interpreter")" || {
+                    hook_error 'Cannot convert py interpreter path'; return 1;
+                }
+            fi
+            [[ -f "$interpreter" ]] || { hook_error 'Cannot verify py virtual environment or default'; return 1; }
+            candidate="$(verify_tool_path "$interpreter")" || return 1
+        fi
+        if "$candidate" -E -P -c "" >/dev/null 2>&1; then
+            echo "$candidate"
             return 0
         fi
     done
@@ -585,7 +633,7 @@ generate_id() {
 # Usage: require_tool "trivy" || return 2
 require_tool() {
     local tool="${1:?Tool name required}"
-    if ! command -v "${tool}" >/dev/null 2>&1; then
+    if ! type -P -- "${tool}" >/dev/null 2>&1; then
         if [[ "${SCAN_ALLOW_TOOL_ERRORS:-0}" != 1 ]]; then
             hook_error "${tool} not found; scan incomplete"
             exit 1
@@ -593,9 +641,7 @@ require_tool() {
         hook_warn "${tool} unavailable; explicit local fail-open opt-in"
         return 2
     fi
-    local executable
-    executable="$(command -v "$tool")"
-    if [[ "$(type -t "$tool")" != function ]]; then assert_external_path "$executable"; fi
+    SCAN_TOOL="$(resolve_verified_tool "$tool")" || exit 1
     return 0
 }
 

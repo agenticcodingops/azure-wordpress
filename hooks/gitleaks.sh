@@ -29,7 +29,7 @@ hook_log "Scanning... (${staged_count} staged files)"
 # `protect --staged` without `--report-path` writes no JSON, and Gitleaks uses
 # exit 1 both for leaks and for a config it cannot load.
 gitleaks_cmd=(
-    gitleaks git --staged
+    "$SCAN_TOOL" git --staged
     --report-format json
     --report-path -
     --redact
@@ -81,15 +81,7 @@ to_py_path() {
 
 parse_status=2
 total_high=""
-py=""
-# The Windows "python3" app-execution alias exists and exits without running
-# Python. Use the first interpreter that can actually import json.
-for candidate in python3 python; do
-    if command -v "${candidate}" >/dev/null 2>&1 && "${candidate}" -I -c "import json" >/dev/null 2>&1; then
-        py="${candidate}"
-        break
-    fi
-done
+py="$(find_python)" || py=""
 
 if [[ -n "${py}" ]]; then
     set +e

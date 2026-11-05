@@ -16,7 +16,7 @@ fi
 
 # Respect a project .sqlfluff config (a CLI --dialect would OVERRIDE it); only force a
 # default dialect when no config is present.
-sqlfluff_cmd=(sqlfluff lint)
+sqlfluff_cmd=("$SCAN_TOOL" lint)
 dialect_note="from .sqlfluff"
 if [[ ! -f .sqlfluff ]]; then
     sqlfluff_cmd+=(--dialect ansi)

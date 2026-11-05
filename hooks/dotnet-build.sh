@@ -37,7 +37,7 @@ fi
 start_timer
 hook_log "Building (Roslyn analyzers)... (${solution} in ${working_dir})"
 
-build_cmd=(dotnet build "${solution}" /p:AnalysisMode=AllEnabledByDefault --nologo)
+build_cmd=("$SCAN_TOOL" build "${solution}" /p:AnalysisMode=AllEnabledByDefault --nologo)
 [[ $# -gt 0 ]] && build_cmd+=("$@")
 
 set +e

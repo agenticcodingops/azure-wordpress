@@ -5,7 +5,8 @@ param([Parameter(ValueFromRemainingArguments)]$ExtraArgs)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\common.ps1"
 
-if (-not (Test-ToolAvailable 'sqlfluff')) { exit 0 }
+$scanner = Test-ToolAvailable 'sqlfluff'
+if (-not $scanner) { exit 0 }
 
 $files = Get-StagedFiles -Extensions @('sql')
 if (@($files).Count -eq 0) {
@@ -28,7 +29,7 @@ if ($ExtraArgs) { $sqlfluffArgs += $ExtraArgs }
 $sqlfluffArgs += '--'
 $sqlfluffArgs += $files
 
-$output = & sqlfluff @sqlfluffArgs 2>&1
+$output = & $scanner @sqlfluffArgs 2>&1
 $exitCode = $LASTEXITCODE
 $durationMs = Stop-ScanTimer
 

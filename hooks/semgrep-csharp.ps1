@@ -7,7 +7,8 @@ $ErrorActionPreference = 'Stop'
 
 Invoke-StagedSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
 
-if (-not (Test-ToolAvailable 'semgrep')) { exit 0 }
+$scanner = Test-ToolAvailable 'semgrep'
+if (-not $scanner) { exit 0 }
 
 # Native Windows path (Fall-2025) + UTF-8 so Semgrep runs without WSL.
 $env:PYTHONUTF8 = '1'
@@ -31,7 +32,7 @@ if ($ExtraArgs) { $semgrepArgs += $ExtraArgs }
 $semgrepArgs += '--'
 $semgrepArgs += $files
 
-& semgrep @semgrepArgs *> $null
+& $scanner @semgrepArgs *> $null
 $sgExit = $LASTEXITCODE
 $durationMs = Stop-ScanTimer
 

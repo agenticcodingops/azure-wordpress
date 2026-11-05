@@ -57,7 +57,7 @@ fi
 start_timer
 hook_log "Checking format... (${#include_files[@]} files, ${solution} in ${working_dir})"
 
-format_cmd=(dotnet format "${solution}" --verify-no-changes --no-restore)
+format_cmd=("$SCAN_TOOL" format "${solution}" --verify-no-changes --no-restore)
 for inc in "${include_files[@]}"; do
     format_cmd+=(--include "${inc}")
 done

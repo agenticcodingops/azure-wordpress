@@ -16,7 +16,8 @@ if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction Sile
 }
 
 # Verify tool availability
-if (-not (Test-ToolAvailable 'gitleaks')) { exit 0 }
+$scanner = Test-ToolAvailable 'gitleaks'
+if (-not $scanner) { exit 0 }
 
 # Check if there are any staged files at all
 $stagedFiles = git diff --cached --name-only --diff-filter=ACMR 2>$null
@@ -56,7 +57,7 @@ if ($ExtraArgs) {
 
 $stderrFile = New-TemporaryFile
 try {
-    $stdout = & gitleaks @gitleaksArgs 2>$stderrFile
+    $stdout = & $scanner @gitleaksArgs 2>$stderrFile
     $exitCode = $LASTEXITCODE
 } finally {
     Remove-Item -Force $stderrFile -ErrorAction SilentlyContinue

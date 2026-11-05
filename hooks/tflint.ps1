@@ -8,7 +8,8 @@ $ErrorActionPreference = 'Stop'
 Invoke-PushSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
 
 # Verify tool availability
-if (-not (Test-ToolAvailable 'tflint')) { exit 0 }
+$scanner = Test-ToolAvailable 'tflint'
+if (-not $scanner) { exit 0 }
 
 Start-ScanTimer
 
@@ -47,7 +48,7 @@ foreach ($dir in $scanDirs) {
     }
     $initExit = 2
     try {
-        & tflint @initArgs 2>$null | Out-Null
+        & $scanner @initArgs 2>$null | Out-Null
         $initExit = $LASTEXITCODE
     } catch { $initExit = 2 }
     if ($initExit -ne 0) { throw 'TFLint initialization failed' }
@@ -73,7 +74,7 @@ foreach ($dir in $scanDirs) {
     }
 
     # Run tflint
-    $output = & tflint @tflintArgs 2>&1
+    $output = & $scanner @tflintArgs 2>&1
     $exitCode = $LASTEXITCODE
 
     if ($exitCode -eq 2) {

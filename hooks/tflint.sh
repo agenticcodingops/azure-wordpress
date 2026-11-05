@@ -35,7 +35,7 @@ for dir in "${scan_dirs[@]}"; do
     fi
 
     # Build tflint command as array — safe for paths with spaces/special chars
-    tflint_cmd=(tflint --chdir="${dir}" --format json)
+    tflint_cmd=("$SCAN_TOOL" --chdir="${dir}" --format json)
     if [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 ]]; then
         read_nul_paths changed_sources get_staged_files tf tf.json
         for path in "${changed_sources[@]}"; do
@@ -61,7 +61,7 @@ for dir in "${scan_dirs[@]}"; do
 
     # Initialize tflint plugins (required before scanning)
     set +e
-    init_cmd=(tflint --chdir="${dir}" --init)
+    init_cmd=("$SCAN_TOOL" --chdir="${dir}" --init)
     if [[ -n "${config_file}" ]]; then
         init_cmd+=(--config "${config_file}")
     fi
