@@ -7,7 +7,8 @@ $ErrorActionPreference = 'Stop'
 
 Invoke-StagedSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
 
-if (-not (Test-ToolAvailable 'semgrep')) { exit 0 }
+$scanner = Test-ToolAvailable 'semgrep'
+if (-not $scanner) { exit 0 }
 
 $env:PYTHONUTF8 = '1'
 $env:SEMGREP_SEND_METRICS = 'off'
@@ -29,7 +30,7 @@ if ($ExtraArgs) { $semgrepArgs += $ExtraArgs }
 $semgrepArgs += '--'
 $semgrepArgs += $files
 
-& semgrep @semgrepArgs *> $null
+& $scanner @semgrepArgs *> $null
 $sgExit = $LASTEXITCODE
 $durationMs = Stop-ScanTimer
 

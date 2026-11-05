@@ -8,7 +8,8 @@ $ErrorActionPreference = 'Stop'
 Invoke-StagedSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
 
 # Verify tool availability
-if (-not (Test-ToolAvailable 'trivy')) { exit 0 }
+$scanner = Test-ToolAvailable 'trivy'
+if (-not $scanner) { exit 0 }
 
 Start-ScanTimer
 
@@ -53,7 +54,7 @@ foreach ($dir in $scanDirs) {
 $trivyArgs += @('--', $dir)
 
     # Run Trivy with retry
-    $result = Invoke-TrivyWithRetry -ArgumentList $trivyArgs
+    $result = Invoke-TrivyWithRetry -ToolPath $scanner -ArgumentList $trivyArgs
 
     if ($env:SCAN_INDEX_SNAPSHOT -eq '1' -and $result.ExitCode -eq 1) {
         $py = Find-WorkingPython

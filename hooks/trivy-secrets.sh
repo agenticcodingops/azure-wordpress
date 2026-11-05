@@ -45,7 +45,7 @@ done
 [[ ${skipped} -gt 0 ]] && hook_warn "${skipped} staged file(s) skipped from the secret scan"
 
 # Build Trivy command — scan the temp dir (contains only staged files)
-trivy_cmd=(trivy fs --scanners secret --exit-code 1 --format json --skip-db-update --quiet)
+trivy_cmd=("$SCAN_TOOL" fs --scanners secret --exit-code 1 --format json --skip-db-update --quiet)
 
 # Add any extra args passed through
 if [[ $# -gt 0 ]]; then

@@ -9,7 +9,8 @@ $ErrorActionPreference = 'Stop'
 
 Invoke-PushSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
 
-if (-not (Test-ToolAvailable 'dotnet')) { exit 0 }
+$scanner = Test-ToolAvailable 'dotnet'
+if (-not $scanner) { exit 0 }
 
 $staged = Get-StagedFiles -Extensions @('cs', 'csproj')
 if (@($staged).Count -eq 0) {
@@ -44,7 +45,7 @@ if ($ExtraArgs) { $buildArgs += $ExtraArgs }
 
 Push-Location $workingDir
 try {
-    $output = & dotnet @buildArgs 2>&1
+    $output = & $scanner @buildArgs 2>&1
     $exitCode = $LASTEXITCODE
 } finally {
     Pop-Location

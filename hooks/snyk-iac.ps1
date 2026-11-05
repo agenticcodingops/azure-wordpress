@@ -8,12 +8,13 @@ $ErrorActionPreference = 'Stop'
 Invoke-PushSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
 
 # Verify tool availability (fail-open if snyk not installed)
-if (-not (Test-ToolAvailable 'snyk')) { exit 0 }
+$scanner = Test-ToolAvailable 'snyk'
+if (-not $scanner) { exit 0 }
 
 # Verify authentication (fail-open if not authenticated)
 if (-not $env:SNYK_TOKEN) {
     try {
-        $null = & snyk whoami 2>&1
+        $null = & $scanner whoami 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-HookWarn "Snyk not authenticated (no SNYK_TOKEN and 'snyk whoami' failed) - allowing push (fail-open)"
             exit 0
@@ -60,7 +61,7 @@ foreach ($dir in $scanDirs) {
     # Run Snyk
     Push-Location -LiteralPath $dir
     try {
-        $output = & snyk @snykArgs 2>&1
+        $output = & $scanner @snykArgs 2>&1
         $exitCode = $LASTEXITCODE
     } finally { Pop-Location }
 

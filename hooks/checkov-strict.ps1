@@ -8,7 +8,8 @@ $ErrorActionPreference = 'Stop'
 Invoke-PushSnapshot -HookPath $PSCommandPath -HookArguments $ExtraArgs
 
 # Verify tool availability
-if (-not (Test-ToolAvailable 'checkov')) { exit 0 }
+$scanner = Test-ToolAvailable 'checkov'
+if (-not $scanner) { exit 0 }
 
 Start-ScanTimer
 
@@ -36,7 +37,7 @@ try {
         $checkovArgs = @('-d', $dir, '--framework', 'terraform', '--output', 'json', '--compact', '--quiet', '--hard-fail-on', 'CRITICAL,HIGH')
 
         # Run Checkov
-        $output = & checkov @checkovArgs --config-file $policyFile 2>&1
+        $output = & $scanner @checkovArgs --config-file $policyFile 2>&1
         $exitCode = $LASTEXITCODE
 
         if ($exitCode -eq 1) {

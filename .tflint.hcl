@@ -1,4 +1,4 @@
-# Mirror of auto-code-scanning 55a7e93f2e7553b560b5a7fe5cd38273e09b645b # v3.0.4 configs/azure/.tflint.hcl. CI uses the canonical copy; update this when terraform-scan.yml's ref changes. The manual-run commands below are the only edit: they point at this root copy.
+# Mirror of auto-code-scanning 22ff19aa06235e9c4cac7ffa85ab847e443bbd8d # v3.0.5 configs/azure/.tflint.hcl. CI uses the canonical copy; update this when terraform-scan.yml's ref changes. The manual-run commands below are the only edit: they point at this root copy.
 # ============================================================================
 # TFLINT CONFIGURATION - AZURE
 # auto-code-scanning

@@ -36,7 +36,7 @@ for dir in "${scan_dirs[@]}"; do
     fi
 
     # Build Trivy command as array — safe for paths with spaces/special chars
-    trivy_cmd=(trivy config --severity CRITICAL,HIGH,MEDIUM,LOW --exit-code 1 --format json --skip-check-update --quiet)
+    trivy_cmd=("$SCAN_TOOL" config --severity CRITICAL,HIGH,MEDIUM,LOW --exit-code 1 --format json --skip-check-update --quiet)
 
     # Check for config file
     config_file="$(resolve_config '.trivyignore' 2>/dev/null || true)"

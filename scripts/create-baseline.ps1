@@ -87,7 +87,6 @@ $ErrorActionPreference = "Stop"
 if ($PolicyRoot -and $BaseCommit) { throw 'Supply either PolicyRoot or BaseCommit, not both' }
 
 . "$PSScriptRoot/../hooks/lib/common.ps1"
-. "$PSScriptRoot/setup-paths.ps1"
 $sourceRoot = git rev-parse --show-toplevel
 if ($LASTEXITCODE -ne 0) { $sourceRoot = (Get-Location).Path }
 if ($PolicyRoot) {
@@ -150,7 +149,7 @@ function Find-BaselinePython {
     $scanDirs = if ($scopedDirs.Count -gt 0) { $scopedDirs } else { @($TerraformDir) }
     foreach ($name in @('python', 'python3', 'py')) {
         if (-not (Get-Command $name -CommandType Application -ErrorAction SilentlyContinue)) { continue }
-        $candidate = Resolve-VerifiedTool -Name $name -Label Python -AdditionalRoots (@($sourceRoot) + $scanDirs)
+        $candidate = Resolve-VerifiedPython -Name $name -AdditionalRoots (@($sourceRoot) + $scanDirs)
         try {
             & $candidate -E -P -c 'pass' 2>$null
             if ($LASTEXITCODE -eq 0) { return $candidate }

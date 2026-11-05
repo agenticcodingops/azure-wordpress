@@ -7,7 +7,8 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\common.ps1"
 
 # Verify tool availability
-if (-not (Test-ToolAvailable 'trivy')) { exit 0 }
+$scanner = Test-ToolAvailable 'trivy'
+if (-not $scanner) { exit 0 }
 
 # Get list of staged files (all types — secrets can be in any file).
 # Use -z (NUL-delimited) so filenames containing newlines are handled correctly.
@@ -92,7 +93,7 @@ try {
     $trivyArgs += @('--', $tmpDir)
 
 # Run Trivy with retry
-    $result = Invoke-TrivyWithRetry -ArgumentList $trivyArgs
+    $result = Invoke-TrivyWithRetry -ToolPath $scanner -ArgumentList $trivyArgs
 
     $totalCritical = 0
     $totalHigh = 0

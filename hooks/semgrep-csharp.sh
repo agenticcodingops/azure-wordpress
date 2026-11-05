@@ -30,7 +30,7 @@ hook_log "Scanning... (${#files[@]} C# files, ${ruleset})"
 # exits non-zero only on its OWN errors, which we fail-open on).
 tmpjson="$(mktemp)"
 trap 'rm -f "${tmpjson}"' EXIT
-semgrep_cmd=(semgrep scan --config "${ruleset}" --metrics off --json --output "${tmpjson}")
+semgrep_cmd=("$SCAN_TOOL" scan --config "${ruleset}" --metrics off --json --output "${tmpjson}")
 [[ $# -gt 0 ]] && semgrep_cmd+=("$@")
 semgrep_cmd+=(-- "${files[@]}")
 

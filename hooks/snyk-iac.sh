@@ -46,7 +46,7 @@ require_tool "snyk" || exit 0
 # Verify authentication (fail-open if not authenticated)
 if [[ -z "${SNYK_TOKEN:-}" ]]; then
     set +e
-    snyk whoami >/dev/null 2>&1
+    "$SCAN_TOOL" whoami >/dev/null 2>&1
     whoami_exit=$?
     set -e
     if [[ ${whoami_exit} -ne 0 ]]; then
@@ -80,7 +80,7 @@ for dir in "${scan_dirs[@]}"; do
     fi
 
     # Build Snyk command as array
-    snyk_cmd=(snyk iac test --json)
+    snyk_cmd=("$SCAN_TOOL" iac test --json)
 
     # Check for .snyk policy file in repo root
     if [[ -f ".snyk" ]]; then
