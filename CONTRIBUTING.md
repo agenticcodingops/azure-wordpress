@@ -15,6 +15,7 @@ pull request.
    - Trivy
    - Python 3.11 or newer, with PyYAML 6.0.3 and jsonschema 4.25.1
    - Lefthook and the scanners configured in `lefthook.yml`
+   - Bash 4.4 or newer for shell hooks; on macOS, install a supported Bash and put it first on PATH
 4. Install the repository hooks once per clone:
 
    ```bash
@@ -61,7 +62,7 @@ Review the resulting diff and ensure a second run is idempotent.
 
 ## Run the compliance scan
 
-CI parity uses Checkov 3.3.22. The v3.0.5 push hooks require a trusted executable
+CI parity uses Checkov 3.3.22. The v3.0.6 push hooks require a trusted executable
 named `checkov` on PATH and scan files changed by each pushed ref. New refs compare with the destination
 remote default; fallback selection counts only that destination's remote-tracking refs. Keep those refs current before pushing. For the suffixed parity command:
 

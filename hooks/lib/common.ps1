@@ -190,7 +190,7 @@ function Write-ScanJson {
                     [IO.File]::Move($temporary, $destination)
                 }
                 return
-            } catch [IO.IOException] {
+            } catch [IO.IOException], [UnauthorizedAccessException] {
                 if ($checkingPath -or $attempt -eq 19) { throw }
                 Start-Sleep -Milliseconds 50
             }

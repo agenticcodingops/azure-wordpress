@@ -5,6 +5,18 @@
 
 # Guard against double-sourcing
 [[ -n "${_COMMON_SH_LOADED:-}" ]] && return 0
+
+# The library needs Bash 4.4+ (mapfile -d, ${var,,}). Check before anything newer is
+# parsed, so an older shell (macOS /bin/bash is 3.2) stops with a clear message.
+_scan_bash_supported() {
+    local major="${1:-${BASH_VERSINFO[0]}}" minor="${2:-${BASH_VERSINFO[1]}}"
+    (( major > 4 || (major == 4 && minor >= 4) ))
+}
+if ! _scan_bash_supported; then
+    printf '[%s] ERROR: Bash 4.4 or later is required (found %s). On macOS: brew install bash and put it first on PATH\n' \
+        "${SCAN_HOOK_ID:-hook}" "${BASH_VERSION:-unknown}" >&2
+    exit 1
+fi
 _COMMON_SH_LOADED=1
 
 SCAN_HOOK_ID="${SCAN_HOOK_ID:-unknown}"
@@ -446,7 +458,10 @@ find_python() {
     for c in python python3 py; do
         type -P -- "$c" >/dev/null 2>&1 || continue
         candidate="$(resolve_verified_tool "$c")" || return 1
-        if [[ "$c" == py && "${OSTYPE:-}" == @(msys*|cygwin*|mingw*|win*) ]]; then
+        local windows_py=0
+        # A case pattern, not an extended glob: older shells fail to parse @(...) in [[ ]].
+        case "${OSTYPE:-}" in msys*|cygwin*|mingw*|win*) [[ "$c" == py ]] && windows_py=1 ;; esac
+        if (( windows_py )); then
             local interpreter listing line defaults=()
             if [[ -n "${VIRTUAL_ENV:-}" ]]; then
                 interpreter="$VIRTUAL_ENV/Scripts/python.exe"
