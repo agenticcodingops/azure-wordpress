@@ -14,7 +14,8 @@ function Invoke-PushSnapshot {
     $py = Find-WorkingPython
     if (-not $py) { throw 'Python is required for push snapshots' }
     $runner = Join-Path (Split-Path -Parent $HookPath) 'pre-push.py'
-    & $py -I $runner --shell ps1 --hooks ([IO.Path]::GetFileNameWithoutExtension($HookPath)) @HookArguments
+    # Ignore Python environment paths and the checkout, retaining trusted user packages.
+    & $py -E -P $runner --shell ps1 --hooks ([IO.Path]::GetFileNameWithoutExtension($HookPath)) @HookArguments
     exit $LASTEXITCODE
 }
 
@@ -24,7 +25,7 @@ function Invoke-StagedSnapshot {
     $py = Find-WorkingPython
     if (-not $py) { throw 'Python is required for index snapshots' }
     $runner = Join-Path (Split-Path -Parent $HookPath) 'pre-commit.py'
-    & $py -I $runner --shell ps1 ([IO.Path]::GetFileNameWithoutExtension($HookPath)) @HookArguments
+    & $py -E -P $runner --shell ps1 ([IO.Path]::GetFileNameWithoutExtension($HookPath)) @HookArguments
     exit $LASTEXITCODE
 }
 

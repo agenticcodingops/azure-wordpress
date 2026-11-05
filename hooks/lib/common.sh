@@ -15,7 +15,8 @@ run_push_snapshot() {
     [[ "${SCAN_PUSH_SNAPSHOT:-0}" == 1 || "${SCAN_LEGACY_PUSH_STATE:-0}" == 1 ]] && return 0
     local py
     py="$(find_python)" || { hook_error 'Python is required for push snapshots'; exit 1; }
-    "$py" -I "${SCRIPT_DIR}/pre-push.py" --shell sh --hooks "$(basename "${BASH_SOURCE[1]}" .sh)" "$@"
+    # Ignore Python environment paths and the checkout, retaining trusted user packages.
+    "$py" -E -P "${SCRIPT_DIR}/pre-push.py" --shell sh --hooks "$(basename "${BASH_SOURCE[1]}" .sh)" "$@"
     exit $?
 }
 
@@ -24,7 +25,7 @@ run_staged_snapshot() {
     [[ "${SCAN_INDEX_SNAPSHOT:-0}" == 1 ]] && return 0
     local py
     py="$(find_python)" || { hook_error 'Python is required for index snapshots'; exit 1; }
-    "$py" -I "${SCRIPT_DIR}/pre-commit.py" --shell sh "$(basename "${BASH_SOURCE[1]}" .sh)" "$@"
+    "$py" -E -P "${SCRIPT_DIR}/pre-commit.py" --shell sh "$(basename "${BASH_SOURCE[1]}" .sh)" "$@"
     exit $?
 }
 

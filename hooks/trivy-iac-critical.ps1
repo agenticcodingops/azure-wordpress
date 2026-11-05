@@ -29,6 +29,15 @@ foreach ($dir in $scanDirs) {
 
     # Build Trivy arguments as array — safe for paths with spaces/special chars
     $trivyArgs = @('config', '--severity', 'CRITICAL', '--exit-code', '1', '--format', 'json', '--skip-check-update', '--quiet')
+    if ($env:SCAN_INDEX_SNAPSHOT -eq '1') {
+        $automaticVariables = [string[]]@([IO.Directory]::GetFiles($dir, '*.auto.tfvars'))
+        [Array]::Sort($automaticVariables, [StringComparer]::Ordinal)
+        foreach ($variableFile in (@((Join-Path $dir 'terraform.tfvars')) + $automaticVariables)) {
+            if (Test-Path -LiteralPath $variableFile -PathType Leaf) {
+                $trivyArgs += @('--tf-vars', $variableFile)
+            }
+        }
+    }
 
     # Check for config file
     $configFile = Resolve-ScanConfig -Filename '.trivyignore'
@@ -46,11 +55,26 @@ $trivyArgs += @('--', $dir)
     # Run Trivy with retry
     $result = Invoke-TrivyWithRetry -ArgumentList $trivyArgs
 
+    if ($env:SCAN_INDEX_SNAPSHOT -eq '1' -and $result.ExitCode -eq 1) {
+        $py = Find-WorkingPython
+        if (-not $py) { throw 'Python is required to select commit findings' }
+        $savedOutputEncoding = $OutputEncoding
+        try {
+            $OutputEncoding = [Text.UTF8Encoding]::new($false)
+            $filtered = $result.Output | & $py -I "$PSScriptRoot/lib/trivy_selected.py" $dir $env:SCAN_PUSH_FILES
+            $filterExit = $LASTEXITCODE
+        } finally {
+            $OutputEncoding = $savedOutputEncoding
+        }
+        if ($filterExit -notin @(0, 1)) { throw 'Invalid commit findings report; scan incomplete' }
+        $result = @{ Output = $filtered -join "`n"; ExitCode = $filterExit }
+    }
+
     if ($result.ExitCode -eq 1) {
         # Parse findings
         try {
             $json = $result.Output | ConvertFrom-Json
-            $critical = ($json.Results | ForEach-Object { $_.Misconfigurations } |
+            $critical = @($json.Results | ForEach-Object { $_.Misconfigurations } |
                 Where-Object { $_.Severity -eq 'CRITICAL' }).Count
             $totalCritical += [int]$critical
         } catch {

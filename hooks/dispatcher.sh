@@ -20,7 +20,7 @@ export SCAN_CONFIG_DIR="${SCAN_CONFIG_DIR:-.scanning/configs}"
 if [[ "$HOOK_ID" == pre-push ]]; then
     source "${SCRIPT_DIR}/lib/common.sh"
     PY="$(find_python)" || { echo 'Python is required for push snapshots' >&2; exit 1; }
-    exec "$PY" "${SCRIPT_DIR}/pre-push.py" --stdin-from-git "$@"
+    exec "$PY" -E -P "${SCRIPT_DIR}/pre-push.py" --stdin-from-git "$@"
 fi
 
 # ---------------------------------------------------------------------------

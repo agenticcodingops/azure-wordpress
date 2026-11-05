@@ -27,6 +27,14 @@ hook_log "Scanning... (${file_count} files in ${#scan_dirs[@]} directories)"
 overall_exit=0
 total_critical=0
 
+append_staged_tfvars() {
+    local LC_ALL=C variable_file
+    for variable_file in "$1/terraform.tfvars" "$1/"*.auto.tfvars; do
+        [[ -f "$variable_file" ]] || continue
+        trivy_cmd+=(--tf-vars "$variable_file")
+    done
+}
+
 for dir in "${scan_dirs[@]}"; do
     if [[ ! -d "${dir}" ]]; then
         continue
@@ -34,6 +42,9 @@ for dir in "${scan_dirs[@]}"; do
 
     # Build Trivy command as array — safe for paths with spaces/special chars
     trivy_cmd=(trivy config --severity CRITICAL --exit-code 1 --format json --skip-check-update --quiet)
+    if [[ "${SCAN_INDEX_SNAPSHOT:-0}" == 1 ]]; then
+        append_staged_tfvars "$dir"
+    fi
 
     # Check for config file
     config_file="$(resolve_config '.trivyignore' 2>/dev/null || true)"
@@ -53,6 +64,18 @@ for dir in "${scan_dirs[@]}"; do
     output="$(run_trivy_with_retry "${trivy_cmd[@]}")"
     exit_code=$?
     set -e
+
+    if [[ "${SCAN_INDEX_SNAPSHOT:-0}" == 1 && ${exit_code} -eq 1 ]]; then
+        py="$(find_python)" || { hook_error 'Python is required to select commit findings'; exit 1; }
+        set +e
+        output="$(printf '%s' "$output" | "$py" -I "${SCRIPT_DIR}/lib/trivy_selected.py" "$dir" "$SCAN_PUSH_FILES")"
+        exit_code=$?
+        set -e
+        if [[ ${exit_code} -ne 0 && ${exit_code} -ne 1 ]]; then
+            hook_error 'Invalid commit findings report; scan incomplete'
+            exit 1
+        fi
+    fi
 
     if [[ ${exit_code} -eq 1 ]]; then
         # Parse findings from JSON output

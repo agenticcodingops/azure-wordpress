@@ -29,9 +29,13 @@ def index_tree():
         if source.exists():
             shutil.copyfile(source, private)
         environment = dict(os.environ, GIT_INDEX_FILE=str(private))
-        return subprocess.check_output(
-            ['git', '--no-replace-objects', '-c', 'core.splitIndex=false', 'write-tree'],
-            env=environment, stderr=subprocess.PIPE).decode().strip()
+        try:
+            return subprocess.check_output(
+                ['git', '--no-replace-objects', '-c', 'core.splitIndex=false', 'write-tree'],
+                env=environment, stderr=subprocess.PIPE).decode().strip()
+        except subprocess.CalledProcessError as exc:
+            diagnostic = exc.stderr.decode(errors='replace').strip()
+            raise ValueError(f'Cannot capture index: {diagnostic or exc}') from exc
 
 
 def rule_inputs(root, tree, hook):
@@ -41,12 +45,19 @@ def rule_inputs(root, tree, hook):
     configured = os.environ.get(setting, '') if setting else ''
     if not configured:
         return set(), {}
-    target = Path(os.path.abspath(root / configured))
-    try:
-        relative = target.relative_to(root).as_posix()
-    except ValueError:
+    lexical = Path(os.path.abspath(root / configured))
+    target = Path(os.path.realpath(lexical))
+    for candidate in (lexical, target):
+        try:
+            relative = candidate.relative_to(root).as_posix()
+            break
+        except ValueError:
+            continue
+    else:
         # Preserve explicitly external rules when cwd changes to the snapshot.
         return set(), {setting: str(target)}
+    # A checkout-local setting always names the captured index entry, even if
+    # an unstaged link redirects that worktree path outside the checkout.
     names = {os.fsdecode(name) for name in push.git('ls-tree', '-rz', '--name-only', tree).split(b'\0') if name}
     if relative == '.':
         # Semgrep loads the YAML files of a rules directory; the root has no name prefix.
@@ -61,6 +72,14 @@ def rule_inputs(root, tree, hook):
     # keep reading worktree bytes, even when the rule file is absent in the index.
     override = {setting: relative} if inputs or Path(configured).is_absolute() else {}
     return inputs, override
+
+
+def terraform_context(tree, selected):
+    """Use only captured Terraform siblings in the selected modules."""
+    directories = {PurePosixPath(name).parent for name in selected}
+    return {os.fsdecode(name) for name in push.git('ls-tree', '-rz', '--name-only', tree).split(b'\0')
+            if name and PurePosixPath(os.fsdecode(name)).parent in directories
+            and os.fsdecode(name).lower().endswith(('.tf', '.tf.json', '.tfvars'))}
 
 
 def scan(hook, arguments, shell):
@@ -83,12 +102,13 @@ def scan(hook, arguments, shell):
               str(PurePosixPath(policy_dir) / '.trivyignore')}
     rules, rule_environment = rule_inputs(root, tree, hook)
     policy.update(rules)
+    context = terraform_context(tree, selected) if hook == 'trivy-iac-critical' else set()
     implementation, executable = push.select_shell(shell)
     with tempfile.TemporaryDirectory(prefix='scan-index-') as directory:
         temporary = Path(directory).resolve(strict=True)
         snapshot = temporary / 'tree'
         snapshot.mkdir()
-        available = push.materialize(tree, snapshot, selected | policy)
+        available = push.materialize(tree, snapshot, selected | policy | context)
         manifest = temporary / 'paths'
         manifest.write_bytes(b''.join(os.fsencode(p) + b'\0' for p in available if p in selected))
         env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}

@@ -53,14 +53,14 @@ def _load_fix_loop(config_path: Path):
 
 
 def _norm(path: str) -> str:
-    p = path.strip().replace("\\", "/")
+    p = path.replace("\\", "/")
     while p.startswith("./"):
         p = p[2:]
     return p.rstrip("/")
 
 
 def _valid_path(path: str, *, directory=False) -> bool:
-    p = path.strip().replace("\\", "/")
+    p = path.replace("\\", "/")
     while p.startswith("./"):
         p = p[2:]
     if directory:
@@ -105,7 +105,7 @@ def main(argv):
 
     files = list(args.files)
     if not files and not sys.stdin.isatty():
-        files = [line for line in sys.stdin.read().splitlines() if line.strip()]
+        files = [line for line in sys.stdin.read().splitlines() if line]
 
     allow, gated = _load_fix_loop(Path(args.config))
     if not allow:
