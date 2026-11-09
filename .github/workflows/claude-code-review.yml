@@ -180,7 +180,7 @@ jobs:
         # Re-measure before bumping this pin, and before loosening the guard step above: the
         # plugin's `gh pr comment` grant is honoured on every CLI version measured, so the
         # PR boundary rests on that guard, not on --allowedTools.
-        uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d # v1.0.266
+        uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1.0.269
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # The review's sub-agents must run in the foreground. On this action and CLI
