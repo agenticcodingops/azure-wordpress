@@ -195,14 +195,6 @@
           "pattern": "(?:auto-code-scanning/[^\\n]+|scanning[-_]repo[-_]ref:[^\\n]+)# (?P<value>v\\d+\\.\\d+\\.\\d+)"
         },
         {
-          "file": ".tflint.hcl",
-          "pattern": "auto-code-scanning (?P<value>[0-9a-f]{40})"
-        },
-        {
-          "file": ".tflint.hcl",
-          "pattern": "# (?P<value>v\\d+\\.\\d+\\.\\d+)"
-        },
-        {
           "file": "scan-config.yaml",
           "pattern": "the scan and fix loop pin (?P<value>v\\d+\\.\\d+\\.\\d+)"
         },
