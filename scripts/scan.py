@@ -86,6 +86,8 @@ def run_cmd(cmd, timeout=300):
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
         )
         return result.returncode, result.stdout, result.stderr
@@ -492,6 +494,11 @@ def build_report(findings, scan_dir, tools_executed, duration_ms, auto_fix, fix_
 
 def main():
     """Run selected scanners and gate their complete, policy-filtered reports."""
+    # Decoded tool output may contain characters a redirected Windows stream cannot encode.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
+
     parser = argparse.ArgumentParser(
         description="Terraform security scanning interface",
         formatter_class=argparse.RawDescriptionHelpFormatter,

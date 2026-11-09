@@ -201,8 +201,20 @@ assert_external_path() {
     "$py" -I - "$external_path" <<'PYEXTERNAL'  || exit 1
 import os, pathlib, subprocess, sys
 try:
-    root = (pathlib.Path.cwd() if any(os.environ.get(key) == '1' for key in ('SCAN_PUSH_SNAPSHOT', 'SCAN_INDEX_SNAPSHOT')) else
-            pathlib.Path(subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True).strip())).resolve()
+    if any(os.environ.get(key) == '1' for key in ('SCAN_PUSH_SNAPSHOT', 'SCAN_INDEX_SNAPSHOT')):
+        root = pathlib.Path.cwd().resolve()
+    else:
+        # Keep Git's exact bytes: stripping whitespace or translating newlines
+        # in text mode could name a different directory and move the boundary.
+        output = subprocess.check_output(['git', 'rev-parse', '--show-toplevel']).removesuffix(b'\n')
+        if os.name == 'nt':
+            output = output.removesuffix(b'\r')
+        output.decode('utf-8')
+        # Match argv's filesystem representation after strict UTF-8 validation.
+        root = pathlib.Path(os.fsdecode(output)).resolve()
+except UnicodeDecodeError:
+    # Replacing bytes could move the boundary and allow a checkout-owned path.
+    sys.exit("Cannot decode Git checkout root as UTF-8; refusing trusted path")
 except subprocess.CalledProcessError:
     root = pathlib.Path.cwd().resolve()
 p = pathlib.Path(sys.argv[1])

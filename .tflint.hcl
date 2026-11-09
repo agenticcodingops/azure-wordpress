@@ -1,16 +1,14 @@
-# Mirror of auto-code-scanning 45a4248ad8d7522e6462255c94b3d228f43e1fb2 # v3.0.6 configs/azure/.tflint.hcl. CI uses the canonical copy; update this when terraform-scan.yml's ref changes. The manual-run commands below are the only edit: they point at this root copy.
 # ============================================================================
 # TFLINT CONFIGURATION - AZURE
 # auto-code-scanning
 #
 # tflint with Azure ruleset for Terraform
 #
-# Manual run (from the repository root; --recursive resolves a relative --config
-# against each module, so pass an absolute path):
-#   tflint --recursive --config="$(pwd)/.tflint.hcl"
+# Manual run:
+#   tflint --recursive --config=.scanning/configs/.tflint.hcl
 #
 # Initialize plugins:
-#   tflint --init --config="$(pwd)/.tflint.hcl"
+#   tflint --init --config=.scanning/configs/.tflint.hcl
 #
 # Documentation:
 #   https://github.com/terraform-linters/tflint
@@ -28,7 +26,7 @@ config {
 # ============================================================================
 plugin "terraform" {
   enabled = true
-  version = "0.15.0"
+  version = "0.17.0"
   source  = "github.com/terraform-linters/tflint-ruleset-terraform"
 }
 
@@ -38,7 +36,7 @@ plugin "terraform" {
 # ============================================================================
 plugin "azurerm" {
   enabled = true
-  version = "0.32.0"
+  version = "0.33.0"
   source  = "github.com/terraform-linters/tflint-ruleset-azurerm"
 }
 

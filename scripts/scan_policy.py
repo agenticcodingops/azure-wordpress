@@ -154,7 +154,7 @@ def local_inline_base(source_root):
     try:
         for ref in ('refs/remotes/origin/HEAD', 'refs/remotes/origin/main'):
             result = subprocess.run(['git', '-C', str(source_root), 'rev-parse', '--verify', ref + '^{commit}'],
-                                    capture_output=True, text=True)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace")
             if result.returncode == 0:
                 return result.stdout.strip()
     except OSError:
