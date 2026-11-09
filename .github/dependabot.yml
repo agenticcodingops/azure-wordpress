@@ -1,17 +1,20 @@
 version: 2
 updates:
-  # Terraform provider updates
   - package-ecosystem: "terraform"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "terraform"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
     commit-message:
       prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
     # The composition module and its sub-modules must move provider majors
     # together. This tool bumps one directory at a time, so a major update
     # of a single directory can never resolve.
@@ -19,16 +22,285 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
-  # Terraform module updates
+  - package-ecosystem: "terraform"
+    directory: "/examples/basic-site"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "terraform"
+    directory: "/examples/multi-site"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "terraform"
+    directory: "/modules/app-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "terraform"
+    directory: "/modules/cloudflare"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "terraform"
+    directory: "/modules/database"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "terraform"
+    directory: "/modules/dns-zones"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "terraform"
+    directory: "/modules/front-door"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "terraform"
+    directory: "/modules/key-vault"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "terraform"
+    directory: "/modules/monitoring"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "terraform"
+    directory: "/modules/networking"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "terraform"
+    directory: "/modules/shared-infrastructure"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "terraform"
+    directory: "/modules/storage"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    # The composition module and its sub-modules must move provider majors
+    # together. This tool bumps one directory at a time, so a major update
+    # of a single directory can never resolve.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: "terraform"
     directory: "/modules/wordpress-site"
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 3
-    labels:
-      - "dependencies"
-      - "terraform"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
     # The composition module and its sub-modules must move provider majors
     # together. This tool bumps one directory at a time, so a major update
     # of a single directory can never resolve.
@@ -36,15 +308,23 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
-  # GitHub Actions updates
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "github-actions"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    groups:
+      patch-and-minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
     commit-message:
-      prefix: "chore(ci)"
+      prefix: "chore(deps)"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
+    ignore:
+      # Bundled CLI and review guard require manual re-measure before bumping.
+      # "Re-measure with that probe before loosening the guard or
+      # bumping the action pin" (CLAUDE.md).
+      - dependency-name: "anthropics/claude-code-action"

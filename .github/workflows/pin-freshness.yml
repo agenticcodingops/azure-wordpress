@@ -1,0 +1,22 @@
+name: Pin freshness
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  freshness:
+    uses: agenticcodingops/auto-code-scanning/.github/workflows/pin-freshness.yml@25f0b8722593e588ef573858bc46e1df9d7a1804 # v3.1.0
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    with:
+      # PER REPO: checkout-relative manifest path and rolling issue title.
+      manifest-path: ".github/pin-freshness.json"
+      issue-title: "Weekly pin freshness"
+      # Always move both SHAs together; this pins the script checkout too.
+      scanning-repo-ref: 25f0b8722593e588ef573858bc46e1df9d7a1804
