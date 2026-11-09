@@ -397,8 +397,8 @@
         }
       ],
       "source": {
-        "type": "github_releases",
-        "repo": "bridgecrewio/checkov"
+        "type": "pypi",
+        "package": "checkov"
       },
       "policy": "minimum"
     },
