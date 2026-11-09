@@ -1,0 +1,612 @@
+{
+  "$schema": "https://raw.githubusercontent.com/agenticcodingops/auto-code-scanning/25f0b8722593e588ef573858bc46e1df9d7a1804/schemas/pin-freshness.schema.json",
+  "pins": [
+    {
+      "id": "terraform-cli",
+      "locations": [
+        {
+          "file": ".terraform-version",
+          "pattern": "^(?P<value>\\d+\\.\\d+\\.\\d+)\\s*$"
+        },
+        {
+          "file": ".github/workflows/validate.yml",
+          "pattern": "TERRAFORM_VERSION:\\s*[\\\"\\x27]?(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CLAUDE.md",
+          "pattern": "Terraform (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CLAUDE.md",
+          "pattern": "Terraform v(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CONTRIBUTING.md",
+          "pattern": "Terraform (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": ".gemini/styleguide.md",
+          "pattern": "pinned to Terraform `(?P<value>\\d+\\.\\d+\\.\\d+)"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "hashicorp/terraform"
+      },
+      "precondition": "Terraform 1.9.8 exactly, as the workflow asserts"
+    },
+    {
+      "id": "terraform-docs",
+      "locations": [
+        {
+          "file": "CLAUDE.md",
+          "pattern": "terraform-docs(?:` \\(v| )(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CONTRIBUTING.md",
+          "pattern": "terraform-docs(?:` \\(v| )(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": ".gemini/styleguide.md",
+          "pattern": "terraform-docs(?:` \\(v| )(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "AGENTS.md",
+          "pattern": "terraform-docs READMEs \\((?P<value>\\d+\\.\\d+\\.\\d+)"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "terraform-docs/terraform-docs"
+      },
+      "precondition": "Do NOT leave `.terraform/` or `.terraform.lock.hcl` in module directories when running terraform-docs"
+    },
+    {
+      "id": "validation-checkov-guidance",
+      "locations": [
+        {
+          "file": "CLAUDE.md",
+          "pattern": "(?:^#.*?Checkov |against the Checkov job\\x27s )(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CONTRIBUTING.md",
+          "pattern": "Checkov (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CLAUDE.md",
+          "pattern": "checkov==(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CONTRIBUTING.md",
+          "pattern": "checkov==(?P<value>\\d+\\.\\d+\\.\\d+)"
+        }
+      ],
+      "source": {
+        "type": "pypi",
+        "package": "checkov"
+      },
+      "precondition": "re-read action.yml rather than trusting this number."
+    },
+    {
+      "id": "validation-checkov-action-mirror",
+      "locations": [
+        {
+          "file": ".github/workflows/validate.yml",
+          "pattern": "bridgecrewio/checkov-action@v(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CLAUDE.md",
+          "pattern": "(?:bridgecrewio/checkov-action v|v)(?P<value>12\\.\\d+\\.\\d+)"
+        }
+      ],
+      "source": {
+        "type": "github_tags",
+        "repo": "bridgecrewio/checkov-action"
+      },
+      "precondition": "re-read action.yml rather than trusting this number."
+    },
+    {
+      "id": "semgrep-container-version",
+      "locations": [
+        {
+          "file": ".github/workflows/semgrep.yml",
+          "pattern": "semgrep (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CLAUDE.md",
+          "pattern": "semgrep (?P<value>\\d+\\.\\d+\\.\\d+)"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "semgrep/semgrep"
+      },
+      "precondition": "renew the digest deliberately."
+    },
+    {
+      "id": "semgrep-container-digest",
+      "locations": [
+        {
+          "file": ".github/workflows/semgrep.yml",
+          "pattern": "image: semgrep/semgrep@(?P<value>sha256:[0-9a-f]{64})"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "semgrep/semgrep"
+      },
+      "policy": "manual",
+      "review_reason": "Digest-pinned container: verify the publisher image for the chosen version; the release API does not authenticate container digests.",
+      "precondition": "renew the digest deliberately."
+    },
+    {
+      "id": "tflint-ruleset-terraform",
+      "locations": [
+        {
+          "file": ".tflint.hcl",
+          "pattern": "(?s:plugin \"terraform\" \\{.*?version\\s*=\\s*\"(?P<value>\\d+\\.\\d+\\.\\d+)\")"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "terraform-linters/tflint-ruleset-terraform"
+      },
+      "precondition": "CI uses the canonical copy; update this when terraform-scan.yml's ref changes."
+    },
+    {
+      "id": "tflint-ruleset-azurerm",
+      "locations": [
+        {
+          "file": ".tflint.hcl",
+          "pattern": "(?s:plugin \"azurerm\" \\{.*?version\\s*=\\s*\"(?P<value>\\d+\\.\\d+\\.\\d+)\")"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "terraform-linters/tflint-ruleset-azurerm"
+      },
+      "precondition": "CI uses the canonical copy; update this when terraform-scan.yml's ref changes."
+    },
+    {
+      "id": "scanning-platform",
+      "locations": [
+        {
+          "file": ".github/workflows/terraform-scan.yml",
+          "pattern": "(?:scanning-repo-ref|scanning_repo_ref):\\s*\"?(?P<value>[0-9a-f]{40})"
+        },
+        {
+          "file": ".github/workflows/terraform-scan.yml",
+          "pattern": "auto-code-scanning/[^\\s@]+@(?P<value>[0-9a-f]{40})"
+        },
+        {
+          "file": ".github/workflows/terraform-scan.yml",
+          "pattern": "(?:auto-code-scanning/[^\\n]+|scanning[-_]repo[-_]ref:[^\\n]+)# (?P<value>v\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": ".github/workflows/autonomous-fix.yml",
+          "pattern": "(?:scanning-repo-ref|scanning_repo_ref):\\s*\"?(?P<value>[0-9a-f]{40})"
+        },
+        {
+          "file": ".github/workflows/autonomous-fix.yml",
+          "pattern": "auto-code-scanning/[^\\s@]+@(?P<value>[0-9a-f]{40})"
+        },
+        {
+          "file": ".github/workflows/autonomous-fix.yml",
+          "pattern": "(?:auto-code-scanning/[^\\n]+|scanning[-_]repo[-_]ref:[^\\n]+)# (?P<value>v\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": ".tflint.hcl",
+          "pattern": "auto-code-scanning (?P<value>[0-9a-f]{40})"
+        },
+        {
+          "file": ".tflint.hcl",
+          "pattern": "# (?P<value>v\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "scan-config.yaml",
+          "pattern": "the scan and fix loop pin (?P<value>v\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "lefthook.yml",
+          "pattern": "auto-code-scanning @ (?P<value>v\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CLAUDE.md",
+          "pattern": "(?:workflow at |pinned by SHA \\(|together at |vendored )(?P<value>v3\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CONTRIBUTING.md",
+          "pattern": "The (?P<value>v3\\.\\d+\\.\\d+) push hooks"
+        }
+      ],
+      "source": {
+        "type": "github_tags",
+        "repo": "agenticcodingops/auto-code-scanning"
+      },
+      "precondition": "Move the `uses:` pin and `scanning-repo-ref` together"
+    },
+    {
+      "id": "freshness-platform",
+      "locations": [
+        {
+          "file": ".github/workflows/pin-freshness.yml",
+          "pattern": "auto-code-scanning/[^\\s@]+@(?P<value>[0-9a-f]{40})"
+        },
+        {
+          "file": ".github/workflows/pin-freshness.yml",
+          "pattern": "scanning-repo-ref: (?P<value>[0-9a-f]{40})"
+        },
+        {
+          "file": ".github/workflows/pin-freshness.yml",
+          "pattern": "# (?P<value>v\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": ".github/pin-freshness.json",
+          "pattern": "raw\\.githubusercontent\\.com/agenticcodingops/auto-code-scanning/(?P<value>[0-9a-f]{40})/schemas"
+        }
+      ],
+      "source": {
+        "type": "github_tags",
+        "repo": "agenticcodingops/auto-code-scanning"
+      }
+    },
+    {
+      "id": "review-action",
+      "locations": [
+        {
+          "file": ".github/workflows/claude-code-review.yml",
+          "pattern": "anthropics/claude-code-action@(?P<value>[0-9a-f]{40})"
+        },
+        {
+          "file": ".github/workflows/claude.yml",
+          "pattern": "anthropics/claude-code-action@(?P<value>[0-9a-f]{40})"
+        },
+        {
+          "file": ".github/workflows/claude-code-review.yml",
+          "pattern": "# (?P<value>v1\\.0\\.\\d+)"
+        },
+        {
+          "file": ".github/workflows/claude.yml",
+          "pattern": "# (?P<value>v1\\.0\\.\\d+)"
+        }
+      ],
+      "source": {
+        "type": "github_tags",
+        "repo": "anthropics/claude-code-action"
+      },
+      "precondition": "Re-measure with that probe before loosening the guard or\nbumping the action pin"
+    },
+    {
+      "id": "fix-loop-action",
+      "locations": [
+        {
+          "file": "scan-config.yaml",
+          "pattern": "anthropics/claude-code-action@(?P<value>[0-9a-f]{40})"
+        }
+      ],
+      "source": {
+        "type": "github_tags",
+        "repo": "anthropics/claude-code-action"
+      },
+      "precondition": "Centralized, SHA-pinned claude-code-action (>= v1.0.93, CVE-2025-66032)."
+    },
+    {
+      "id": "python-pyyaml",
+      "locations": [
+        {
+          "file": ".github/workflows/validate.yml",
+          "pattern": "PyYAML==(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CONTRIBUTING.md",
+          "pattern": "PyYAML==(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CLAUDE.md",
+          "pattern": "PyYAML==(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": ".github/workflows/terraform-scan.yml",
+          "pattern": "PyYAML==(?P<value>\\d+\\.\\d+\\.\\d+)"
+        }
+      ],
+      "source": {
+        "type": "pypi",
+        "package": "PyYAML"
+      }
+    },
+    {
+      "id": "python-jsonschema",
+      "locations": [
+        {
+          "file": ".github/workflows/validate.yml",
+          "pattern": "jsonschema==(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CONTRIBUTING.md",
+          "pattern": "jsonschema==(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CLAUDE.md",
+          "pattern": "jsonschema==(?P<value>\\d+\\.\\d+\\.\\d+)"
+        }
+      ],
+      "source": {
+        "type": "pypi",
+        "package": "jsonschema"
+      }
+    },
+    {
+      "id": "python-runtime",
+      "locations": [
+        {
+          "file": ".github/workflows/validate.yml",
+          "pattern": "python-version: [\\\"\\x27](?P<value>\\d+\\.\\d+)"
+        },
+        {
+          "file": ".github/workflows/terraform-scan.yml",
+          "pattern": "python-version: [\\\"\\x27](?P<value>\\d+\\.\\d+)"
+        }
+      ],
+      "source": {
+        "type": "github_tags",
+        "repo": "python/cpython"
+      },
+      "policy": "minimum"
+    },
+    {
+      "id": "lefthook-minimum",
+      "locations": [
+        {
+          "file": "lefthook.yml",
+          "pattern": "min_version: (?P<value>\\d+\\.\\d+\\.\\d+)"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "evilmartians/lefthook"
+      },
+      "policy": "minimum"
+    },
+    {
+      "id": "local-trivy-minimum",
+      "locations": [
+        {
+          "file": "scan-config.yaml",
+          "pattern": "(?s:      trivy:.*?version: \">=(?P<value>\\d+\\.\\d+\\.\\d+)\")"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "aquasecurity/trivy"
+      },
+      "policy": "minimum"
+    },
+    {
+      "id": "local-tflint-minimum",
+      "locations": [
+        {
+          "file": "scan-config.yaml",
+          "pattern": "(?s:      tflint:.*?version: \">=(?P<value>\\d+\\.\\d+\\.\\d+)\")"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "terraform-linters/tflint"
+      },
+      "policy": "minimum"
+    },
+    {
+      "id": "local-checkov-minimum",
+      "locations": [
+        {
+          "file": "scan-config.yaml",
+          "pattern": "(?s:      checkov:.*?version: \">=(?P<value>\\d+\\.\\d+\\.\\d+)\")"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "bridgecrewio/checkov"
+      },
+      "policy": "minimum"
+    },
+    {
+      "id": "terraform-compatibility-floor",
+      "locations": [
+        {
+          "file": "examples/basic-site/main.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "examples/multi-site/main.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "modules/app-service/versions.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "modules/cloudflare/versions.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "modules/database/versions.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "modules/dns-zones/versions.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "modules/front-door/versions.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "modules/key-vault/versions.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "modules/monitoring/versions.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "modules/networking/versions.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "modules/shared-infrastructure/main.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "modules/storage/versions.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "modules/wordpress-site/main.tf",
+          "pattern": "required_version\\s*=\\s*\">= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "README.md",
+          "pattern": "\\| terraform \\| >= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "README.md",
+          "pattern": "\\[Terraform\\]\\([^\\n]+\\) >= (?P<value>\\d+\\.\\d+\\.\\d+)"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "hashicorp/terraform"
+      },
+      "policy": "minimum"
+    },
+    {
+      "id": "runner-selection",
+      "locations": [
+        {
+          "file": ".github/workflows/claude-code-review.yml",
+          "pattern": "runs-on: (?P<value>ubuntu-latest)"
+        },
+        {
+          "file": ".github/workflows/claude.yml",
+          "pattern": "runs-on: (?P<value>ubuntu-latest)"
+        },
+        {
+          "file": ".github/workflows/commit-hygiene.yml",
+          "pattern": "runs-on: (?P<value>ubuntu-latest)"
+        },
+        {
+          "file": ".github/workflows/gemini-code-review.yml",
+          "pattern": "runs-on: (?P<value>ubuntu-latest)"
+        },
+        {
+          "file": ".github/workflows/release.yml",
+          "pattern": "runs-on: (?P<value>ubuntu-latest)"
+        },
+        {
+          "file": ".github/workflows/semgrep.yml",
+          "pattern": "runs-on: (?P<value>ubuntu-latest)"
+        },
+        {
+          "file": ".github/workflows/terraform-scan.yml",
+          "pattern": "runs-on: (?P<value>ubuntu-latest)"
+        },
+        {
+          "file": ".github/workflows/validate.yml",
+          "pattern": "runs-on: (?P<value>ubuntu-latest)"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "actions/runner"
+      },
+      "policy": "manual",
+      "review_reason": "Hosted runner labels are service selections; inspect the runner image catalog and workflow compatibility."
+    },
+    {
+      "id": "review-model",
+      "locations": [
+        {
+          "file": ".github/scripts/gemini_review.py",
+          "pattern": "DEFAULT_MODEL = \"(?P<value>[^\\\"]+)\""
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "googleapis/python-genai"
+      },
+      "policy": "manual",
+      "review_reason": "Model identifier is a service selection; verify its availability and API behavior against the provider catalog."
+    },
+    {
+      "id": "wordpress-image-series",
+      "locations": [
+        {
+          "file": "modules/app-service/variables.tf",
+          "pattern": "(?s:variable \"docker_image_tag\" \\{.*?default\\s*=\\s*\"(?P<value>[^\\\"]+)\")"
+        },
+        {
+          "file": "modules/wordpress-site/variables.tf",
+          "pattern": "(?s:variable \"wordpress_version\" \\{.*?default\\s*=\\s*\"(?P<value>[^\\\"]+)\")"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "php/php-src"
+      },
+      "policy": "manual",
+      "review_reason": "MCR image tags and runtime series require the image-tag policy and live container proof; release APIs do not validate MCR builds.",
+      "precondition": "Production runs a dated tag you have already run in nonprod"
+    },
+    {
+      "id": "mysql-service-version",
+      "locations": [
+        {
+          "file": "modules/database/variables.tf",
+          "pattern": "(?s:variable \"mysql_version\" \\{.*?default\\s*=\\s*\"(?P<value>[^\\\"]+)\")"
+        },
+        {
+          "file": "modules/wordpress-site/variables.tf",
+          "pattern": "mysql_version = optional\\(string, \"(?P<value>[^\\\"]+)\"\\)"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "mysql/mysql-server"
+      },
+      "policy": "manual",
+      "review_reason": "Azure service version selection is not a package release; follow the major-version upgrade runbook.",
+      "precondition": "Rehearse it on a restored copy and take an on-demand backup first"
+    },
+    {
+      "id": "review-api-selection",
+      "locations": [
+        {
+          "file": ".github/scripts/gemini_review.py",
+          "pattern": "https://generativelanguage\\.googleapis\\.com/(?P<value>v\\d+(?:beta\\d*)?)/"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "googleapis/python-genai"
+      },
+      "policy": "manual",
+      "review_reason": "Service API selection requires provider migration documentation; package releases do not validate this endpoint."
+    },
+    {
+      "id": "repository-api-selection",
+      "locations": [
+        {
+          "file": ".github/scripts/gemini_review.py",
+          "pattern": "\"X-GitHub-Api-Version\": \"(?P<value>\\d{4}-\\d{2}-\\d{2})\""
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "github/rest-api-description"
+      },
+      "policy": "manual",
+      "review_reason": "Date-versioned service API contract requires current API migration documentation."
+    }
+  ]
+}
