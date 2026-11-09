@@ -149,7 +149,13 @@ function Find-BaselinePython {
     $scanDirs = if ($scopedDirs.Count -gt 0) { $scopedDirs } else { @($TerraformDir) }
     foreach ($name in @('python', 'python3', 'py')) {
         if (-not (Get-Command $name -CommandType Application -ErrorAction SilentlyContinue)) { continue }
-        $candidate = Resolve-VerifiedPython -Name $name -AdditionalRoots (@($sourceRoot) + $scanDirs)
+        try { $candidate = Resolve-VerifiedPython -Name $name -AdditionalRoots (@($sourceRoot) + $scanDirs) }
+        catch {
+            # The resolver checks lexical and invoked identities before
+            # returning this error. Only opaque external aliases may skip.
+            if ($_.FullyQualifiedErrorId -like 'UnresolvableTrustedPathLink*') { continue }
+            throw
+        }
         try {
             & $candidate -E -P -c 'pass' 2>$null
             if ($LASTEXITCODE -eq 0) { return $candidate }
@@ -198,7 +204,7 @@ function New-TrivyBaseline {
                 }
             }
             catch {
-                throw "Failed to parse Trivy output for $dir"
+                throw "Failed to parse Trivy JSON output for scan path '$dir' while creating '$metadataFile'"
             }
         }
     }
@@ -230,9 +236,13 @@ function New-CheckovBaseline {
             $checkovJson = & $scanner -d $dir --framework terraform --output json --compact --config-file $policyFile 2>$null
             if ($LASTEXITCODE -notin @(0, 1)) { throw "Checkov scan failed for $dir (exit $LASTEXITCODE)" }
             if (-not $checkovJson) { throw "Checkov returned no report for $dir" }
+            try { $checkovResults = ($checkovJson -join "`n") | ConvertFrom-Json }
+            catch {
+                throw "Failed to parse Checkov JSON output for scan path '$dir' while creating '$metadataFile'"
+            }
             $baseline.checkov_reports += @{
                 scan_directory = Resolve-HookPath $dir
-                report = ($checkovJson -join "`n") | ConvertFrom-Json
+                report = $checkovResults
                 baselined_date = $dateStamp
             }
         }
@@ -295,7 +305,7 @@ function New-TflintBaseline {
                 }
             }
             catch {
-                throw "Failed to parse tflint output for $dir"
+                throw "Failed to parse tflint JSON output for scan path '$dir' while creating '$metadataFile'"
             }
         }
     }
