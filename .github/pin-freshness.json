@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/agenticcodingops/auto-code-scanning/25f0b8722593e588ef573858bc46e1df9d7a1804/schemas/pin-freshness.schema.json",
+  "$schema": "https://raw.githubusercontent.com/agenticcodingops/auto-code-scanning/179f7e83fb8845aac3fc0f7c01ac0d129e4dfa00/schemas/pin-freshness.schema.json",
   "pins": [
     {
       "id": "terraform-cli",

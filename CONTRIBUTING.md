@@ -62,7 +62,7 @@ Review the resulting diff and ensure a second run is idempotent.
 
 ## Run the compliance scan
 
-CI parity uses Checkov 3.3.22. The v3.1.1 push hooks require a trusted executable
+CI parity uses Checkov 3.3.22. The v3.1.2 push hooks require a trusted executable
 named `checkov` on PATH and scan files changed by each pushed ref. New refs compare with the destination
 remote default; fallback selection counts only that destination's remote-tracking refs. Keep those refs current before pushing. For the suffixed parity command:
 
@@ -209,7 +209,7 @@ constraints.
 ## Local linter configuration
 
 The root `.tflint.hcl` is byte-identical to the scanning platform's
-`configs/azure/.tflint.hcl` at v3.1.1. Its embedded example uses the platform's
+`configs/azure/.tflint.hcl` at v3.1.2. Its embedded example uses the platform's
 standard layout; for this repository's root mirror, run:
 
 ```bash
