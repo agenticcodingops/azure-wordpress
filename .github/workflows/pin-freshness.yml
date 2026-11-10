@@ -9,7 +9,7 @@ permissions: {}
 
 jobs:
   freshness:
-    uses: agenticcodingops/auto-code-scanning/.github/workflows/pin-freshness.yml@25f0b8722593e588ef573858bc46e1df9d7a1804 # v3.1.0
+    uses: agenticcodingops/auto-code-scanning/.github/workflows/pin-freshness.yml@179f7e83fb8845aac3fc0f7c01ac0d129e4dfa00 # v3.1.2
     permissions:
       contents: read
       issues: write
@@ -19,4 +19,4 @@ jobs:
       manifest-path: ".github/pin-freshness.json"
       issue-title: "Weekly pin freshness"
       # Always move both SHAs together; this pins the script checkout too.
-      scanning-repo-ref: 25f0b8722593e588ef573858bc46e1df9d7a1804
+      scanning-repo-ref: 179f7e83fb8845aac3fc0f7c01ac0d129e4dfa00 # v3.1.2

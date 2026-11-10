@@ -4,8 +4,8 @@ Both schedules request Monday **06:00 UTC**; GitHub can delay scheduled runs.
 This repository follows the shared dependency-update template and the org-wide
 plan tracked here by [#144](https://github.com/agenticcodingops/azure-wordpress/issues/144).
 The freshness caller also supports manual dispatch. Its workflow and script
-checkout pin public auto-code-scanning `25f0b8722593e588ef573858bc46e1df9d7a1804`
-(v3.1.0). This change schedules reporting; it changes no application pin.
+checkout pin public auto-code-scanning `179f7e83fb8845aac3fc0f7c01ac0d129e4dfa00`
+(v3.1.2). This change schedules reporting; it changes no application pin.
 
 ## Inventory and coverage
 
@@ -25,7 +25,7 @@ ignored; local module sources are not independent registry dependencies.
 
 | Surface | Selection and coverage |
 |---|---|
-| Active Actions | Dependabot reads workflows: checkout v7/v7.0.1, setup-terraform v4.0.1, Checkov action v12.3136.0, terraform-docs action v1.4.1, setup-python v5.6.0, release action v5.0.0, and reusable scan/fix callers v3.0.6. Majors arrive separately. |
+| Active Actions | Dependabot reads workflows: checkout v7/v7.0.1, setup-terraform v4.0.1, Checkov action v12.3136.0, terraform-docs action v1.4.1, setup-python v5.6.0, release action v5.0.0, and reusable scan/fix callers v3.1.2. Majors arrive separately. |
 | Review action | v1.0.266 in both review workflows; unconditionally ignored by Dependabot. Freshness checks SHA/tag comments. The older action selection in `scan-config.yaml` has its own freshness entry because it serves a separate fix-loop role. |
 | Platform copies | Freshness compares scan/fix `uses`, both ref-input spellings, comments, runner/config header, and current guidance. Vendored `hooks/`, shared scripts and schemas move together when upgrading the platform. It does not verify their bytes. |
 | Terraform CLI | 1.9.8 in `.terraform-version`, validation env and active guidance; freshness compares upstream releases and mirrors. Compatibility floors in HCL/README are a separate `minimum` entry. All CLI/provider changes are operator-owned. |
@@ -104,13 +104,13 @@ GITHUB_TOKEN="$(gh auth token)" python -I -c \
   --repository agenticcodingops/azure-wordpress --dry-run
 ```
 
-Use a separate reviewed checkout of the caller's exact v3.1.0 SHA as `PLATFORM`.
+Use a separate reviewed checkout of the caller's exact v3.1.2 SHA as `PLATFORM`.
 The preview prints the complete report without writing an issue. Outdated pins
 and drift exit 0, lookup/extraction failures exit 1, and configuration errors
 exit 2. Preserve failures in review evidence.
 
 After merge the operator dispatches the first write run; a dry run proves no
-scheduled run or issue write. Keep the rolling issue open: v3.1.0 preserves its
+scheduled run or issue write. Keep the rolling issue open: v3.1.2 preserves its
 state and does not reopen a closed issue. Successful runs replace its body, so
 put durable discussion in comments.
 
@@ -118,4 +118,4 @@ Add an entry for every new manifest directory. Add every active hand-kept pin
 and mirror to the JSON with context-specific extraction patterns and verbatim
 preconditions. Give manual selections a `review_reason`, record unsupported
 sources explicitly, and move both caller SHAs together with the reviewed template.
-See the public [pin guide](https://github.com/agenticcodingops/auto-code-scanning/blob/25f0b8722593e588ef573858bc46e1df9d7a1804/docs/PIN-FRESHNESS.md).
+See the public [pin guide](https://github.com/agenticcodingops/auto-code-scanning/blob/179f7e83fb8845aac3fc0f7c01ac0d129e4dfa00/docs/PIN-FRESHNESS.md).
