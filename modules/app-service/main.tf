@@ -403,7 +403,7 @@ resource "azurerm_linux_web_app" "main" {
     # profile exists, before creating the app. Never render an empty header list.
     precondition {
       condition     = local.effective_cdn_provider != "azure_front_door" || try(length(trimspace(var.front_door_id)) > 0, false)
-      error_message = "Azure Front Door origin restrictions require a non-empty front_door_id (the profile resource_guid). In wordpress-site, keep front_door.enabled = true when cdn_provider = \"azure_front_door\"."
+      error_message = "Azure Front Door origin restrictions require a non-empty front_door_id (the profile resource_guid). In wordpress-site, keep front_door.enabled = true when cdn_provider = \"azure_front_door\". When the profile is new, its GUID is unknown at plan time, so this check can fail at apply instead."
     }
 
     precondition {
@@ -593,6 +593,15 @@ resource "azurerm_linux_web_app_slot" "staging" {
     Site = var.site_name
     Slot = "staging"
   })
+
+  lifecycle {
+    # The slot renders the same Front Door ID check as the app, so it carries the
+    # same guard rather than relying on the app being created first.
+    precondition {
+      condition     = local.effective_cdn_provider != "azure_front_door" || try(length(trimspace(var.front_door_id)) > 0, false)
+      error_message = "Azure Front Door origin restrictions on the staging slot require a non-empty front_door_id (the profile resource_guid). When the profile is new, its GUID is unknown at plan time, so this check can fail at apply instead."
+    }
+  }
 }
 
 # Auto-scale settings (at plan level)

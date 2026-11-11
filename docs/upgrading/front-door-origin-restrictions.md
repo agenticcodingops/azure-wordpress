@@ -36,4 +36,9 @@ must supply a non-empty `front_door_id`, using the profile's `resource_guid`, in
 `front_door_enabled` input. A newly created profile may have an unknown GUID during planning; it is resolved
 before the app is created, and no empty header list is written.
 
+The app and the staging slot both carry this precondition. With a new profile the GUID is unknown at plan time,
+so a missing GUID can fail at apply rather than at plan. If the Front Door profile is ever replaced, its
+`resource_guid` changes: the app and slot lists then update in place to the new GUID, and the origin and route
+are recreated with the profile.
+
 Cloudflare and direct mode retain their existing rules and defaults.
