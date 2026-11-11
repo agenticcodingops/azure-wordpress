@@ -529,8 +529,10 @@ an `execute` rule, those skips had no effect. A zone has at most one
 so the module no longer owns the `http_request_firewall_managed` entrypoint.
 
 If the old resource is in state, the next plan proposes to **destroy that entrypoint ruleset**,
-including any rules added to it outside Terraform. If you added rules there, first remove its
-state binding to preserve the remote entrypoint. From your consumer root, with the usual
+including any rules added to it outside Terraform. Applying that plan deletes the zone's
+`http_request_firewall_managed` entrypoint in Cloudflare, so the phase is left empty until rules
+are deployed there again. If you added rules there, first remove its state binding to preserve
+the remote entrypoint. From your consumer root, with the usual
 backend and workspace selected, use the command matching your module call:
 
 ```sh

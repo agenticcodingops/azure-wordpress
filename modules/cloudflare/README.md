@@ -122,7 +122,7 @@ The module does not own the `http_request_firewall_managed` phase entrypoint, de
 
 The former `cloudflare_ruleset.wordpress_waf_exceptions` resource held only three skip rules with `ruleset = "current"`. That option skips remaining rules in the same ruleset; with no `execute` rule, these skips had no effect. See Cloudflare's [actions reference](https://developers.cloudflare.com/ruleset-engine/rules-language/actions/) and [entrypoint rulesets](https://developers.cloudflare.com/ruleset-engine/about/rulesets/#entry-point-ruleset).
 
-If this resource is in your state (previously created with `enable_waf = true`), the next plan proposes to **destroy the managed-phase entrypoint ruleset**, including any rules added to it outside Terraform. The rate-limit and custom-rule resources and the `enable_waf` defaults are unchanged.
+If this resource is in your state (previously created with `enable_waf = true`), the next plan proposes to **destroy the managed-phase entrypoint ruleset**, including any rules added to it outside Terraform. Applying that plan deletes the zone's `http_request_firewall_managed` entrypoint in Cloudflare, so the phase is left empty until rules are deployed there again. The rate-limit and custom-rule resources and the `enable_waf` defaults are unchanged.
 
 If you added rules to that entrypoint outside Terraform, preserve it by removing only its state binding **before applying the upgrade**. Run the appropriate command from your consumer root with its usual backend and workspace selected:
 
