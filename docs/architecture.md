@@ -285,7 +285,7 @@ What the code sets up for this flow:
 
 Sources: `modules/wordpress-site/main.tf:52-54`, `:196-207`, `:652-656`, `:1062-1097`, `:1108-1153`;
 `modules/wordpress-site/variables.tf:544-559`; `modules/cloudflare/main.tf:37-40`, `:48-87`, `:111-126`,
-`:134-140`; `modules/cloudflare/variables.tf:68-72`; `modules/cloudflare/page-rules.tf:17-86` (`ssl` `:30`, `:57`, `:79`), `:97`; `modules/cloudflare/waf.tf:20`, `:83`, `:132`;
+`:134-140`; `modules/cloudflare/variables.tf:68-72`; `modules/cloudflare/page-rules.tf:17-86` (`ssl` `:30`, `:57`, `:79`), `:97`; `modules/cloudflare/waf.tf` (`wordpress_rate_limit`, `wordpress_security`);
 `modules/wordpress-site/main.tf:205`; `modules/app-service/main.tf:32-65`, `:204`, `:262-303`, `:320`, `:503-542`, `:563`.
 
 ## Request flow: Azure Front Door

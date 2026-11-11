@@ -28,7 +28,7 @@ flows and the network layout, see [Architecture](architecture.md). To deploy, st
 | --- | --- | --- |
 | Origin admits only the CDN's network | Off: `cdn_provider` defaults to `"direct"`, which admits everyone | Yes. Set `cdn_provider` |
 | Key Vault data plane denies public access | On | Allow-list the deploying principal |
-| Storage data plane denies public access | On | Yes, if media is served from the blob endpoint: set `storage_network_rules_default_action = "Allow"`, which is necessary but not sufficient, because the account disallows anonymous reads. Before go-live, load an uploaded media URL in a signed-out browser; unsigned URLs fail. See [Unknown 8](#unknowns) and [Storage](#key-vault-and-storage-deny-public-access-by-default) |
+| Storage data plane denies public access | On | Yes, if media is served from the blob endpoint: set `storage_network_rules_default_action = "Allow"`, which is necessary but not sufficient, because the account disallows anonymous reads. Before go-live, load an uploaded media URL in a signed-out browser; unsigned URLs fail. See [Unknown 7](#unknowns) and [Storage](#key-vault-and-storage-deny-public-access-by-default) |
 | SCM (Kudu) restricted to an allow-list | Off: default action `Allow` | Yes. Set the SCM variables |
 | FTP | Off at the transport layer | No |
 | Basic-auth publishing credentials | On | Turn off if you can |
@@ -450,13 +450,13 @@ The module binds the custom host name on App Service but no certificate
   `ssl = "strict"` on `/wp-admin/*` and `/wp-login.php*` (`modules/cloudflare/page-rules.tf:17-64`;
   `modules/wordpress-site/variables.tf:553`). With `cloudflare.enable_waf = true` (default `false`,
   `modules/wordpress-site/variables.tf:552`), the module adds custom block and challenge
-  rules (`modules/cloudflare/waf.tf:131-181`) and rate limits on `/wp-login.php` and
-  `/xmlrpc.php` (`modules/cloudflare/waf.tf:82-124`; configured, but the rules omit Cloudflare's mandatory
+  rules (`modules/cloudflare/waf.tf`, `wordpress_security`) and rate limits on `/wp-login.php` and
+  `/xmlrpc.php` (`modules/cloudflare/waf.tf`, `wordpress_rate_limit`; configured, but the rules omit Cloudflare's mandatory
   `cf.colo.id` characteristic, see
-  [WAF rules beyond what the CDN plan provides](#waf-rules-beyond-what-the-cdn-plan-provides)). It also adds skip rules in the
-  managed-rules phase for admin paths and WordPress cookies
-  (`modules/cloudflare/waf.tf:19-75`). It does not deploy any Cloudflare managed ruleset:
-  no rule in `modules/cloudflare` uses the `execute` action.
+  [WAF rules beyond what the CDN plan provides](#waf-rules-beyond-what-the-cdn-plan-provides)). It does not own the
+  managed-phase entrypoint, deploy a Cloudflare managed ruleset, or configure managed-rule exceptions:
+  no rule in `modules/cloudflare` uses the `execute` action. See the
+  [upgrade note](#upgrading-the-cloudflare-managed-phase-ruleset) for existing deployments.
 
 ## What the module does not cover
 
@@ -483,9 +483,8 @@ paths are general, not an access control:
 - the Cloudflare page rules set `security_level = "high"` on both paths
   (`modules/cloudflare/page-rules.tf:29`, `:56`);
 - with `enable_waf = true`, the Cloudflare rules rate-limit login POSTs
-  (`modules/cloudflare/waf.tf:93-107`; configured, but the rule omits Cloudflare's mandatory `cf.colo.id`
-  characteristic, see [WAF rules beyond what the CDN plan provides](#waf-rules-beyond-what-the-cdn-plan-provides)) and add skip rules for admin paths in the
-  managed-rules phase (`modules/cloudflare/waf.tf:30-44`).
+  (`modules/cloudflare/waf.tf`, `wp_login_ratelimit`; configured, but the rule omits Cloudflare's mandatory `cf.colo.id`
+  characteristic, see [WAF rules beyond what the CDN plan provides](#waf-rules-beyond-what-the-cdn-plan-provides)).
 
 A pattern for adding an identity-aware proxy at the edge and a token check at the origin, as one
 consumer rolled it out with Cloudflare Access, is described in
@@ -499,27 +498,62 @@ rule sets, bot management and rate limiting depend on your CDN plan:
 
 - On Cloudflare, the rate-limit rules that `enable_waf` adds need a Business plan or higher.
   Business is necessary but not sufficient. Both rate-limit rules set
-  `characteristics = ["ip.src"]` (`modules/cloudflare/waf.tf:96`, `:113`). Cloudflare lists
+  `characteristics = ["ip.src"]` (`modules/cloudflare/waf.tf`, `wordpress_rate_limit`). Cloudflare lists
   `cf.colo.id` as a mandatory characteristic and requires rules created through the API to
   include it explicitly
   ([parameters](https://developers.cloudflare.com/waf/rate-limiting-rules/parameters/),
   [request rate](https://developers.cloudflare.com/waf/rate-limiting-rules/request-rate/)).
   The dashboard adds it for you; Terraform does not. Until the module sets
   `["cf.colo.id", "ip.src"]`, do not rely on `enable_waf` on any plan. The API's exact
-  response has not been reproduced here. The login rule matches on the request method (`modules/cloudflare/waf.tf:101-104`), and
+  response has not been reproduced here. The login rule matches on the request method (`modules/cloudflare/waf.tf`, `wp_login_ratelimit`), and
   Cloudflare's availability table lists the Method field in rate-limiting expressions from
   the Business plan upward
   ([rate limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)). The
-  ruleset's two rules and 60-second periods (`modules/cloudflare/waf.tf:91-123`) fit within
+  ruleset's two rules and 60-second periods (`modules/cloudflare/waf.tf`, `wordpress_rate_limit`) fit within
   Pro's limits, but the Method field does not.
-- The module deploys no Cloudflare managed ruleset. If you deploy one yourself, check how
-  it interacts with the skip rules above, which match on a cookie name that any client can
-  send (`modules/cloudflare/waf.tf:51-55`).
+- The module deploys no Cloudflare managed ruleset and configures no managed-rule exceptions.
+  Configure these separately if needed for your zone.
 - On Front Door, the WAF policy takes the profile's SKU (`modules/front-door/main.tf:117`).
   Microsoft's managed rule set and bot protection are available on the Premium tier, not
   on Standard
   ([tier comparison](https://learn.microsoft.com/en-us/azure/frontdoor/front-door-cdn-comparison#service-comparison)).
   Premium is the module's default (`modules/wordpress-site/main.tf:186`).
+
+### Upgrading the Cloudflare managed-phase ruleset
+
+The former `cloudflare_ruleset.wordpress_waf_exceptions` resource held only skip rules with
+`ruleset = "current"`. This skips remaining rules in the same ruleset
+([actions](https://developers.cloudflare.com/ruleset-engine/rules-language/actions/)); without
+an `execute` rule, those skips had no effect. A zone has at most one
+[entrypoint per phase](https://developers.cloudflare.com/ruleset-engine/about/rulesets/#entry-point-ruleset),
+so the module no longer owns the `http_request_firewall_managed` entrypoint.
+
+If the old resource is in state, the next plan proposes to **destroy that entrypoint ruleset**,
+including any rules added to it outside Terraform. If you added rules there, first remove its
+state binding to preserve the remote entrypoint. From your consumer root, with the usual
+backend and workspace selected, use the command matching your module call:
+
+```sh
+# Standalone module call named "cloudflare"
+terraform state rm 'module.cloudflare.cloudflare_ruleset.wordpress_waf_exceptions[0]'
+
+# Composition module call named "wordpress_site"
+terraform state rm 'module.wordpress_site.module.cloudflare[0].cloudflare_ruleset.wordpress_waf_exceptions[0]'
+```
+
+Use your own outer module name and any `count` or `for_each` selectors. For example, a
+composition call named `wordpress_sites` keyed by `example-prod` uses
+`module.wordpress_sites["example-prod"].module.cloudflare[0].cloudflare_ruleset.wordpress_waf_exceptions[0]`.
+If using the Cloudflare module itself as the root, use
+`cloudflare_ruleset.wordpress_waf_exceptions[0]`. Confirm with `terraform state list`, keep a
+state backup, and review a fresh plan before applying: after `state rm` it should no longer
+propose that deletion. Manage the retained entrypoint separately. If it has no external
+additions, the removed resource can be destroyed as planned.
+
+The `enable_waf` input, its defaults and composition pass-through, and the rate-limit and
+custom-rule resources are unchanged. Terraform 1.6.0 remains supported; no `removed` block
+(which needs 1.7 or later) is added. See also the
+[module upgrade note](../modules/cloudflare/README.md#upgrading-managed-phase-ruleset-removal).
 
 ### SCM is open by default
 
@@ -683,18 +717,12 @@ These could not be confirmed from the code or from vendor documentation:
    binding, which carries no certificate (`modules/wordpress-site/main.tf:1126-1153`). The
    default page rules use it on the admin, login and content paths
    (`modules/cloudflare/page-rules.tf:30`, `:57`, `:79`).
-5. What the Cloudflare skip rules achieve. A skip with `ruleset = "current"` skips the
-   remaining rules of the ruleset it is in
-   ([actions](https://developers.cloudflare.com/ruleset-engine/rules-language/actions/)).
-   The module's managed-phase ruleset holds only skip rules
-   (`modules/cloudflare/waf.tf:19-75`), so on its own it appears to skip nothing. How it
-   interacts with a managed ruleset deployed outside Terraform is not known.
-6. How soon a new app resolves its Key Vault references after the module grants its
+5. How soon a new app resolves its Key Vault references after the module grants its
    identity access, which happens after the app is created
    (`modules/wordpress-site/main.tf:699-702`).
-7. A tested procedure for rotating the database password, the storage key or the
+6. A tested procedure for rotating the database password, the storage key or the
    Application Insights connection string.
-8. Whether any Blob offload plugin, should you install one, serves SAS-signed media URLs. The account disallows anonymous
+7. Whether any Blob offload plugin, should you install one, serves SAS-signed media URLs. The account disallows anonymous
    blob access and the uploads container is private (`modules/storage/main.tf:28`, `:91`), so
    unsigned URLs, which the Microsoft Azure Storage for WordPress plugin 4.5.2 writes, fail.
 
