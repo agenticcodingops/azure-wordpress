@@ -7,9 +7,9 @@
 # 2. Layer 1: Networking, DNS Zones
 # 3. App Insights (early - breaks circular dependency)
 # 4. Layer 2: Database, Storage, Key Vault (with secrets)
-# 5. Layer 2: App Service (needs Key Vault secrets)
+# 5. Layer 2: Front Door profile (optional), App Service (needs Key Vault secrets and profile GUID)
 # 6. Layer 2: Diagnostic Settings + Alerts (after App Service)
-# 7. Layer 2: Front Door (optional, after App Service)
+# 7. Layer 2: Front Door origin and route (optional, after App Service)
 
 terraform {
   required_version = ">= 1.6.0"
@@ -21,9 +21,11 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 5.6"
     }
-    # 1.13.0 is the first release whose azapi_update_resource accepts an HCL
-    # object as body (used for the Front Door restriction below). Bounded below
-    # the next major; consumers on 2.x stay inside the range.
+    # No resource here uses azapi any more. It stays required so that a state
+    # written by an earlier release, which holds an azapi_update_resource for the
+    # Front Door restriction, plans that resource's removal without a manual step:
+    # deleting an azapi_update_resource makes no change to the target resource.
+    # Drop it in the next major release.
     azapi = {
       source  = "azure/azapi"
       version = ">= 1.13.0, < 3.0"
@@ -642,10 +644,11 @@ module "app_service" {
   database_password_app_setting_enabled = !var.mysql_entra_stage_drop_password_enabled
 
   # CDN provider configuration - controls IP restrictions
-  # NOTE: front_door_id is NOT passed here to avoid circular dependency
-  # The azapi_update_resource below updates IP restrictions after Front Door is created
+  # The profile GUID depends only on the profile, not on its app-backed origin.
+  # App Service owns the complete restriction list on both the app and its slot.
   cdn_provider             = var.cdn_provider
   front_door_enabled       = local.fd_config.enabled
+  front_door_id            = local.fd_config.enabled ? module.front_door[0].resource_guid : ""
   cdn_origin_header_name   = var.app_service.cdn_origin_header_name
   cdn_origin_header_values = var.cdn_origin_header_values
 
@@ -976,8 +979,8 @@ module "front_door" {
 
   tags = local.common_tags
 
-  # Explicit dependency on app_service
-  depends_on = [module.app_service]
+  # No module-level depends_on: the profile must be available before App Service
+  # consumes resource_guid. Only the origin waits for the app via origin_hostname.
 }
 
 # Diagnostic Settings for Front Door (if enabled)
@@ -1007,51 +1010,6 @@ resource "azurerm_monitor_diagnostic_setting" "front_door" {
   }
 
   depends_on = [module.front_door]
-}
-
-# ============================================================================
-# SECURITY: Update App Service IP Restriction with Front Door ID
-# This breaks the circular dependency by updating after Front Door creation
-# CRITICAL: Without this, ANY Azure Front Door could access the App Service
-# ============================================================================
-resource "azapi_update_resource" "app_service_front_door_restriction" {
-  count = local.fd_config.enabled ? 1 : 0
-
-  type        = "Microsoft.Web/sites@2023-12-01"
-  resource_id = module.app_service.id
-
-  body = {
-    properties = {
-      siteConfig = {
-        ipSecurityRestrictions = [
-          {
-            ipAddress   = "AzureFrontDoor.Backend"
-            action      = "Allow"
-            tag         = "ServiceTag"
-            priority    = 100
-            name        = "AllowFrontDoor"
-            description = "Allow traffic only from this specific Front Door instance"
-            headers = {
-              x-azure-fdid = [module.front_door[0].resource_guid]
-            }
-          },
-          {
-            ipAddress   = "Any"
-            action      = "Deny"
-            priority    = 2147483647
-            name        = "Deny all"
-            description = "Deny all other traffic"
-          }
-        ]
-        ipSecurityRestrictionsDefaultAction = "Deny"
-      }
-    }
-  }
-
-  depends_on = [
-    module.app_service,
-    module.front_door
-  ]
 }
 
 # ============================================================================

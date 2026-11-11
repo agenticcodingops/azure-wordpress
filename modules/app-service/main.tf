@@ -251,9 +251,8 @@ resource "azurerm_linux_web_app" "main" {
     # azure_front_door: Allow only Azure Front Door service tag with x-azure-fdid header
     # direct/none: Allow all traffic
     #
-    # NOTE: When using azure_front_door, the x_azure_fdid header is intentionally
-    # empty here. The composition layer uses azapi_update_resource to add the
-    # specific Front Door resource_guid AFTER Front Door is created.
+    # The profile GUID is available before the app-backed origin. This resource
+    # owns the entire list, including the profile header check, from creation.
     # =========================================================================
 
     # Azure Health Probe - MUST be allowed for App Service health checks to work
@@ -311,7 +310,7 @@ resource "azurerm_linux_web_app" "main" {
         priority    = 100
         action      = "Allow"
         headers {
-          x_azure_fdid = var.front_door_id != "" ? [var.front_door_id] : []
+          x_azure_fdid = [var.front_door_id]
         }
       }
     }
@@ -399,6 +398,13 @@ resource "azurerm_linux_web_app" "main" {
     # When changing resource_group, the old app must be deleted BEFORE
     # the new one can be created with the same name
     create_before_destroy = false
+
+    # The GUID may be unknown on a first plan; Terraform checks it once the
+    # profile exists, before creating the app. Never render an empty header list.
+    precondition {
+      condition     = local.effective_cdn_provider != "azure_front_door" || try(length(trimspace(var.front_door_id)) > 0, false)
+      error_message = "Azure Front Door origin restrictions require a non-empty front_door_id (the profile resource_guid). In wordpress-site, keep front_door.enabled = true when cdn_provider = \"azure_front_door\"."
+    }
 
     precondition {
       condition     = var.cdn_origin_header_name == null || (local.effective_cdn_provider == "cloudflare" && length(var.cdn_origin_header_values) >= 1 && length(var.cdn_origin_header_values) <= 8)
@@ -541,12 +547,7 @@ resource "azurerm_linux_web_app_slot" "staging" {
       }
     }
 
-    # TODO: The staging slot restricts to AzureFrontDoor.Backend service tag but cannot
-    # enforce the per-instance x-azure-fdid header check. front_door_id is intentionally
-    # not passed to this module (see wordpress-site/main.tf) to avoid a circular dependency;
-    # the azapi_update_resource that patches the FDID only targets the main app slot.
-    # Staging is lower-risk (not publicly advertised), but be aware any Front Door instance
-    # can reach this slot when cdn_provider = azure_front_door.
+    # The slot owns its list and uses the same profile GUID as the production app.
     dynamic "ip_restriction" {
       for_each = local.effective_cdn_provider == "azure_front_door" ? [1] : []
       content {
@@ -555,7 +556,7 @@ resource "azurerm_linux_web_app_slot" "staging" {
         priority    = 100
         action      = "Allow"
         headers {
-          x_azure_fdid = var.front_door_id != "" ? [var.front_door_id] : []
+          x_azure_fdid = [var.front_door_id]
         }
       }
     }

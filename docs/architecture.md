@@ -142,9 +142,10 @@ flowchart TB
         dns["module.dns_zones<br/>MySQL private DNS zone and VNet link"]
     end
 
-    subgraph early["Early and inline, parallel to Layer 1"]
+    subgraph early["Early resources, parallel to Layer 1"]
         law["Log Analytics workspace<br/>skipped if you pass one in"]
         appi["Application Insights"]
+        fdp["Front Door profile<br/>azure_front_door only"]
     end
 
     subgraph l2["Layer 2: application"]
@@ -156,8 +157,7 @@ flowchart TB
     end
 
     subgraph after["After the web app"]
-        fd["module.front_door<br/>azure_front_door only"]
-        patch["azapi_update_resource<br/>X-Azure-FDID restriction"]
+        fd["Front Door origin and route<br/>azure_front_door only"]
         cfm["module.cloudflare DNS records<br/>cloudflare only"]
         wait["time_sleep 120 s<br/>cloudflare only"]
         bind["Custom hostname binding"]
@@ -171,7 +171,10 @@ flowchart TB
     kv ==>|"versionless secret URIs"| app
     db -->|"server FQDN"| app
     app -->|"principal IDs"| pol
-    app --> fd --> patch
+    rg --> fdp
+    fdp -->|"profile resource_guid"| app
+    app -->|"default hostname"| fd
+    fdp --> fd
     app --> cfm --> wait --> bind
     app --> bind
 ```
@@ -195,12 +198,14 @@ after `module.app_service` completes.
 
 Other ordering facts, left out of the diagram:
 
-- Every Layer 2 module also depends on `module.networking`. The password from `random_password.db` goes to both
+- The app, database, storage and Key Vault wait for `module.networking`. The password from `random_password.db` goes to both
   `module.database` and `module.key_vault`.
 - Diagnostic settings and alerts follow the resource they watch. Availability tests wait for the hostname binding
   and, with Front Door, for `module.front_door`.
 - `module.cloudflare` has no `depends_on`. Its DNS records wait for the web app through the default host name and
   domain verification ID they receive. Its zone lookup and rules do not wait.
+- `module.front_door` has no module-wide `depends_on`. Its profile output depends only on the profile, so the app
+  and slot receive the profile GUID before their restriction lists are written. The origin waits for the app hostname.
 - The hostname binding always waits for the web app. With Cloudflare it also waits for the DNS records and the
   120-second wait.
 - The 120-second wait gives the `asuid` TXT record time to propagate before the hostname binding is created. It
@@ -291,8 +296,9 @@ Sources: `modules/wordpress-site/main.tf:52-54`, `:196-207`, `:652-656`, `:1062-
 ## Request flow: Azure Front Door
 
 With `cdn_provider = "azure_front_door"` (and `front_door.enabled`, which defaults to `true`), the composition
-creates a Front Door profile and then narrows the web app's access restriction to that one profile. The restriction is patched after Front Door exists, because the web
-app has to exist before Front Door can name it as an origin.
+creates the Front Door profile before the web app. Its `resource_guid` is passed to the app-service module, where
+one resource owns each origin access-restriction list: the production app and its staging slot each include the
+same profile ID check from creation. Only the Front Door origin needs the app's hostname; the profile does not.
 
 ```mermaid
 sequenceDiagram
@@ -304,11 +310,11 @@ sequenceDiagram
     participant Blob as Blob endpoint
 
     Note over TF,AFD: At deploy time
-    TF->>App: Create the web app. Restriction allows the AzureFrontDoor.Backend service tag, with no X-Azure-FDID value yet
-    TF->>AFD: Create profile, endpoint, origin group, origin, custom domain, route and WAF policy
+    TF->>AFD: Create the profile
     AFD-->>TF: Profile resource_guid, the Front Door ID
-    TF->>App: azapi_update_resource sets the restriction list
-    Note right of App: Allow AzureFrontDoor.Backend with X-Azure-FDID equal to resource_guid, then deny all
+    TF->>App: Create app and optional slot with the profile GUID in their restriction lists
+    Note right of App: Allow health probe, allow AzureFrontDoor.Backend with matching X-Azure-FDID, default Deny
+    TF->>AFD: Configure the origin using the app hostname, then its route
     Note over B,App: At request time
     B->>AFD: HTTPS request for the custom domain
     AFD->>AFD: WAF policy - Prevention in production, Detection in nonprod
@@ -328,20 +334,19 @@ What the code sets up for this flow:
 - **Profile and origin.** The origin is the web app's default host name, and the origin host header is the same
   name. The route forwards HTTPS only, redirects HTTP to HTTPS, and serves the custom domain with a Front Door
   managed certificate (minimum TLS 1.2).
-- **The value injected is the profile's `resource_guid`,** which Microsoft calls the Front Door ID. It is not the
+- **The value passed is the profile's `resource_guid`,** which Microsoft calls the Front Door ID. It is not the
   ARM profile ID. Front Door adds it to every origin request as `X-Azure-FDID`. Microsoft recommends checking it,
   because other Azure customers' Front Door profiles use the same `AzureFrontDoor.Backend` addresses.
-- **The patch replaces the whole list.** After it runs, the web app's main-site restrictions are exactly two rules:
-  the Front Door allow rule and a deny-all rule. The `AllowAzureHealthProbe` rule that the app-service module
-  declares is not in the patched list. The web app resource ignores changes only to one app setting, so a later
-  `terraform plan` is expected to show an update that restores the module's own list: the health-probe rule, and
-  no `X-Azure-FDID` value. This follows from the code but is untested here. Review the web app's plan in this mode
-  before every apply.
-- **The staging slot is not patched.** It allows the `AzureFrontDoor.Backend` service tag without an `X-Azure-FDID`
-  check, so any Front Door profile can reach it.
-- **`front_door.enabled = false`** with `cdn_provider = "azure_front_door"` creates no profile and no patch. The
-  web app and the slot still allow `168.63.129.16/32` (the `AllowAzureHealthProbe` rule) and the
-  `AzureFrontDoor.Backend` service tag with no `X-Azure-FDID` check, and deny the rest.
+- **Each azurerm resource owns its complete list.** The app and slot both allow `168.63.129.16/32` at priority 10
+  (`AllowAzureHealthProbe`) and `AzureFrontDoor.Backend` with the profile GUID at priority 100 (`AllowFrontDoor`),
+  with default action `Deny`. No second resource patches either list, and no restriction attributes are ignored.
+  After the upgrade and apply, a subsequent plan should show no restriction changes unless an input or remote
+  configuration changed. See the [ownership upgrade notes](upgrading/front-door-origin-restrictions.md) for what an
+  existing deployment's first plan shows.
+- **The staging slot gets the same Front Door ID check.** This applies whenever the slot exists, including shared
+  Standard and Premium plans; Basic plans and an explicit slot opt-out still create no slot.
+- **`front_door.enabled = false`** with `cdn_provider = "azure_front_door"` is rejected before changing the app:
+  Front Door mode requires a non-empty profile GUID. Select a CDN mode matching the intended deployment instead.
 - **WAF.** The policy uses Microsoft's Default Rule Set 2.1 and Bot Manager 1.1, with WordPress cookie exclusions.
   Rules 942230 and 941320 are set to log only. The mode is `Prevention` in production and `Detection` in nonprod
   unless you set `front_door.waf_mode`.
@@ -360,10 +365,10 @@ What the code sets up for this flow:
   app's domain verification ID. Both examples in this repository use `cloudflare`, so whether this mode applies
   cleanly on a first deploy is UNKNOWN.
 
-Sources: `modules/wordpress-site/main.tf:184-190`, `:647-648`, `:959-981`, `:1017-1055`, `:1062-1064`, `:1126-1153`;
+Sources: `modules/wordpress-site/main.tf:174-184`, `:637-643`, `:953-975`, `:1012-1046`, `:1075-1102`;
 `modules/wordpress-site/outputs.tf:168-186`; `modules/front-door/main.tf:17-201`, `:204-289` (route `:85-104`);
 `modules/front-door/outputs.tf:14-17`; `modules/wordpress-site/variables.tf:519-529`;
-`modules/app-service/main.tf:32`, `:262-267`, `:306-320`, `:450-453`, `:503-508`, `:544-563`;
+`modules/app-service/main.tf:32`, `:261-266`, `:305-319`, `:402-407`, `:509-514`, `:550-564`;
 `examples/basic-site/main.tf:112`; `examples/multi-site/main.tf:110`. Microsoft:
 [Secure traffic to origins](https://learn.microsoft.com/azure/frontdoor/origin-security),
 [What is a rule set?](https://learn.microsoft.com/azure/frontdoor/front-door-rules-engine).

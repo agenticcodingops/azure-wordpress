@@ -318,7 +318,7 @@ Store the client IDs, tenant ID and subscription IDs as **repository** variables
 **Who:** operator. **STOP:** no.
 
 The module sets ranges, not exact versions: azurerm `~> 5.6`, azapi `>= 1.13.0, < 3.0`, random `>= 3.5.0, < 4.0`,
-cloudflare `~> 5.0` and time `>= 0.9.0, < 1.0` (`modules/wordpress-site/main.tf:17-46`), and null
+cloudflare `~> 5.0` and time `>= 0.9.0, < 1.0` (`modules/wordpress-site/main.tf:17-48`), and null
 `>= 3.2.0, < 4.0` (`modules/database/versions.tf:14-17`). Your root configuration fixes the exact versions.
 
 ```hcl
@@ -403,8 +403,9 @@ infra/
 - **Promote a module upgrade** by changing the `?ref=` in `nonprod/` first, and in `production/` in a later pull
   request.
 - **Provider configuration.** With the OIDC variables from step 5, `provider "azurerm" { features {} }` needs no
-  other arguments: azurerm reads `ARM_SUBSCRIPTION_ID`, `ARM_CLIENT_ID`, `ARM_TENANT_ID` and `ARM_USE_OIDC`. The
-  `azapi` provider reads the same variables, which matters when `cdn_provider = "azure_front_door"`.
+  other arguments: azurerm reads `ARM_SUBSCRIPTION_ID`, `ARM_CLIENT_ID`, `ARM_TENANT_ID` and `ARM_USE_OIDC`.
+  The `azapi` provider reads the same variables. No resource uses it any more; the module still declares it so
+  that an upgrade from an earlier release can drop the old Front Door restriction patch from state.
 - **Cloudflare provider configuration.** With `cdn_provider = "cloudflare"`, declare `provider "cloudflare" {}` with
   no arguments. It reads `CLOUDFLARE_API_TOKEN`. Do not pass the token as a Terraform variable, as
   `examples/basic-site` does (`api_token = var.cloudflare_api_token`): a saved plan file stores input variables in
@@ -1041,12 +1042,13 @@ v4.3.0 adds four opt-ins, all off by default, so a pin bump alone plans no resou
      and no access policy on the vaults, so the refresh fails. If you grant those, `data.azurerm_client_config`
      returns you, and the plan replaces `azurerm_key_vault_access_policy.terraform` (step 6). Never apply that plan:
      it deletes the pipeline's own policy, and the next pipeline refresh fails with 403.
-   - **With `cdn_provider = "azure_front_door"`, an empty plan is not expected.** The plan after an apply shows the
-     web app restoring the module's restriction list: the health-probe rule, with no `X-Azure-FDID` check. Applying
-     that removes the Front Door ID check. The following plan should then show
-     `azapi_update_resource.app_service_front_door_restriction` patching the list back. This follows from the code
-     and is untested (see [architecture](architecture.md#request-flow-azure-front-door)). Review those two
-     resources rather than requiring no changes.
+   - **With `cdn_provider = "azure_front_door"`, require convergence after the ownership upgrade.** The first
+     upgraded plan also removes the old `azapi_update_resource` from state, with no change in Azure
+     ([upgrade notes](upgrading/front-door-origin-restrictions.md)). The app
+     and its optional staging slot then each have one owner for their restriction list, with the profile's
+     `resource_guid` in `X-Azure-FDID`, the health-probe allow rule, and default action `Deny`. A subsequent plan
+     should show no restriction changes unless inputs or remote configuration changed. Confirm both lists retain
+     the same profile ID check (see [architecture](architecture.md#request-flow-azure-front-door)).
    - **With `cloudflare`,** a change in Cloudflare's published IP ranges also shows up as an update.
 2. **No access policy churn.** In any plan, `azurerm_key_vault_access_policy.terraform` must not be updated or
    replaced, and its `object_id` must be known. A `will be read during apply` line for

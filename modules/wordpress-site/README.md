@@ -22,6 +22,19 @@ Diagrams of the deployment order, request flows, secrets, network and monitoring
 
 Upgrade notes for this module are in the [upgrade guide](../../docs/upgrading/README.md).
 
+For existing Front Door deployments, see the
+[origin restriction upgrade notes](../../docs/upgrading/front-door-origin-restrictions.md); no manual state step is needed.
+The profile GUID now reaches both the production app and its staging slot before their lists are written.
+Keep `front_door.enabled = true` when `cdn_provider = "azure_front_door"`.
+
+Offline dependency graph checks (`tests/front-door-dependencies.tftest.hcl`) use Terraform 1.7 or later and mocked
+providers; consumers of the module are unaffected:
+
+```bash
+terraform -chdir=modules/wordpress-site init -backend=false
+terraform -chdir=modules/wordpress-site test
+```
+
 ## Upgrading MySQL 8.0 to 8.4
 
 Setting `database.mysql_version = "8.4"` on an existing site is an **in-place, irreversible major-version upgrade** with
@@ -687,7 +700,6 @@ the shared plan, fail in the same way.
 
 | Name | Version |
 |------|---------|
-| <a name="provider_azapi"></a> [azapi](#provider\_azapi) | >= 1.13.0, < 3.0 |
 | <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | ~> 5.6 |
 | <a name="provider_cloudflare"></a> [cloudflare](#provider\_cloudflare) | ~> 5.0 |
 | <a name="provider_random"></a> [random](#provider\_random) | >= 3.5.0, < 4.0 |
@@ -710,7 +722,6 @@ the shared plan, fail in the same way.
 
 | Name | Type |
 |------|------|
-| [azapi_update_resource.app_service_front_door_restriction](https://registry.terraform.io/providers/azure/azapi/latest/docs/resources/update_resource) | resource |
 | [azurerm_app_service_custom_hostname_binding.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/app_service_custom_hostname_binding) | resource |
 | [azurerm_application_insights.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/application_insights) | resource |
 | [azurerm_application_insights_standard_web_test.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/application_insights_standard_web_test) | resource |

@@ -30,6 +30,14 @@ The following settings are sticky to deployment slots:
 
 This ensures staging slot uses staging URL, not production URL.
 
+## Front Door origin restrictions
+
+When the effective CDN provider is `azure_front_door`, supply the profile's `resource_guid` as `front_door_id`.
+The production app and its staging slot each own their complete restriction list, with the same profile ID
+header check, the health-probe allow rule, and default action `Deny`. A missing or blank GUID fails the app's
+precondition. The composition passes the GUID automatically; see the
+[upgrade notes](../../docs/upgrading/front-door-origin-restrictions.md) for existing deployments.
+
 ## SCM/Kudu Network Posture
 
 The SCM endpoint — `https://<app>.scm.azurewebsites.net`, and separately

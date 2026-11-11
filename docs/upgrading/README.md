@@ -6,6 +6,9 @@ These pages hold the upgrade notes that were in the repository README, in `modul
 
 Read every page between the release you are on and the release you are moving to.
 
+When taking the origin restriction ownership change, also follow
+[Front Door origin access restrictions](front-door-origin-restrictions.md). It needs no manual state step.
+
 | Transition | Page | Releases on the page |
 | --- | --- | --- |
 | v1 to v2 | [v1 to v2](v1-to-v2.md) | v2.0.0 |
