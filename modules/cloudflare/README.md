@@ -22,7 +22,7 @@ This module configures Cloudflare as the DNS provider and optionally as the CDN/
    - Zone > Zone > Read: the `data.cloudflare_zones` lookup
    - Zone > DNS > Edit: the site, `www` and `asuid` records, plus `_dnsauth` in `azure_front_door` mode
    - Zone > Page Rules > Edit: the three page rules (`enable_page_rules`, default `true`)
-   - Zone > Zone WAF > Edit: the three WAF rulesets (`enable_waf`, default `true` in this module, `false` when called through `wordpress-site`)
+   - Zone > Zone WAF > Edit: the rate-limit and custom-rule rulesets (`enable_waf`, default `true` in this module, `false` when called through `wordpress-site`)
    - Zone > Cache Rules > Edit: the cache ruleset (`enable_cache_rules`, default `false`). Cloudflare's Cache Rules API page lists three required permissions: this one, Account > Account Rulesets > Edit and Account > Account Filter Lists > Edit. The last two are account-level, so a zone-scoped token does not carry them. Add them when you turn this flag on. Whether an apply fails without them has not been tried.
    - Zone > Zone Settings > Edit: the zone settings, including the SSL/TLS mode (`enable_zone_setting_overrides`, default `false`)
 
@@ -69,7 +69,7 @@ module "cloudflare" {
 | `cdn_provider` | CDN mode: cloudflare, azure_front_door, direct | `string` | `"cloudflare"` | No |
 | `ssl_mode` | SSL mode: strict, full, flexible. Applied only with `enable_zone_setting_overrides = true` | `string` | `"strict"` | No |
 | `min_tls_version` | Minimum TLS version. Applied only with `enable_zone_setting_overrides = true` | `string` | `"1.2"` | No |
-| `enable_waf` | Enable the WordPress WAF rulesets (see Cost) | `bool` | `true` | No |
+| `enable_waf` | Enable WordPress rate limiting and custom security rules (see Cost) | `bool` | `true` | No |
 | `enable_page_rules` | Enable WordPress page rules | `bool` | `true` | No |
 | `enable_wordpress_optimizations` | With `enable_zone_setting_overrides = true`: Rocket Loader off (`true`) or on (`false`). No effect otherwise | `bool` | `true` | No |
 | `enable_zone_setting_overrides` | Manage the zone settings listed under WordPress Optimizations | `bool` | `false` | No |
@@ -113,16 +113,30 @@ Cache bypass for `wp-admin` and `wp-login.php` comes from the page rules (`enabl
 
 When `enable_waf = true`, the module creates:
 
-1. **WAF Exceptions** for WordPress admin paths
-2. **Rate Limiting** for wp-login.php and xmlrpc.php
-3. **Security Rules** blocking common attack patterns
+1. **Rate Limiting** for wp-login.php and xmlrpc.php
+2. **Custom Rules** blocking access to configuration files and PHP in uploads, and challenging direct requests to wp-includes PHP files
 
-### Excluded Paths
+The module does not own the `http_request_firewall_managed` phase entrypoint, deploy a managed ruleset, or configure managed-rule exceptions. Configure managed rulesets and any WordPress-specific exceptions separately.
 
-- `/wp-admin/*` - WordPress admin
-- `/wp-login.php` - Login page
-- `/wp-cron.php` - WordPress cron
-- `/wp-json/*` - REST API (when authenticated)
+### Upgrading: managed-phase ruleset removal
+
+The former `cloudflare_ruleset.wordpress_waf_exceptions` resource held only three skip rules with `ruleset = "current"`. That option skips remaining rules in the same ruleset; with no `execute` rule, these skips had no effect. See Cloudflare's [actions reference](https://developers.cloudflare.com/ruleset-engine/rules-language/actions/) and [entrypoint rulesets](https://developers.cloudflare.com/ruleset-engine/about/rulesets/#entry-point-ruleset).
+
+If this resource is in your state (previously created with `enable_waf = true`), the next plan proposes to **destroy the managed-phase entrypoint ruleset**, including any rules added to it outside Terraform. Applying that plan deletes the zone's `http_request_firewall_managed` entrypoint in Cloudflare, so the phase is left empty until rules are deployed there again. The rate-limit and custom-rule resources and the `enable_waf` defaults are unchanged.
+
+If you added rules to that entrypoint outside Terraform, preserve it by removing only its state binding **before applying the upgrade**. Run the appropriate command from your consumer root with its usual backend and workspace selected:
+
+```sh
+# Standalone module call named "cloudflare"
+terraform state rm 'module.cloudflare.cloudflare_ruleset.wordpress_waf_exceptions[0]'
+
+# Composition module call named "wordpress_site"
+terraform state rm 'module.wordpress_site.module.cloudflare[0].cloudflare_ruleset.wordpress_waf_exceptions[0]'
+```
+
+Replace the outer module name with your call's name and include any `count` or `for_each` instance selectors. For example, a composition call named `wordpress_sites` keyed by `example-prod` uses `module.wordpress_sites["example-prod"].module.cloudflare[0].cloudflare_ruleset.wordpress_waf_exceptions[0]`. When running this module directly as the root, the address is `cloudflare_ruleset.wordpress_waf_exceptions[0]`. Confirm the address with `terraform state list`, retain a state backup, and review a fresh plan after `state rm`: it should no longer propose that deletion. The remote entrypoint is then managed separately. Without external additions, the removed resource can be destroyed as planned.
+
+The Terraform minimum remains 1.6.0; there is no `removed` block, which would require 1.7 or later.
 
 ### Protected Paths
 
@@ -178,9 +192,9 @@ The module creates the `_dnsauth` record only in this mode, so it lands in the s
 
 With `enable_waf = false`, the module fits the Cloudflare Free plan. It uses all three of Free's page rules, and the optional cache ruleset uses 5 of the 10 cache rules Free allows.
 
-`enable_waf` defaults to `true` in this module, so set it to `false` unless the zone is on Business or higher. The login rate-limit rule matches on the request method (`waf.tf:101-104`), and Cloudflare offers the Method field in rate-limiting rules only from Business upward. Free also allows just one rate-limit rule, with a 10 s counting period and a 10 s timeout.
+`enable_waf` defaults to `true` in this module, so set it to `false` unless the zone is on Business or higher. The login rate-limit rule matches on the request method (`waf.tf`, `wp_login_ratelimit`), and Cloudflare offers the Method field in rate-limiting rules only from Business upward. Free also allows just one rate-limit rule, with a 10 s counting period and a 10 s timeout.
 
-Business is necessary but not yet sufficient. Both rate-limit rules set `characteristics = ["ip.src"]` (`waf.tf:96`, `:113`) without `cf.colo.id`. Cloudflare's rate-limiting parameters reference marks `cf.colo.id` as mandatory for API users, so expect `cloudflare_ruleset.wordpress_rate_limit` to be rejected until the module adds it. This has not been tried on a live zone. Keep `enable_waf = false` until then.
+Business is necessary but not yet sufficient. Both rate-limit rules set `characteristics = ["ip.src"]` (`waf.tf`, `wordpress_rate_limit`) without `cf.colo.id`. Cloudflare's rate-limiting parameters reference marks `cf.colo.id` as mandatory for API users, so expect `cloudflare_ruleset.wordpress_rate_limit` to be rejected until the module adds it. This has not been tried on a live zone. Keep `enable_waf = false` until then.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
@@ -214,7 +228,6 @@ No modules.
 | [cloudflare_ruleset.wordpress_cache](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/ruleset) | resource |
 | [cloudflare_ruleset.wordpress_rate_limit](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/ruleset) | resource |
 | [cloudflare_ruleset.wordpress_security](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/ruleset) | resource |
-| [cloudflare_ruleset.wordpress_waf_exceptions](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/ruleset) | resource |
 | [cloudflare_zone_setting.always_use_https](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/zone_setting) | resource |
 | [cloudflare_zone_setting.automatic_https_rewrites](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/zone_setting) | resource |
 | [cloudflare_zone_setting.brotli](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/zone_setting) | resource |
@@ -243,7 +256,7 @@ No modules.
 | <a name="input_domain"></a> [domain](#input\_domain) | Root domain name (e.g., example.com) | `string` | n/a | yes |
 | <a name="input_enable_cache_rules"></a> [enable\_cache\_rules](#input\_enable\_cache\_rules) | Enable the WordPress cache ruleset (Cache Rules). Available on every plan, including Free, which allows 10 cache rules; the ruleset uses 5 | `bool` | `false` | no |
 | <a name="input_enable_page_rules"></a> [enable\_page\_rules](#input\_enable\_page\_rules) | Enable page rules for WordPress caching (Free plan has 3 rule limit) | `bool` | `true` | no |
-| <a name="input_enable_waf"></a> [enable\_waf](#input\_enable\_waf) | Enable the WordPress WAF rulesets: managed-rule exceptions, rate limiting and custom security rules. Needs Cloudflare Business or higher: the login rate-limit rule matches on the request method (http.request.method), which rate-limiting rules allow from Business upward. Pro's other limits (2 rules, periods up to 1 min, timeouts up to 1 h) fit; Free allows 1 rule with a 10 s period and timeout | `bool` | `true` | no |
+| <a name="input_enable_waf"></a> [enable\_waf](#input\_enable\_waf) | Enable the WordPress rate limiting and custom security rules. Managed rulesets and their exceptions are configured separately. Needs Cloudflare Business or higher: the login rate-limit rule matches on the request method (http.request.method), which rate-limiting rules allow from Business upward. Pro's other limits (2 rules, periods up to 1 min, timeouts up to 1 h) fit; Free allows 1 rule with a 10 s period and timeout | `bool` | `true` | no |
 | <a name="input_enable_wordpress_optimizations"></a> [enable\_wordpress\_optimizations](#input\_enable\_wordpress\_optimizations) | With enable\_zone\_setting\_overrides = true, sets Rocket Loader off (true) or on (false). No effect otherwise | `bool` | `true` | no |
 | <a name="input_enable_zone_setting_overrides"></a> [enable\_zone\_setting\_overrides](#input\_enable\_zone\_setting\_overrides) | Enable zone setting overrides like HTTP/2, HTTP/3 (some settings can't be modified on Free plan) | `bool` | `false` | no |
 | <a name="input_front_door_hostnames"></a> [front\_door\_hostnames](#input\_front\_door\_hostnames) | Map of site name to Front Door hostname (required when cdn\_provider = azure\_front\_door) | `map(string)` | `{}` | no |

@@ -95,7 +95,7 @@ variable "enable_wordpress_optimizations" {
 }
 
 variable "enable_waf" {
-  description = "Enable the WordPress WAF rulesets: managed-rule exceptions, rate limiting and custom security rules. Needs Cloudflare Business or higher: the login rate-limit rule matches on the request method (http.request.method), which rate-limiting rules allow from Business upward. Pro's other limits (2 rules, periods up to 1 min, timeouts up to 1 h) fit; Free allows 1 rule with a 10 s period and timeout"
+  description = "Enable the WordPress rate limiting and custom security rules. Managed rulesets and their exceptions are configured separately. Needs Cloudflare Business or higher: the login rate-limit rule matches on the request method (http.request.method), which rate-limiting rules allow from Business upward. Pro's other limits (2 rules, periods up to 1 min, timeouts up to 1 h) fit; Free allows 1 rule with a 10 s period and timeout"
   type        = bool
   default     = true
 }
