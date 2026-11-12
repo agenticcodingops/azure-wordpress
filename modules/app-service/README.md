@@ -30,6 +30,14 @@ The following settings are sticky to deployment slots:
 
 This ensures staging slot uses staging URL, not production URL.
 
+## Front Door origin restrictions
+
+When the effective CDN provider is `azure_front_door`, supply the profile's `resource_guid` as `front_door_id`.
+The production app and its staging slot each own their complete restriction list, with the same profile ID
+header check, the health-probe allow rule, and default action `Deny`. A missing or blank GUID fails the app's
+precondition. The composition passes the GUID automatically; see the
+[upgrade notes](../../docs/upgrading/front-door-origin-restrictions.md) for existing deployments.
+
 ## SCM/Kudu Network Posture
 
 The SCM endpoint — `https://<app>.scm.azurewebsites.net`, and separately
@@ -285,7 +293,7 @@ No modules.
 | <a name="input_extra_app_settings"></a> [extra\_app\_settings](#input\_extra\_app\_settings) | Additional app settings to merge with the default WordPress settings (e.g., WP\_ENVIRONMENT\_TYPE, custom plugin config) | `map(string)` | `{}` | no |
 | <a name="input_extra_sticky_app_setting_names"></a> [extra\_sticky\_app\_setting\_names](#input\_extra\_sticky\_app\_setting\_names) | Additional app setting names to mark as sticky (slot-specific, not swapped) | `list(string)` | `[]` | no |
 | <a name="input_front_door_enabled"></a> [front\_door\_enabled](#input\_front\_door\_enabled) | DEPRECATED: Use cdn\_provider instead. Whether Front Door is enabled. | `bool` | `true` | no |
-| <a name="input_front_door_id"></a> [front\_door\_id](#input\_front\_door\_id) | Azure Front Door resource GUID (required when cdn\_provider = azure\_front\_door) | `string` | `""` | no |
+| <a name="input_front_door_id"></a> [front\_door\_id](#input\_front\_door\_id) | Azure Front Door profile resource\_guid. Required when cdn\_provider = azure\_front\_door: a precondition on the app and the staging slot rejects an empty value (at apply when the profile is new) | `string` | `""` | no |
 | <a name="input_ftp_publish_basic_authentication_enabled"></a> [ftp\_publish\_basic\_authentication\_enabled](#input\_ftp\_publish\_basic\_authentication\_enabled) | Enable basic authentication for FTP publishing. Defaults to true, matching the azurerm provider default. Note site\_config.ftps\_state is already 'Disabled' here, so FTP is closed at the transport layer regardless. | `bool` | `true` | no |
 | <a name="input_health_check_path"></a> [health\_check\_path](#input\_health\_check\_path) | Path for health check endpoint (use a lightweight static file, not the homepage) | `string` | `"/wp-includes/images/blank.gif"` | no |
 | <a name="input_key_vault_uri"></a> [key\_vault\_uri](#input\_key\_vault\_uri) | Key Vault URI for secret references | `string` | n/a | yes |

@@ -194,7 +194,7 @@ variable "cdn_origin_header_values" {
 }
 
 variable "front_door_id" {
-  description = "Azure Front Door resource GUID (required when cdn_provider = azure_front_door)"
+  description = "Azure Front Door profile resource_guid. Required when cdn_provider = azure_front_door: a precondition on the app and the staging slot rejects an empty value (at apply when the profile is new)"
   type        = string
   default     = ""
 }
