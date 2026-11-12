@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.5](https://github.com/agenticcodingops/azure-wordpress/compare/v4.3.4...v4.3.5) (2026-11-12)
+
+
+### Bug Fixes
+
+* **front-door:** split the static cache rule to stay within 10 match values ([#171](https://github.com/agenticcodingops/azure-wordpress/issues/171)) ([d3a35d5](https://github.com/agenticcodingops/azure-wordpress/commit/d3a35d5effcfc5755c5760a7dbb60319c22081e0))
+* **wordpress-site:** give each origin restriction list one owner ([#167](https://github.com/agenticcodingops/azure-wordpress/issues/167)) ([cad0d0c](https://github.com/agenticcodingops/azure-wordpress/commit/cad0d0c9070b1145d7f3cfa40559e73699910a0d))
+
 ## [4.3.4](https://github.com/agenticcodingops/azure-wordpress/compare/v4.3.3...v4.3.4) (2026-11-12)
 
 
