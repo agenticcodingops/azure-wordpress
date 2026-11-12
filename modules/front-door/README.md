@@ -55,11 +55,14 @@ The route lists the module's rule set in `cdn_frontdoor_rule_set_ids`, so Front 
 | Path | Rule | Cache |
 |------|------|-------|
 | `wp-admin/*`, `wp-login.php` | `NoCacheAdmin` (order 1, stops further rules) | Disabled |
-| `css`, `js`, `jpg`, `jpeg`, `png`, `gif`, `ico`, `woff`, `woff2`, `ttf`, `svg` | `CacheStaticAssets` (order 2) | `cache_static_minutes` (default 180, 3 hours), query string in the cache key |
+| `css`, `js`, `jpg`, `jpeg`, `png`, `gif`, `ico`, `svg` | `CacheStaticAssets` (order 2) | `cache_static_minutes` (default 180, 3 hours), query string in the cache key |
 | `wp-content/uploads/*` | `CacheUploads` (order 3) | `cache_uploads_minutes` (default 180, 3 hours), query string in the cache key (generated files under uploads are busted with `?ver=`) |
+| `woff`, `woff2`, `ttf` | `CacheStaticFonts` (order 4) | `cache_static_minutes`, query string in the cache key |
 | Everything else | route default | Cached, query string in the cache key, compression on |
 
 Front Door honours an origin's `private`, `no-cache` and `no-store` directives even where a rule overrides caching ([Front Door caching](https://learn.microsoft.com/azure/frontdoor/front-door-caching)), so WordPress's own admin responses, which carry `no-cache`, were not stored on earlier releases unless something changed their headers; the rule makes that independent of the origin's headers.
+
+Front Door accepts at most 10 match values in one rule condition. Through v4.3.4, `CacheStaticAssets` listed 11 extensions, so a first apply failed when it created that rule, and the route was never created (#170). The font types now have their own rule, `CacheStaticFonts`. On an existing profile, taking this release plans an in-place update of `CacheStaticAssets` and the creation of `CacheStaticFonts`. Rules marked Continue all apply in order, and the later rule's caching wins, so a font file under `wp-content/uploads/` now takes `cache_static_minutes` rather than `cache_uploads_minutes`. Both default to 180 minutes.
 
 ## Usage
 
@@ -137,6 +140,7 @@ No modules.
 | [azurerm_cdn_frontdoor_profile.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/cdn_frontdoor_profile) | resource |
 | [azurerm_cdn_frontdoor_route.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/cdn_frontdoor_route) | resource |
 | [azurerm_cdn_frontdoor_rule.cache_static](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/cdn_frontdoor_rule) | resource |
+| [azurerm_cdn_frontdoor_rule.cache_static_fonts](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/cdn_frontdoor_rule) | resource |
 | [azurerm_cdn_frontdoor_rule.cache_uploads](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/cdn_frontdoor_rule) | resource |
 | [azurerm_cdn_frontdoor_rule.no_cache_admin](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/cdn_frontdoor_rule) | resource |
 | [azurerm_cdn_frontdoor_rule_set.caching](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/cdn_frontdoor_rule_set) | resource |
