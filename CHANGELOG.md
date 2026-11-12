@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.4](https://github.com/agenticcodingops/azure-wordpress/compare/v4.3.3...v4.3.4) (2026-11-12)
+
+
+### Bug Fixes
+
+* **cloudflare:** remove ineffective managed-phase ruleset ([#166](https://github.com/agenticcodingops/azure-wordpress/issues/166)) ([9185ae7](https://github.com/agenticcodingops/azure-wordpress/commit/9185ae74df6cf2ac6d616d7392e3721f9c3549f8))
+
 ## [4.3.3](https://github.com/agenticcodingops/azure-wordpress/compare/v4.3.2...v4.3.3) (2026-11-10)
 
 
