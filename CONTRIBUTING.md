@@ -9,7 +9,8 @@ pull request.
 1. Fork the repository and clone your fork.
 2. Add the canonical repository as the `upstream` remote.
 3. Install the required tools:
-   - Terraform 1.9.8 (the version used by CI)
+   - Terraform 1.17.1 (the version CI formats and validates with). CI also validates every module on 1.9.8,
+     the version the consumer's CI runs, so a change must validate on both
    - terraform-docs 0.20.0
    - Checkov 3.3.22
    - Trivy
@@ -31,8 +32,8 @@ Create a short-lived branch with a descriptive prefix such as `feature/`, `fix/`
 
 ## Format and validate Terraform
 
-Confirm that the selected binary is the same version as CI, then run the CI commands
-from the repository root:
+Confirm that the selected binary is the version CI formats with (`TERRAFORM_VERSION` in
+`.github/workflows/validate.yml`), then run the CI commands from the repository root:
 
 ```bash
 terraform version
@@ -42,6 +43,10 @@ for module in modules/*/; do
   (cd "$module" && terraform init -backend=false && terraform validate) || exit 1
 done
 ```
+
+CI runs the `init` and `validate` loop a second time on the version the consumer's CI runs
+(`TERRAFORM_VERSION_CONSUMER` in the same workflow). Repeat the loop with a binary of that
+version: a change must validate on both.
 
 CI starts without module lock files. If local initialization created `.terraform/`
 directories or module lock files, remove them before checking generated documentation.
