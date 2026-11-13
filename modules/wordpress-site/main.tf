@@ -25,7 +25,7 @@ terraform {
     # written by an earlier release, which holds an azapi_update_resource for the
     # Front Door restriction, plans that resource's removal without a manual step:
     # deleting an azapi_update_resource makes no change to the target resource.
-    # Drop it in the next major release.
+    # v5.0.0 keeps it (the resource left in v4.3.5); drop it in a later major release.
     azapi = {
       source  = "azure/azapi"
       version = ">= 1.13.0, < 3.0"
