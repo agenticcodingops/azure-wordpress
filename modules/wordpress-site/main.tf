@@ -197,7 +197,6 @@ locals {
   # rate-limit rule matches the request method, which Free and Pro lack); cache rules work on Free.
   cf_config = {
     enabled                        = var.cdn_provider == "cloudflare" && coalesce(var.cloudflare.enabled, false)
-    account_id                     = try(var.cloudflare.account_id, "") != "" ? var.cloudflare.account_id : ""
     domain                         = try(var.cloudflare.domain, "") != "" ? var.cloudflare.domain : ""
     subdomain                      = try(var.cloudflare.subdomain, "") != "" ? var.cloudflare.subdomain : ""
     proxied                        = coalesce(var.cloudflare.proxied, true)
@@ -1021,9 +1020,8 @@ module "cloudflare" {
   count  = local.cf_config.enabled ? 1 : 0
   source = "../cloudflare"
 
-  cloudflare_account_id = local.cf_config.account_id
-  domain                = local.cf_config.domain
-  cdn_provider          = var.cdn_provider
+  domain       = local.cf_config.domain
+  cdn_provider = var.cdn_provider
 
   sites = {
     (var.site_name) = {

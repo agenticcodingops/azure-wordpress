@@ -1,12 +1,6 @@
 # Cloudflare Module Variables
 # Configures DNS records and CDN settings for WordPress sites
 
-variable "cloudflare_account_id" {
-  description = "Cloudflare account ID"
-  type        = string
-  sensitive   = true
-}
-
 variable "domain" {
   description = "Root domain name (e.g., example.com)"
   type        = string

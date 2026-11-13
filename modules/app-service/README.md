@@ -150,7 +150,7 @@ switching the edge value, and then removing the old value.
 
 ```hcl
 module "app_service" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/app-service?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/app-service?ref=v5.0.0"
 
   project_name        = "example"
   site_name           = "examplewp01"

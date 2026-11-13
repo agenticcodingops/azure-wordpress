@@ -545,7 +545,6 @@ variable "cloudflare" {
   description = "Cloudflare configuration"
   type = object({
     enabled                        = optional(bool, false)
-    account_id                     = optional(string, "")
     domain                         = optional(string, "")
     subdomain                      = optional(string, "")
     proxied                        = optional(bool, true)

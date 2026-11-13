@@ -91,7 +91,7 @@ resource "random_password" "wp_admin" {
 }
 
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v5.0.0"
 
   project_name = local.project_name
   site_name    = local.site_name

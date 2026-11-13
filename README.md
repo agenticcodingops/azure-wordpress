@@ -78,7 +78,7 @@ The [architecture decision record index](docs/adr/README.md) explains the design
 ```hcl
 module "wordpress_site" {
   # Pin to a release version for stability - see Releases page for latest
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v5.0.0"
 
   project_name  = "myproject"
   site_name     = "examplewp01" # change me: Key Vault and storage names derive from this and must be globally unique
@@ -89,10 +89,9 @@ module "wordpress_site" {
 
   cdn_provider = "cloudflare"
   cloudflare = {
-    enabled    = true
-    account_id = var.cloudflare_account_id
-    domain     = "example.com"
-    subdomain  = "blog"
+    enabled   = true
+    domain    = "example.com"
+    subdomain = "blog"
   }
 
   # Key Vault and Storage deny public data-plane access by default.
@@ -183,7 +182,7 @@ Deploy multiple WordPress sites on a single App Service Plan:
 
 ```hcl
 module "shared" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v5.0.0"
 
   project_name       = "myproject"
   environment        = "nonprod"
@@ -192,7 +191,7 @@ module "shared" {
 }
 
 module "site1" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v5.0.0"
 
   project_name = "myproject"
   site_name    = "site1"
@@ -254,7 +253,7 @@ through `extra_secrets`, and surface them to WordPress as Key Vault references t
 
 ```hcl
 module "wordpress_site" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v5.0.0"
 
   # ... other configuration ...
 
@@ -552,7 +551,7 @@ Always pin module references to a specific version tag to prevent unexpected cha
 
 ```hcl
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v5.0.0"
   # ...
 }
 ```

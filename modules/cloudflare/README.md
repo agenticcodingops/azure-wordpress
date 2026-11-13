@@ -32,11 +32,10 @@ This module configures Cloudflare as the DNS provider and optionally as the CDN/
 
 ```hcl
 module "cloudflare" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/cloudflare?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/cloudflare?ref=v5.0.0"
 
-  cloudflare_account_id = var.cloudflare_account_id
-  domain                = "example.com"
-  cdn_provider          = "cloudflare"
+  domain       = "example.com"
+  cdn_provider = "cloudflare"
 
   sites = {
     "example-prod" = {
@@ -63,7 +62,6 @@ module "cloudflare" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `cloudflare_account_id` | Cloudflare account ID | `string` | - | Yes |
 | `domain` | Root domain name | `string` | - | Yes |
 | `sites` | Map of WordPress sites | `map(object)` | - | Yes |
 | `cdn_provider` | CDN mode: cloudflare, azure_front_door, direct | `string` | `"cloudflare"` | No |
@@ -79,6 +77,8 @@ module "cloudflare" {
 | `static_content_cache_ttl` | Edge cache TTL for static content | `number` | `86400` | No |
 | `front_door_hostnames` | Front Door hostnames (azure_front_door mode) | `map(string)` | `{}` | No |
 | `front_door_validation_tokens` | Front Door validation tokens | `map(string)` | `{}` | No |
+
+`cloudflare_account_id` was removed in v5.0.0: nothing in the module read it. A call that still passes it fails with `Unsupported argument`, so delete the argument when you move the pin. See [4.3 to 5.0](../../docs/upgrading/v4.3-to-v5.0.md).
 
 ## Outputs
 
@@ -252,7 +252,6 @@ No modules.
 | <a name="input_app_service_verification_tokens"></a> [app\_service\_verification\_tokens](#input\_app\_service\_verification\_tokens) | Map of site name to Azure App Service custom domain verification ID (for asuid TXT records) | `map(string)` | `{}` | no |
 | <a name="input_browser_cache_ttl"></a> [browser\_cache\_ttl](#input\_browser\_cache\_ttl) | Browser cache TTL in seconds (0 = respect origin headers) | `number` | `0` | no |
 | <a name="input_cdn_provider"></a> [cdn\_provider](#input\_cdn\_provider) | CDN provider: 'cloudflare' (proxied), 'azure\_front\_door' (DNS-only), or 'direct' (DNS-only) | `string` | `"cloudflare"` | no |
-| <a name="input_cloudflare_account_id"></a> [cloudflare\_account\_id](#input\_cloudflare\_account\_id) | Cloudflare account ID | `string` | n/a | yes |
 | <a name="input_domain"></a> [domain](#input\_domain) | Root domain name (e.g., example.com) | `string` | n/a | yes |
 | <a name="input_enable_cache_rules"></a> [enable\_cache\_rules](#input\_enable\_cache\_rules) | Enable the WordPress cache ruleset (Cache Rules). Available on every plan, including Free, which allows 10 cache rules; the ruleset uses 5 | `bool` | `false` | no |
 | <a name="input_enable_page_rules"></a> [enable\_page\_rules](#input\_enable\_page\_rules) | Enable page rules for WordPress caching (Free plan has 3 rule limit) | `bool` | `true` | no |

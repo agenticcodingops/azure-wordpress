@@ -68,7 +68,7 @@ Front Door accepts at most 10 match values in one rule condition. Through v4.3.4
 
 ```hcl
 module "front_door" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/front-door?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/front-door?ref=v5.0.0"
 
   project_name        = "example"
   site_name           = "examplewp01"
