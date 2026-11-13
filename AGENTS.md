@@ -88,7 +88,7 @@ These apply to any agent changing Terraform here. The project guidance file has 
   *Available*, pinned to an exact version. Otherwise use the azurerm resource, with variables shaped to the AVM
   interfaces (`lock`, `diagnostic_settings`, `role_assignments`, `managed_identities`, `tags`). Check its version
   constraints first: as of 2026-09-26, two of the ten Available modules this repo would use (Storage and
-  Key Vault) need a newer Terraform than the 1.9.8 the consumer's CI runs, and five cap azurerm below this tree's `~> 5.6`, so those
+  Key Vault) need a newer Terraform than the 1.9.8 that the consumer's CI and this repository's second Validate job run, and five cap azurerm below this tree's `~> 5.6`, so those
   five cannot init here at all.
 - Migrate existing bespoke modules only when a planned change touches them.
 - Every module declares `required_providers` with an upper bound.

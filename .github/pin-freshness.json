@@ -36,6 +36,25 @@
       "precondition": "Terraform 1.17.1 exactly, as the workflow asserts"
     },
     {
+      "id": "terraform-cli-consumer",
+      "locations": [
+        {
+          "file": ".github/workflows/validate.yml",
+          "pattern": "TERRAFORM_VERSION_CONSUMER:\\s*[\\\"\\x27]?(?P<value>\\d+\\.\\d+\\.\\d+)"
+        },
+        {
+          "file": "CLAUDE.md",
+          "pattern": "TF_CONSUMER_VERSION=(?P<value>\\d+\\.\\d+\\.\\d+)"
+        }
+      ],
+      "source": {
+        "type": "github_releases",
+        "repo": "hashicorp/terraform"
+      },
+      "policy": "minimum",
+      "precondition": "The consumer's pinned version, which the second Validate job runs. Move it when the consumer moves, not when a new release appears"
+    },
+    {
       "id": "terraform-docs",
       "locations": [
         {

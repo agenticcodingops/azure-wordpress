@@ -13,6 +13,10 @@ permissions:
 env:
   # One Terraform version for the Format and Validate jobs. Bump it here only.
   TERRAFORM_VERSION: "1.17.1"
+  # The version the consumer's CI pins, run by the "Validate on consumer Terraform" job, so a
+  # construct that needs a newer CLI fails here before it fails there. Written here only; move it
+  # when the consumer moves, not when a new release appears.
+  TERRAFORM_VERSION_CONSUMER: "1.9.8"
 
 jobs:
   format:
@@ -70,6 +74,50 @@ jobs:
         run: |
           terraform version
           terraform version | grep -Fqx "Terraform v${TERRAFORM_VERSION}"
+
+      - name: Initialize
+        working-directory: ${{ matrix.module }}
+        run: terraform init -backend=false
+
+      - name: Validate
+        working-directory: ${{ matrix.module }}
+        run: terraform validate
+
+  # The same init and validate on the consumer's Terraform. This is a separate job and not a
+  # second matrix dimension on the job above: a second dimension would rename that job's checks
+  # ("Validate (modules/...)"), which the branch rules require by name, and they would then wait
+  # forever. Keep the two module lists identical.
+  validate-consumer:
+    name: Validate on consumer Terraform
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - modules/wordpress-site
+          - modules/shared-infrastructure
+          - modules/app-service
+          - modules/database
+          - modules/storage
+          - modules/key-vault
+          - modules/networking
+          - modules/dns-zones
+          - modules/cloudflare
+          - modules/front-door
+          - modules/monitoring
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION_CONSUMER }}
+          terraform_wrapper: false
+
+      - name: Terraform Version
+        run: |
+          terraform version
+          terraform version | grep -Fqx "Terraform v${TERRAFORM_VERSION_CONSUMER}"
 
       - name: Initialize
         working-directory: ${{ matrix.module }}

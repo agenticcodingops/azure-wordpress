@@ -9,7 +9,8 @@ pull request.
 1. Fork the repository and clone your fork.
 2. Add the canonical repository as the `upstream` remote.
 3. Install the required tools:
-   - Terraform 1.17.1 (the version used by CI)
+   - Terraform 1.17.1 (the version CI formats and validates with). CI also validates every module on 1.9.8,
+     the version the consumer's CI runs, so a change must validate on both
    - terraform-docs 0.20.0
    - Checkov 3.3.22
    - Trivy

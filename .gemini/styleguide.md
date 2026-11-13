@@ -8,7 +8,7 @@ for automated reviews performed on the `azure-wordpress` repository.
 ## 1. Project Context & Technology Stack Summary
 
 - **Domain**: Production-grade, highly available WordPress infrastructure deployment on Microsoft Azure using Infrastructure-as-Code (IaC).
-- **Primary Languages & Frameworks**: HashiCorp Terraform / OpenTofu (pinned to Terraform `1.17.1`), targeting `azurerm` (`~> 5.6`) and `azapi` providers.
+- **Primary Languages & Frameworks**: HashiCorp Terraform / OpenTofu (pinned to Terraform `1.17.1`; CI also validates every module on `1.9.8`, the version the consumer's CI runs), targeting `azurerm` (`~> 5.6`) and `azapi` providers.
 - **Workload Container**: WordPress on Azure App Service using `mcr.microsoft.com/appsvc/wordpress-debian-php`.
 - **Supporting Scripts**: Python 3 (`scripts/*.py`), POSIX Shell (`scripts/*.sh`, `.githooks/*.sh`), and PowerShell (`scripts/*.ps1`).
 - **Static Analysis & Linters**:

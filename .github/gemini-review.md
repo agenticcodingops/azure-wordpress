@@ -12,7 +12,7 @@ for Gemini Code Assist on pull requests in the `azure-wordpress` repository.
 ## 1. Project Context & Technology Stack Summary
 
 - **Repository**: `azure-wordpress` (Infrastructure-as-Code for enterprise WordPress on Azure).
-- **Primary Languages**: HashiCorp Terraform / OpenTofu (pinned to Terraform `1.17.1`).
+- **Primary Languages**: HashiCorp Terraform / OpenTofu (pinned to Terraform `1.17.1`; CI also validates every module on `1.9.8`, the version the consumer's CI runs).
 - **Target Providers**: `hashicorp/azurerm` (`~> 5.6`), `azure/azapi`, `hashicorp/random`.
 - **Workload**: Containerized WordPress (`mcr.microsoft.com/appsvc/wordpress-debian-php`) running on Linux Azure App Service.
 - **Architecture**: Two-layer modular composition model:
