@@ -492,8 +492,11 @@ Written for one site; a consumer repeats it per site key.
 9. Set `rbac_authorization_enabled = true` and stop managing the three access policies, preferably by dropping them
    from state without deleting them, as the AVM module does on its own upgrade [L446].
 10. Apply in a quiet window: every access policy is invalidated immediately [L466].
-11. Restart the app and the slot so references are refetched now [L471]. Check that no setting holds the literal
-    reference string [L472] and that a plan as the deployer reads every secret.
+11. Force the references to be resolved again now, for the app and for the slot. A configuration change to the app
+    does it [L471], and so does the reference-refresh call that [Rotate secrets](operations/rotate-secrets.md) uses;
+    a restart alone is not documented to refetch [L625]. A cached value can make an ineffective role assignment look
+    fine, so check after the refresh that no setting holds the literal reference string [L472] and that a plan as
+    the deployer reads every secret.
 12. Monitor for access issues [L496], for at least 24 hours so that every reference has been refetched once
     [L471].
 
@@ -738,4 +741,4 @@ Not measured, with what was tried:
 - **Telemetry:** whether the deployment shows as a change in every plan.
 - **The second scanner** in the shared scan workflow was not run.
 
-Sources: the [evidence ledger](avm-adoption-assessment-ledger.md), 624 rows.
+Sources: the [evidence ledger](avm-adoption-assessment-ledger.md), 625 rows.

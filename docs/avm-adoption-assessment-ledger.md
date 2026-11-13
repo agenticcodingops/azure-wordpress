@@ -2,7 +2,7 @@
 
 This is the evidence ledger for [the Azure Verified Module adoption assessment](avm-adoption-assessment.md). Every
 `[L<n>]` marker on that page names one row here, and every row here is cited there at least once. It holds
-624 rows and refers to 213 saved copies.
+625 rows and refers to 213 saved copies.
 
 How to read a row:
 
@@ -19,7 +19,8 @@ How to read a row:
 - A pipe inside a quote is written `\|`. Nothing else in a quote is altered. A quote that itself holds a
   backtick is fenced with a longer run of backticks and one space of padding on each side.
 - Rows L1 to L573 are in the order the page first cites them. Rows L574 to L624 were added after an
-  independent audit of the page, in the order they were added.
+  independent audit of the page, in the order they were added. Row L625 was added after review of the
+  pull request.
 
 The saved copies are third-party pages and local logs, so they are not committed. They are kept outside the repository
 under the names this ledger uses. What a reader can check depends on the row:
@@ -659,3 +660,4 @@ under the names this ledger uses. What a reader can check depends on the row:
 | L622 | https://raw.githubusercontent.com/Azure/terraform-azurerm-avm-res-insights-component/v0.5.0/variables.tf (line 39 of the saved copy) | 2026-11-13 | `A-gh-avm-res-insights-component-v0.5.0-variables.tf` sha256 `c07448da4bb988b701491d1a0e7f336913113d440f5a649cad56c937b9e89625` | `variable "application_type" {` | `avm-res-insights-component` v0.5.0 has an `application_type` input |
 | L623 | https://raw.githubusercontent.com/Azure/terraform-azurerm-avm-res-insights-component/v0.5.0/variables.tf (line 339 of the saved copy) | 2026-11-13 | `A-gh-avm-res-insights-component-v0.5.0-variables.tf` sha256 `c07448da4bb988b701491d1a0e7f336913113d440f5a649cad56c937b9e89625` | `variable "retention_in_days" {` | `avm-res-insights-component` v0.5.0 has a `retention_in_days` input |
 | L624 | https://registry.terraform.io/v1/modules/Azure/avm-res-insights-actiongroup/azurerm (exact substring of the saved copy) | 2026-11-13 | `A-registry-avm-res-insights-actiongroup.json` sha256 `f71f4811b37a9567fb79fbf97c1687215bf28342cafdd78d481ee2d699154f9b` | `{"name":"email_receivers","type":"map(object({` | `avm-res-insights-actiongroup` 0.1.0 takes e-mail receivers as an `email_receivers` map input per its registry record |
+| L625 | `docs/operations/rotate-secrets.md:81` | n/a (commit ce25ea4) | n/a | `   This is the call Microsoft documents for forcing resolution. A restart alone is not documented to refetch; a` | This repository's rotation runbook records that the refresh call forces resolution and that a restart alone is not documented to refetch |
