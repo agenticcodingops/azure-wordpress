@@ -87,9 +87,9 @@ These apply to any agent changing Terraform here. The project guidance file has 
   [index](https://azure.github.io/Azure-Verified-Modules/indexes/terraform/tf-resource-modules/) lists it as
   *Available*, pinned to an exact version. Otherwise use the azurerm resource, with variables shaped to the AVM
   interfaces (`lock`, `diagnostic_settings`, `role_assignments`, `managed_identities`, `tags`). Check its version
-  constraints first: as of 2026-09-26, two of the ten Available modules this repo would use (Storage and
-  Key Vault) need a newer Terraform than the 1.9.8 that the consumer's CI and this repository's second Validate job run, and five cap azurerm below this tree's `~> 5.6`, so those
-  five cannot init here at all.
+  constraints first: as of 2026-11-13, seven of the sixteen measured candidates declare `modtm`; Storage, Key Vault and
+  network security group need a newer Terraform than the 1.9.8 that the consumer's CI and this repository's second Validate job run; and six (MySQL, Key Vault, Log Analytics workspace, CDN profile, Front Door WAF policy and autoscale setting) cap azurerm below this tree's `~> 5.6`, so those
+  six cannot init here at all. Key Vault caps azurerm at `< 5.0`; the Application Insights component requires no azurerm.
 - Migrate existing bespoke modules only when a planned change touches them.
 - Every module declares `required_providers` with an upper bound.
 - Environment-aware defaults leave the `optional()` default off and select the value in the `*_config` local.

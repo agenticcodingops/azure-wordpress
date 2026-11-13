@@ -12,7 +12,7 @@ pull request.
    - Terraform 1.17.1 (the version CI formats and validates with). CI also validates every module on 1.9.8,
      the version the consumer's CI runs, so a change must validate on both
    - terraform-docs 0.20.0
-   - Checkov 3.3.22
+   - Checkov 3.4.3
    - Trivy
    - Python 3.11 or newer, with PyYAML 6.0.3 and jsonschema 4.25.1
    - Lefthook and the scanners configured in `lefthook.yml`
@@ -67,18 +67,18 @@ Review the resulting diff and ensure a second run is idempotent.
 
 ## Run the compliance scan
 
-CI parity uses Checkov 3.3.22. The v3.1.2 push hooks require a trusted executable
+CI parity uses Checkov 3.4.3. The v3.1.2 push hooks require a trusted executable
 named `checkov` on PATH and scan files changed by each pushed ref. New refs compare with the destination
 remote default; fallback selection counts only that destination's remote-tracking refs. Keep those refs current before pushing. For the suffixed parity command:
 
 ```bash
-pipx install --suffix=@3322 checkov==3.3.22
+pipx install --suffix=@343 checkov==3.4.3
 ```
 
 Run it with the same render setting and skip list that the validation workflow uses:
 
 ```bash
-RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform --quiet \
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@343 -d . --framework terraform --quiet \
   --skip-check "$(sed -n 's/^ *skip_check: *\([^[:space:]]*\).*/\1/p' .github/workflows/validate.yml)"
 ```
 
