@@ -21,3 +21,7 @@ Maintainers must check compatibility before adding a resource and pin a selected
 - `AGENTS.md:80-86` — establishes the verified-module-first rule, compatibility checks, and migration boundary.
 - `modules/shared-infrastructure/variables.tf:84-91` — exposes the verified-module lock shape.
 - `modules/wordpress-site/variables.tf:706-711` — models diagnostic settings on the verified-module interface while noting provider limitations.
+
+## See also
+
+- [Azure Verified Module adoption assessment](../avm-adoption-assessment.md) — what migrating each existing module would take, measured on 2026-11-13.
