@@ -13,7 +13,7 @@ Reusable Terraform/OpenTofu modules for deploying WordPress on Azure. A consumer
 ## Commands
 
 ```bash
-# Format. CI runs Terraform 1.9.8 (`TERRAFORM_VERSION` in validate.yml); use the same binary
+# Format. CI runs Terraform 1.17.1 (`TERRAFORM_VERSION` in validate.yml); use the same binary
 terraform fmt -recursive -check -diff
 terraform fmt -recursive
 
@@ -40,11 +40,11 @@ Run these before pushing. They are what CI runs on a pull request, at the same v
 
 ```bash
 set -euo pipefail   # stop at the first failed check
-# validate.yml "Terraform Version" and "Format Check": Terraform 1.9.8 exactly, as the workflow asserts
-terraform version | grep -q '^Terraform v1.9.8$' || { echo 'CI runs Terraform 1.9.8; install that binary'; exit 1; }
+# validate.yml "Terraform Version" and "Format Check": Terraform 1.17.1 exactly, as the workflow asserts
+terraform version | grep -q '^Terraform v1.17.1$' || { echo 'CI runs Terraform 1.17.1; install that binary'; exit 1; }
 terraform fmt -recursive -check -diff
 
-# validate.yml "Validate": Terraform 1.9.8, init and validate each module
+# validate.yml "Validate": Terraform 1.17.1, init and validate each module
 for m in modules/wordpress-site modules/shared-infrastructure modules/app-service modules/database modules/storage modules/key-vault modules/networking modules/dns-zones modules/cloudflare modules/front-door modules/monitoring; do
   terraform -chdir="$m" init -backend=false && terraform -chdir="$m" validate || exit 1
 done
@@ -122,6 +122,8 @@ All module READMEs use `<!-- BEGIN_TF_DOCS -->` / `<!-- END_TF_DOCS -->` markers
 
 Do NOT leave `.terraform/` or `.terraform.lock.hcl` in module directories when running terraform-docs — lock files cause provider versions to resolve differently than CI (which runs without `terraform init`).
 
+**Stay on 0.20.0 until the action moves (measured 2026-11-13).** v1.4.1 is the action's latest release, and its default branch still builds from the 0.20.0 image, so CI cannot run a newer CLI through it. From 0.22.0 the delimiter row of every generated table is written with spaces (`| ---- | ---- |`, not `|------|------|`): 0.24.0 fails `--output-check` on all 11 unchanged READMEs, and the READMEs that 0.24.0 writes (56 delimiter rows changed across the 11 files, nothing else) fail the 0.20.0 check, which is the one CI runs. Moving means replacing the action step and regenerating the READMEs in the same change.
+
 ## Key Patterns
 
 **WordPress container:** Uses `mcr.microsoft.com/appsvc/wordpress-debian-php`. This container expects `DATABASE_HOST`, `DATABASE_NAME`, `DATABASE_USERNAME`, `DATABASE_PASSWORD` env vars (NOT the standard `WORDPRESS_DB_*` names). The app-service module constructs these internally from its input variables.
@@ -142,7 +144,7 @@ Update the `?ref=` references in README.md and examples/ to the version being re
 
 ## CI Pipeline (.github/workflows/validate.yml)
 
-Four jobs: Format Check (`terraform fmt`), Validate (11 modules), Checkov, Documentation (terraform-docs). Format Check and Validate run **Terraform 1.9.8**, the version the consumer's CI runs, installed by `hashicorp/setup-terraform` pinned to a commit SHA with `terraform_wrapper: false`. The version lives once, in the workflow-level `TERRAFORM_VERSION`, and each job's `Terraform Version` step fails if the installed CLI does not print exactly that version. Until 2026-09 they ran OpenTofu 1.6.0; `fmt -recursive -check` was clean on both CLIs at the switch. All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
+Four jobs: Format Check (`terraform fmt`), Validate (11 modules), Checkov, Documentation (terraform-docs). Format Check and Validate run **Terraform 1.17.1**, installed by `hashicorp/setup-terraform` pinned to a commit SHA with `terraform_wrapper: false`. The version lives once, in the workflow-level `TERRAFORM_VERSION`, and each job's `Terraform Version` step fails if the installed CLI does not print exactly that version. Before that they ran the 1.9.8 release, the version the consumer's CI runs; at the switch `fmt -recursive -check` and `validate` on all 11 modules gave the same results on both CLIs, and mock-provider plans of the composition module planned the same resources and argument values (1.17.1 also prints the providers' write-only attributes, which 1.9.8 does not render). CI therefore no longer runs the consumer's version or the modules' `>= 1.6.0` floor: a construct that needs a newer CLI passes here and fails there (`false && tobool("x")` is an error on 1.9.8 and `false` on 1.17.1, because the logical operators short-circuit from 1.12), so check a change that uses newer language features with a 1.9.8 binary as well. Until 2026-09 the jobs ran OpenTofu 1.6.0; `fmt -recursive -check` was clean on both CLIs at that switch. All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
 
 **That workflow's Checkov is not the Checkov job's, but it shares its settings.** `terraform-scan.yml` calls auto-code-scanning's reusable scan, pinned by SHA (v3.1.2). It runs the Checkov that release pins (3.4.3, against the Checkov job's 3.3.22), with `soft_fail`, and it reads auto-code-scanning's own `configs/azure/.checkov.yaml`, whose skip list is empty. A job in `terraform-scan.yml` parses the trusted base's `validate.yml` Checkov step on pull requests (the current commit otherwise), separately checks proposed policy drift, and passes its `skip_check` and `RENDER_EDGES_DUPLICATE_ITER_COUNT` as the scan's `checkov-skip-checks` and `checkov-render-iter-count` inputs, so each is written once. The scan merges the explicit skip list with its own. In v3.1.2 unchanged inline skips on the same resource and file as the trusted base are honoured, including resources inside nested local modules and plain, `for_each` or `count` module calls with unchanged names and literal sources; new or modified skips require exact occurrence approvals using schema 2.0. This repository has no suppression registry or baseline. Move the `uses:` pin and `scanning-repo-ref` together at v3.1.2: the setup job copies a helper from `scanning-repo-ref`, so a `uses:`-only bump fails it. The scan caller grants `actions: read` alongside `contents: read`, `security-events: write` and `pull-requests: write`, matching the reusable SARIF jobs' permission ceiling. Do not add a third skip-list source, and keep `skip_check` in the format "Checkov skip_check Format" requires: the job strips spaces and drops duplicates before it passes the list on, but the Checkov action's own handling of a folded block is what has misled before.
 
@@ -585,7 +587,7 @@ Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure`
   - `avm-res-cdn-profile`
   - `avm-res-network-virtualnetwork`, `avm-res-network-privatednszone`
 - **Read the module's own constraints before calling it.** Registry data for the latest version of each, measured the same day:
-  - All ten need the `modtm` provider, and all but MySQL need Terraform ≥ 1.9 (Storage ≥ 1.10, Key Vault ≥ 1.11). CI validates with Terraform 1.9.8. That meets the ≥ 1.9 floor, but not Storage's ≥ 1.10 or Key Vault's ≥ 1.11, so adopting either of those two still means raising `TERRAFORM_VERSION` in `validate.yml` first.
+  - All ten need the `modtm` provider, and all but MySQL need Terraform ≥ 1.9 (Storage ≥ 1.10, Key Vault ≥ 1.11). CI validates with Terraform 1.17.1, which meets all of them. The consumer's CI runs 1.9.8 and the modules declare `>= 1.6.0`: 1.9.8 meets the ≥ 1.9 floor, but not Storage's ≥ 1.10 or Key Vault's ≥ 1.11, so adopting either of those two still raises the Terraform version every consumer needs.
   - Five cap azurerm below this tree's `~> 5.6`: MySQL and CDN profile (`~> 4.0`), Key Vault (`< 5.1`), Log Analytics and Application Insights (`< 5.0.0`). Terraform intersects the constraints, so they cannot init here; write the azurerm resource until they support 5.6. The other five depend on azapi, not azurerm.
 - **If it is only Proposed, or absent** (as of that date: action group, metric alert, activity-log alert, scheduled-query rule, consumption budget, availability test), write the azurerm resource directly. Shape the variables to the AVM interface conventions so a later switch is cheap:
   - `lock = { kind, name }` (the current AVM spec adds an optional `notes`; `wordpress-site` and
@@ -726,10 +728,10 @@ Limits worth stating in any report: these are greenfield **create** plans, so th
 Pin to the exact versions CI uses, or results diverge:
 
 ```bash
-# Terraform 1.9.8 — TERRAFORM_VERSION in validate.yml. Check the binary first: a newer
+# Terraform 1.17.1 — TERRAFORM_VERSION in validate.yml. Check the binary first: a different
 # terraform earlier on PATH gives different results. Verify a download against
-# https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_SHA256SUMS.
-terraform version            # must print v1.9.8
+# https://releases.hashicorp.com/terraform/1.17.1/terraform_1.17.1_SHA256SUMS.
+terraform version            # must print v1.17.1
 
 # Format — the same command CI runs, from the repo root
 terraform fmt -recursive -check -diff

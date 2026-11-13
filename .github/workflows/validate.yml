@@ -12,7 +12,7 @@ permissions:
 
 env:
   # One Terraform version for the Format and Validate jobs. Bump it here only.
-  TERRAFORM_VERSION: "1.9.8"
+  TERRAFORM_VERSION: "1.17.1"
 
 jobs:
   format:

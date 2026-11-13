@@ -9,7 +9,7 @@ pull request.
 1. Fork the repository and clone your fork.
 2. Add the canonical repository as the `upstream` remote.
 3. Install the required tools:
-   - Terraform 1.9.8 (the version used by CI)
+   - Terraform 1.17.1 (the version used by CI)
    - terraform-docs 0.20.0
    - Checkov 3.3.22
    - Trivy
