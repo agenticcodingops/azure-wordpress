@@ -13,6 +13,11 @@ rule of [ADR 0012](adr/0012-azure-verified-modules-first.md).
   that starts with **Inferred:** is reasoning from the rows it cites, not a measurement. **UNKNOWN** means not measured.
 - **Limits:** nothing here was planned or applied. The research ran `init -backend=false`, `validate`, `providers`,
   `fmt`, a static scan, and `terraform test` with mock providers only. No cloud credentials were used.
+- **Note added 2026-11-13, after the check:** the proposal was approved. CI now formats and validates on Terraform
+  1.17.1 and also validates every module on 1.9.8, the version the consumer's CI runs. Where this page says "CI runs"
+  a version, or "once CI runs Terraform 1.10 or later" (1.11 for the network security group), read the 1.9.8 job:
+  those adoptions stay blocked until the consumer moves and `TERRAFORM_VERSION_CONSUMER` in the validation workflow
+  is raised. The text below and the evidence ledger are unchanged.
 
 Contents: [Summary](#summary) · [Mapping table](#mapping-table) · [Toolchain matrix](#toolchain-matrix) ·
 [Migration mechanics](#migration-mechanics) · [Key Vault RBAC](#key-vault-rbac) ·

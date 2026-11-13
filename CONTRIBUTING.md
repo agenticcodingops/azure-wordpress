@@ -32,8 +32,8 @@ Create a short-lived branch with a descriptive prefix such as `feature/`, `fix/`
 
 ## Format and validate Terraform
 
-Confirm that the selected binary is the same version as CI, then run the CI commands
-from the repository root:
+Confirm that the selected binary is the version CI formats with (`TERRAFORM_VERSION` in
+`.github/workflows/validate.yml`), then run the CI commands from the repository root:
 
 ```bash
 terraform version
@@ -43,6 +43,10 @@ for module in modules/*/; do
   (cd "$module" && terraform init -backend=false && terraform validate) || exit 1
 done
 ```
+
+CI runs the `init` and `validate` loop a second time on the version the consumer's CI runs
+(`TERRAFORM_VERSION_CONSUMER` in the same workflow). Repeat the loop with a binary of that
+version: a change must validate on both.
 
 CI starts without module lock files. If local initialization created `.terraform/`
 directories or module lock files, remove them before checking generated documentation.
