@@ -545,7 +545,6 @@ variable "cloudflare" {
   description = "Cloudflare configuration"
   type = object({
     enabled                        = optional(bool, false)
-    account_id                     = optional(string, "")
     domain                         = optional(string, "")
     subdomain                      = optional(string, "")
     proxied                        = optional(bool, true)
@@ -1078,7 +1077,7 @@ variable "lock" {
 
 # App Service Plan density validation - DEPRECATED: nothing reads this input.
 variable "plan_density_limit" {
-  description = "DEPRECATED, and has no effect: nothing in this module reads it, so it enforces no limit on sites per App Service Plan. It is kept, with its validation, only so existing configurations that set it still plan, and will be removed in the next major release. Remove it from your configuration."
+  description = "DEPRECATED, and has no effect: nothing in this module reads it, so it enforces no limit on sites per App Service Plan. It is kept, with its validation, only so existing configurations that set it still plan, and will be removed in a later major release (v5.0.0 keeps it). Remove it from your configuration."
   type        = number
   default     = 10
 

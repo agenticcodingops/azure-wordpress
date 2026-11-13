@@ -1,6 +1,6 @@
 # Upgrade guide
 
-Latest release: **v4.3.2**. Pin module sources with `?ref=v4.3.2`. Releases are listed on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page.
+Latest release: **v5.0.0**. Pin module sources with `?ref=v5.0.0`. Releases are listed on the [Releases](https://github.com/agenticcodingops/azure-wordpress/releases) page.
 
 These pages hold the upgrade notes that were in the repository README, in `modules/wordpress-site/README.md`, and in the changelog's upgrade-path sections. Changelog text is copied unchanged. A statement about what a release changed is cited to [`CHANGELOG.md`](../../CHANGELOG.md) or to that version's [release notes](https://github.com/agenticcodingops/azure-wordpress/releases). Where neither states a plan diff, or whether anything is replaced or destroyed, the page says **UNKNOWN**.
 
@@ -19,6 +19,10 @@ When taking the origin restriction ownership change, also follow
 | 4.1.1 to 4.3.0 | [4.1.1 to 4.3.0](v4.1.1-to-v4.3.0.md) | v4.2.0, v4.3.0 |
 | 4.3.0 to 4.3.1 | no page: v4.3.1 changes one CI workflow and no module ([changelog](../../CHANGELOG.md#431-2026-10-25)); a consumer on v4.3.0 plans no changes | v4.3.1 |
 | 4.3.1 to 4.3.2 | no page: v4.3.2 attaches the Front Door caching rule set to the route (#138, fixed in #140; the changelog entry is written when the release is cut, so this row cites the pull request). A consumer with `cdn_provider = "azure_front_door"` plans in-place updates of the route and of the three rules' orders (the admin rule moves from order 0, a global rule in Azure's terms, to order 1) and nothing else; any other consumer plans no changes. After apply, `wp-admin/` and `wp-login.php` are no longer cached at the edge and `wp-content/uploads/` and static assets are cached for the configured minutes | v4.3.2 |
+| 4.3.2 to 4.3.3 | no page: v4.3.3 changes CI tooling and no module ([changelog](../../CHANGELOG.md#433-2026-11-10)) | v4.3.3 |
+| 4.3.3 to 4.3.4 | no page: v4.3.4 removes the Cloudflare module's managed-phase ruleset ([changelog](../../CHANGELOG.md#434-2026-11-12)). The note is in the Cloudflare module README, [Upgrading: managed-phase ruleset removal](../../modules/cloudflare/README.md#upgrading-managed-phase-ruleset-removal): read it before you apply if `enable_waf = true` ever created that ruleset | v4.3.4 |
+| 4.3.4 to 4.3.5 | [Front Door origin access restrictions](front-door-origin-restrictions.md) for the origin restriction ownership change (#167). The same release splits the Front Door static cache rule (#171); that note is in the Front Door module README under [Caching Rules](../../modules/front-door/README.md#caching-rules) ([changelog](../../CHANGELOG.md#435-2026-11-12)) | v4.3.5 |
+| 4.3 to 5.0 | [4.3 to 5.0](v4.3-to-v5.0.md): removes the unused Cloudflare account ID input. A direct caller of `modules/cloudflare` must delete the `cloudflare_account_id` argument; nobody else has to change anything, and no resource changes. The deprecated `plan_density_limit` input and the `azapi` provider requirement stay | v5.0.0 |
 | MySQL 8.0 to 8.4 | [MySQL 8.0 to 8.4](mysql-8.0-to-8.4.md) | input added in v4.1.0 |
 | PHP security release | [Taking a PHP security release with a dated image tag](php-security-release.md) | any release: `wordpress_version` |
 

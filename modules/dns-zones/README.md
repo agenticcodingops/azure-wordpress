@@ -57,7 +57,7 @@ MySQL Flexible Server with VNet integration requires Private DNS zones to:
 
 ```hcl
 module "dns_zones" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/dns-zones?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/dns-zones?ref=v5.0.0"
 
   project_name        = "example"
   site_name           = "examplewp01"

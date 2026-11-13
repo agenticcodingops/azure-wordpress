@@ -60,7 +60,7 @@ Burstable SKUs use CPU credits that deplete under sustained WordPress load:
 
 ```hcl
 module "database" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/database?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/database?ref=v5.0.0"
 
   project_name        = "example"
   site_name           = "examplewp01"

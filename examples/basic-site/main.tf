@@ -42,7 +42,7 @@ data "azurerm_client_config" "current" {}
 # Deploy WordPress site
 module "wordpress" {
   # Pin to a specific version tag for stability
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v5.0.0"
 
   project_name  = var.project_name
   site_name     = var.site_name
@@ -113,11 +113,10 @@ module "wordpress" {
   # Bind the Cloudflare allow rules to this zone: enable only after an edge transform overwrites X-Azure-FDID.
   cdn_origin_header_values = var.cdn_origin_header_values
   cloudflare = {
-    enabled    = true
-    account_id = var.cloudflare_account_id
-    domain     = var.cloudflare_domain
-    subdomain  = var.cloudflare_subdomain
-    proxied    = true
+    enabled   = true
+    domain    = var.cloudflare_domain
+    subdomain = var.cloudflare_subdomain
+    proxied   = true
   }
 
   # Database configuration
