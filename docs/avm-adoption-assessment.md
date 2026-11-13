@@ -23,19 +23,23 @@ Contents: [Summary](#summary) · [Mapping table](#mapping-table) · [Toolchain m
 ## Summary
 
 1. **Six of sixteen candidates cannot be composed with this tree.** MySQL, Key Vault, the Log Analytics workspace, the
-   CDN profile, the Front Door WAF policy and the autoscale setting cap azurerm below 5 [L2] [L3] [L4] [L5]
-   [L6] [L7], and every module here pins `~> 5.6` [L8]. The conflict was measured: `init` exits 1 [L9].
-2. **Ten candidates need no azurerm and compose today.** An azapi-only module next to a module pinned `~> 5.6`
-   initialises and validates on both toolchains [L10] [L11] [L12] [L13]. Two of the ten need a newer CLI than
-   CI runs: storage needs Terraform 1.10 [L14] and the network security group needs 1.11 [L15].
+   CDN profile, the Front Door WAF policy and the autoscale setting cap azurerm below 5 [L2] [L3] [L4] [L5] [L6] [L7],
+   and every module here pins `~> 5.6` [L8]. The conflict was measured for the workspace on both toolchains, where
+   `init` exits 1 [L9] [L337], and for MySQL and Key Vault on 1.17.1 [L328] [L584] [L332] [L585]. **Inferred:** the CDN
+   profile, the WAF policy and the autoscale setting fail the same way; they were not run next to azurerm 5.
+2. **Ten candidates require no azurerm.** Eight were initialised next to a module pinned `~> 5.6`. Six of them
+   initialise on 1.9.8 [L295] [L299] [L308] [L312] [L10] [L318] and on 1.17.1 [L296] [L300] [L309] [L313] [L12] [L319],
+   and the resource group module also validates on both [L11] [L13]. The other two need a newer CLI than CI runs:
+   storage needs Terraform 1.10 [L14] and the network security group needs 1.11 [L15]. The action group and the
+   activity-log alert were not run.
 3. **Migration is simpler than the guidance says.** A `moved` block may cross a module package boundary since
    Terraform 1.3.0 [L16], so a module can carry the move and a consumer pastes nothing. `import` plus `removed` is the
    fallback.
 4. **Key Vault is blocked, and its legacy switch does not keep this repository's model.** The AVM module defaults to
-   Azure RBAC [L17] [L18]. With the switch on it owns the whole policy list [L19], and the app's policy cannot be
+   Azure RBAC [L574] [L18]. With the switch on it owns the whole policy list [L19], and the app's policy cannot be
    passed in without a dependency cycle [L20]. A move to RBAC can be done on the bespoke module, without AVM.
-5. **Static analysis stops at the module call.** CI does not read AVM module bodies [L21] [L22], and the pinned
-   engine has no check for any azapi resource type [L23]. Telemetry is on by default [L24].
+5. **Static analysis stops at the module call.** CI does not read AVM module bodies [L21] [L22], and the pinned engine
+   has no check for any azapi resource type [L23]. Telemetry is on by default [L555].
 
 ## Mapping table
 
@@ -68,8 +72,9 @@ Not published as modules:
 - Metric alert and scheduled query rule are Proposed in the index [L141] [L142], and the registry returns 404 for
   both [L143] [L144]. The consumption budget is also Proposed [L145] [L146]; this repository declares none.
 - The index has no row for an availability test, a standalone lock or a standalone diagnostic setting [L147], and the
-  registry has no web-test module under the expected name [L148]. Locks and diagnostic settings exist only as the
-  `lock` and `diagnostic_settings` interfaces of each resource module.
+  registry has no web-test module under the expected name [L148]. A resource module takes a lock and diagnostic settings
+  as its own `lock` and `diagnostic_settings` inputs instead, as the Key Vault module does [L576] [L577]. Not every
+  module has both: the autoscale module has no `lock` input [L553].
 - The pattern index has no WordPress module [L149].
 
 Why the bold constraints block: the `~>` operator lets only the right-most stated component grow [L150].
@@ -79,24 +84,28 @@ at 5.0.0, so every intersection is empty. The registry holds azurerm 4.81.0 as t
 
 ### Per module
 
-No resource in this repository uses azapi at this commit [L153]. ForceNew hazards are from provider documentation,
-because a mock cannot show replacement. For an azapi-based module the provider documents replacement only for `name`
-[L154] and `parent_id` [L155], and for whatever a module wires into `replace_triggers_external_values` [L156].
-Which body properties each AVM module wires that way is UNKNOWN, so an azurerm ForceNew attribute does not say what
-the azapi-based module does on the same change.
+No resource in this repository uses azapi at this commit: a search of the tree for azapi resource and data blocks finds
+none [L596], and the composition module says the same of itself in a comment [L153]. ForceNew hazards are from provider
+documentation, because a mock cannot show replacement. For an azapi-based module the provider documents replacement for
+`name` [L154] and `parent_id` [L155], and two arguments through which a module adds triggers of its own:
+`replace_triggers_external_values` [L156] and `replace_triggers_refs` [L586]. The root `main.tf` of the Key Vault module
+sets the first on its role-assignment resource [L587] [L588], and the root `main.tf` of the serverfarm module and of the
+resource group module sets neither [L589] [L590]. The other files of those modules, and the other candidates, were not
+read for this: UNKNOWN. So an azurerm ForceNew attribute does not say what the azapi-based module does on the same
+change.
 
 | Module | Resources and AVM candidate | Interface gaps | ForceNew hazards (azurerm documentation) | Verdict |
 | --- | --- | --- | --- | --- |
-| `networking` | Virtual network [L157] and subnets [L158]: virtual network module. Network security groups [L159] and their subnet associations [L160]: network security group module. | None found. The virtual network module's `lock` has no `notes` [L161]. | Virtual network `name` [L162]; subnet `name` [L163]; security group `name` [L164]. | **Adopt on next touch** for the virtual network and subnets. The security groups follow once CI runs Terraform 1.11 or later [L15]; until then keep azurerm, AVM-shaped. |
-| `dns-zones` | Private DNS zone [L165] and virtual network link [L166]: private DNS zone module. | None found. `lock` has no `notes` [L167]. | Zone `name` [L168]; link `virtual_network_id` [L169]. | **Adopt on next touch.** |
+| `networking` | Virtual network [L157] and subnets [L158]: virtual network module. Network security groups [L159] and their subnet associations [L160]: network security group module. | None found among the inputs compared: `subnets` [L612] with delegations [L613], service endpoints [L614] and a security group reference [L615]; `security_rules` on the security group module [L616]. A field-by-field comparison was not done: UNKNOWN. The virtual network module's `lock` has no `notes` [L161]. | Virtual network `name` [L162]; subnet `name` [L163]; security group `name` [L164]. | **Adopt on next touch** for the virtual network and subnets. The security groups follow once CI runs Terraform 1.11 or later [L15]; until then keep azurerm, AVM-shaped. |
+| `dns-zones` | Private DNS zone [L165] and virtual network link [L166]: private DNS zone module. | None found among the inputs compared: `domain_name` [L617] and `virtual_network_links` [L618]. A field-by-field comparison was not done: UNKNOWN. `lock` has no `notes` [L167]. | Zone `name` [L168]; link `virtual_network_id` [L169]. | **Adopt on next touch.** |
 | `database` | Flexible server [L170], configurations [L171], Entra administrator [L172], database [L173]: MySQL module. | The password `ignore_changes` [L174] cannot be passed in; the module offers a write-only password [L175]. | `administrator_login` [L176]; `delegated_subnet_id` [L177]; `geo_redundant_backup_enabled` [L178]; `private_dns_zone_id` [L179]; shrinking `size_gb` [L180]; database `charset` [L181]. | **Blocked by provider major** [L2]. |
 | `storage` | Storage account [L182], containers [L183], management policy [L184]: storage account module. | No feature gap found. Defaults to override: shared-key access is off [L185] and this repository needs it on [L186]; public network access [L187]; infrastructure encryption off [L188] against on here [L189]; replication [L190]. Last-access tracking has no input of this repository's name [L191] [L192]. `lock` has no `notes` [L193]. | Account `name` [L194]; `account_tier` [L195]; zonal replication change [L196]; `infrastructure_encryption_enabled` [L197]; container `name` [L198]. | **Adopt on next touch, once CI runs Terraform 1.10 or later** [L14]. On 1.9.8: keep azurerm, AVM-shaped. |
-| `key-vault` | Vault [L199], access policies [L200], secret [L201]: Key Vault module. | Default is RBAC [L17] and this repository uses access policies [L202]. Defaults to set: SKU [L203] [L204], purge protection on [L205] [L206]. `lock` has no `notes` [L207]. See [Key Vault RBAC](#key-vault-rbac). | Vault `name`, and a recoverable vault must be purged first [L208]; purge protection cannot be disabled [L209]; retention is set once [L210] [L211]; policy `key_vault_id` [L212]; secret `name` [L213]. | **Blocked by provider major** [L3]. Also needs Terraform 1.11 [L105], and is Orphaned in the index [L104]. |
-| `app-service` | Plan [L214]: serverfarm module. Web app [L215] and slot [L216]: web-site module. Autoscale setting [L217]: autoscale module. | (1) No `health_check_eviction_time_in_min` input [L218]; the app and the slot set it [L219] [L220]. (2) No equivalent for ignoring one app-setting key [L221]: app settings are a submodule on an update resource [L222], where a non-empty `ignore_body_changes` fails the plan [L223]. (3) The WebDeploy flag has another name [L224] [L225]. (4) TLS and restriction defaults are `optional()` attributes of `site_config` [L226] [L227]. Present, so not gaps: sticky settings [L228], slot identity [L229] [L230], SCM restrictions [L231] [L232], the Front Door ID header [L233]. Plan defaults for zone balancing [L234], worker count [L235] and SKU [L236] differ and must be set. | Plan `name` [L237], `os_type` [L238]; app `name` [L239], `resource_group_name` [L240]; slot `name` [L241]; autoscale `target_resource_id` [L242]. | **Adopt on next touch** for the plan, app and slot, after designing around gaps 1 and 2. Autoscale setting: **blocked by provider major** [L7]. |
-| `monitoring` | Workspace [L243]: workspace module. Component [L244]: component module. Action group [L245]: action group module. Metric alerts [L246]: none. Diagnostic settings [L247]: none standalone. | None found for the three with a candidate. | Workspace `name` [L248], most `sku` changes [L249]; component `name` [L250], `application_type` [L251]; action group `name` [L252]. | **Keep azurerm, AVM-shaped.** Workspace blocked by provider major [L4]. Component and action group are adoptable on a touch. |
-| `front-door` | Profile [L253], endpoint [L254], origins [L255], routes [L256], custom domain [L257], security policy [L258], rules [L259]: CDN profile module. Firewall policy [L260]: CDN profile module or WAF policy module. | Field-by-field comparison not done: UNKNOWN. | Profile `sku_name` [L261]; endpoint `name` [L262]; custom domain `host_name` [L263]; firewall policy `sku_name` [L264]. | **Blocked by provider major** [L5] [L6]. |
+| `key-vault` | Vault [L199], access policies [L200], secret [L201]: Key Vault module. | Default is RBAC [L574] [L18] and this repository uses access policies [L202]. Defaults to set: SKU [L203] [L204], purge protection on [L205] [L206]. `lock` has no `notes` [L207]. See [Key Vault RBAC](#key-vault-rbac). | Vault `name`, and a recoverable vault must be purged first [L208]; purge protection cannot be disabled [L209]; retention is set once [L210] [L211]; policy `key_vault_id` [L212]; secret `name` [L213]. | **Blocked by provider major** [L3]. Also needs Terraform 1.11 [L105], and is Orphaned in the index [L104]. |
+| `app-service` | Plan [L214]: serverfarm module. Web app [L215] and slot [L216]: web-site module. Autoscale setting [L217]: autoscale module. | (1) No `health_check_eviction_time_in_min` input [L218]; the app and the slot set it [L219] [L220]. (2) No equivalent for ignoring one app-setting key [L221]: app settings are a submodule on an update resource [L222], where a non-empty `ignore_body_changes` fails the plan [L223]. (3) The WebDeploy flag has another name [L224] [L225]. (4) TLS, FTPS and SCM restriction defaults are `optional()` attributes of `site_config` [L226] [L227] [L232]. Present, so not gaps: sticky settings [L228], slot identity [L229] [L230], SCM restrictions [L231] [L232], the Front Door ID header [L233]. Plan defaults differ from this repository's and must be set: zone balancing is on [L234] and nothing here sets it [L597]; the worker count is 3 [L235] against 1 here [L598]; the SKU is `P1v2` [L236] against `P1v3` here [L599]. | Plan `name` [L238], `os_type` [L237]; app `name` [L239], `resource_group_name` [L240]; slot `name` [L241]; autoscale `target_resource_id` [L242]. | **Adopt on next touch** for the plan, app and slot, after designing around gaps 1 and 2. Autoscale setting: **blocked by provider major** [L7]. |
+| `monitoring` | Workspace [L243]: workspace module. Component [L244]: component module. Action group [L245]: action group module. Metric alerts [L246]: none. Diagnostic settings [L247]: none standalone. | None found among the inputs compared: the workspace's SKU [L619] and retention [L620]; the component's `workspace_id` [L621], `application_type` [L622] and `retention_in_days` [L623]; the action group's `email_receivers` [L624]. A field-by-field comparison was not done: UNKNOWN. | Workspace `name` [L248], most `sku` changes [L249]; component `name` [L251], `application_type` [L250]; action group `name` [L252]. | **Keep azurerm, AVM-shaped.** Workspace blocked by provider major [L4]. Component and action group are adoptable on a touch. |
+| `front-door` | Profile [L253], endpoint [L254], origin group [L602], origins [L255], routes [L256], custom domain [L257] and its association [L603], security policy [L258], rule set [L604], rules [L259]: CDN profile module, whose registry record lists the origin group, association and rule set types [L605] [L606] [L607]. Firewall policy [L260]: CDN profile module or WAF policy module. | Field-by-field comparison not done: UNKNOWN. | Profile `sku_name` [L261]; endpoint `name` [L262]; custom domain `host_name` [L263]; firewall policy `sku_name` [L264]. | **Blocked by provider major** [L5] [L6]. |
 | `shared-infrastructure` | Resource group [L265]: resource group module. Plan [L266]: serverfarm module. Autoscale setting [L267]: autoscale module. Lock [L268]: the resource group module's `lock` input. | The resource group module's `lock` takes `kind` and `name` only [L269], so this repository's `notes` text [L270] would not pass through. | Resource group `name` [L271]; lock `lock_level` [L272] and `notes` [L273]; plan as above. | **Adopt on next touch** for the resource group and plan. Autoscale setting: **blocked by provider major** [L7]. |
-| `wordpress-site` | Its own resource group [L274], workspace [L275], component [L276], access policies [L277], action group [L278], metric alerts [L279], scheduled query rule [L280], activity-log alert [L281], web test [L282], hostname binding [L283], lock [L284], diagnostic settings [L285]; and the calls to the modules above [L286] [L287]. | Hostname binding and the activity-log alert condition were not compared in detail: UNKNOWN. The Front Door ID restriction is a plain header rule on the app [L288], not an update resource. | Hostname binding `hostname` [L289]; activity-log alert `name` [L290]; the rest as in the rows above. | **Keep azurerm, AVM-shaped**; each resource follows its own row. Adoptable on a touch: resource group, component, action group, activity-log alert. No module: metric alerts, query rule, web test. |
+| `wordpress-site` | Its own resource group [L274], workspace [L275], component [L276], access policies [L277], action group [L278], metric alerts [L279], scheduled query rule [L280], activity-log alert [L281], web test [L282], hostname binding [L283], lock [L284], diagnostic settings [L285], one MySQL server configuration [L608]; and the calls to the modules above [L286] [L287]. | Hostname binding and the activity-log alert condition were not compared in detail: UNKNOWN. The Front Door ID restriction is a plain header rule on the app [L288], not an update resource. | Hostname binding `hostname` [L289]; activity-log alert `name` [L290]; the rest as in the rows above. | **Keep azurerm, AVM-shaped**; each resource follows its own row. Adoptable on a touch: resource group, component, action group, activity-log alert. No module: metric alerts, query rule, web test. The MySQL configuration follows the `database` row. |
 | `cloudflare` | Cloudflare resources only [L291]. | Not applicable. | Not applicable. | **Not applicable.** |
 
 The issue's four verdicts have no value for "azapi-only, but the Terraform floor is above CI". This page reports those
@@ -111,15 +120,15 @@ this repository's key-vault module, which requires azurerm `~> 5.6` [L292].
 | --- | --- | --- | --- | --- |
 | web-site 0.24.1 | init 0 [L293] | init 0 [L294] | init 0 [L295] | init 0 [L296] |
 | serverfarm 2.0.8 | init 0 [L297] | init 0 [L298] | init 0 [L299] | init 0 [L300] |
-| storage account 0.11.0 | init 1, CLI floor [L301] | init 0 [L302] | init 1, CLI floor [L303] | init 0, validate 0 [L304] [L305] |
+| storage account 0.11.0 | init 1, CLI floor [L301] [L578] | init 0 [L302] | init 1, CLI floor [L579] [L580] [L303] | init 0, validate 0 [L304] [L305] |
 | virtual network 0.23.0 | init 0 [L306] | init 0 [L307] | init 0 [L308] | init 0 [L309] |
 | private DNS zone 0.6.0 | init 0 [L310] | init 0 [L311] | init 0 [L312] | init 0 [L313] |
 | resource group 0.5.0 | init 0 [L314] | init 0 [L315] | init 0, validate 0 [L10] [L11] | init 0, validate 0 [L12] [L13] |
 | component 0.5.0 | init 0 [L316] | init 0 [L317] | init 0 [L318] | init 0 [L319] |
-| network security group 0.6.0 | init 1, CLI floor [L320] | init 0 [L321] | init 1, CLI floor [L322] [L323] | init 0 [L324] |
-| MySQL 0.1.9 | init 1 [L325] | init 0 [L326] | init 1 [L327] | init 1, azurerm cap [L328] |
-| Key Vault 0.13.1 | init 1, CLI floor [L329] | init 0 [L330] | init 1, CLI floor [L331] | init 1, azurerm cap [L332] |
-| workspace 0.5.1 | init 0 [L333] | init 0 [L334] | init 1, azurerm cap [L335] [L9] | init 1, azurerm cap [L336] [L337] |
+| network security group 0.6.0 | init 1, CLI floor [L320] [L581] [L322] | init 0 [L321] | init 1, CLI floor [L323] | init 0 [L324] |
+| MySQL 0.1.9 | init 1 [L325] | init 0 [L326] | init 1, the module does not load [L327] [L346] | init 1, azurerm cap [L328] [L584] |
+| Key Vault 0.13.1 | init 1, CLI floor [L329] [L582] | init 0 [L330] | init 1, CLI floor [L331] [L583] [L502] | init 1, azurerm cap [L332] [L585] |
+| workspace 0.5.1 | init 0 [L333] | init 0 [L334] | init 1, azurerm cap [L335] [L9] [L500] | init 1, azurerm cap [L336] [L337] [L501] |
 | CDN profile 0.2.0 | init 0 [L338] | init 0 [L339] | not run | not run |
 | WAF policy 0.1.1 | init 0 [L340] | init 0 [L341] | not run | not run |
 | autoscale setting 0.1.2 | init 0 [L342] | init 0 [L343] | not run | not run |
@@ -127,10 +136,11 @@ this repository's key-vault module, which requires azurerm `~> 5.6` [L292].
 
 Reading it:
 
-- **Minimum CLI.** Storage needs 1.10 [L14]; Key Vault and the network security group need 1.11 [L105] [L15].
-  The MySQL module declares `>= 1.3.0` [L98] but uses an ephemeral input variable [L344], which needs Terraform 1.10
-  or later [L345], and it fails to load on 1.9.8 [L346]. Its declared floor is wrong; the exact minimum was not
-  bisected. Every other candidate loads on 1.9.8. All fourteen initialised candidates load on 1.17.1.
+- **Minimum CLI.** Storage needs 1.10 [L14]; Key Vault and the network security group need 1.11 [L105] [L15]. The MySQL
+  module declares `>= 1.3.0` [L98] but uses an ephemeral input variable [L344], which needs Terraform 1.10 or later
+  [L345], and it fails to load on 1.9.8 [L346]. Its declared floor is wrong; the exact minimum was not bisected. Every
+  other initialised candidate loads on 1.9.8. The action group and the activity-log alert were not run on either
+  toolchain. All fourteen initialised candidates load on 1.17.1.
 - **Inferred:** the CDN profile, WAF policy and autoscale setting fail next to azurerm 5 on both toolchains, from
   their constraints [L5] [L6] [L7] and the `~>` rule [L150]. The action group and activity-log alert need
   Terraform 1.9 and azapi only [L84] [L85] [L92] [L93], so they should load on both; neither was run.
@@ -151,11 +161,11 @@ What a consumer's lock file gains, measured from the spike's lock files:
 | Plus resource group 0.5.0 | adds azapi with floor 2.12 [L361] and random with floor 3.6 [L362]; no modtm |
 | Plus serverfarm 2.0.8 | adds azapi [L363], modtm with floor 0.3 [L364] and random [L365] |
 
-The composition module already constrains azapi to `>= 1.13.0, < 3.0` [L366], random to `>= 3.5.0, < 4.0` [L367]
-and time to `>= 0.9.0, < 1.0` [L368]. **Inferred:** adopting a candidate that requires azapi `~> 2.12` raises a
-consumer's azapi floor to 2.12 within major 2, and one that requires time `~> 0.13` raises the time floor from 0.9 to
-0.13. Composition against the composition module itself was not initialised: UNKNOWN. Every adopting module's
-`required_version` rises from 1.6.0 [L369] to at least 1.9.
+The composition module already constrains azapi to `>= 1.13.0, < 3.0` [L366], random to `>= 3.5.0, < 4.0` [L367] and
+time to `>= 0.9.0, < 1.0` [L368]. **Inferred:** adopting a candidate that requires azapi `~> 2.12` raises a consumer's
+azapi floor to 2.12 within major 2, and one that requires time `~> 0.13` raises the time floor from 0.9 to 0.13.
+Composition against the composition module itself was not initialised: UNKNOWN. **Inferred:** every adopting module's
+`required_version` would rise from 1.6.0 [L369] to at least 1.9, the lowest floor among the azapi-only candidates [L28].
 
 ## Migration mechanics
 
@@ -163,9 +173,9 @@ consumer's azapi floor to 2.12 within major 2, and one that requires time `~> 0.
 
 | Block | Root module | Child module | Across module packages |
 | --- | --- | --- | --- |
-| `moved` | yes | yes; it may name the module's own objects and those of the modules it calls [L370] | yes since 1.3.0 [L16]; rejected in 1.2 [L371] |
+| `moved` | yes [L389] | yes; it may name the module's own objects and those of the modules it calls [L370] | yes since 1.3.0 [L16]; rejected in 1.2 [L371] |
 | `import` | yes [L372] | no on 1.9.8 [L373] [L374]; yes from 1.16.0 [L375], validated on 1.17.1 [L376] | the `to` address may reach a module from another package, validated on 1.17.1 [L377] [L378] |
-| `removed` | yes | yes: validates in a child module on both toolchains [L379] [L380] | not probed: UNKNOWN |
+| `removed` | yes [L600] | yes: validates in a child module on both toolchains [L379] [L380]. No official statement on placement was found: the block's reference page names neither root nor child modules [L601], and the 1.7.0 changelog addresses module authors without limiting the block to a root module [L600] | not probed: UNKNOWN |
 
 `validate` is weak evidence for `removed`: it also accepts a `removed` block whose resource is still declared [L381].
 The cross-package `moved` was shown with state on 1.17.1: after applying the new layout, the same object ID sits at the
@@ -383,11 +393,15 @@ after the app does [L441]. ADR 0005 records the choice [L442].
 
 ### What the AVM module does
 
-- `legacy_access_policies_enabled` defaults to false [L17], and the vault's RBAC flag is its negation [L18]. A mock
-  test of the module at 0.13.1 confirmed the default plans RBAC [L443].
-- With the switch on, the vault stays on access policies [L444], and the body's policy list is exactly the
+- The switch `legacy_access_policies_enabled` selects access policies and prevents data-plane RBAC [L17]. It defaults to
+  false [L574], and the vault's RBAC flag is its negation [L18]. With the switch off the module does not manage access
+  policies at all [L488]. A mock test of the module at 0.13.1 passed [L609] and confirmed that the default plans RBAC
+  [L443] [L610].
+- With the switch on, the vault stays on access policies [L444] [L611], and the body's policy list is exactly the
   `legacy_access_policies` input [L445]. The module then owns the list: a write resets what it omits [L19].
-- Since 0.13.0 the vault is an azapi resource [L109] and the policies are no longer separate resources [L446].
+- Since 0.13.0 the vault is an azapi resource: `main.tf` opens with an azurerm vault at 0.12.0 [L591], and with an azapi
+  resource at 0.13.0 [L592] and at 0.13.1 [L109]. The policies are no longer separate resources: 0.13.0 added a
+  `removed` block for them [L593], and 0.13.1 keeps it [L446].
 - Passing only the deployer's policy in validates [L447]. Passing the app identity's policy in is a dependency cycle:
   `validate` exits 1 [L20]. The same holds for the app's role assignment on the RBAC path [L448].
 - Keeping the app and slot policies as separate resources beside the module conflicts with an owned list, by the
@@ -447,10 +461,11 @@ only [L451].
 | Soft delete itself | Cannot be disabled [L483] |
 | Name of a deleted vault | Held until the retention window ends [L484] [L485] |
 | Recovery | The provider recovers a same-named soft-deleted vault by default [L486]; a recovered vault comes back without its role assignments [L487] |
-| Permission model | Changed in place [L473]; whether access policies take effect again after a switch back is UNKNOWN [L488] |
+| Permission model | Changed in place [L473]; whether access policies take effect again after a switch back is UNKNOWN |
 
-Under the AVM module, purge protection defaults to on [L489] where this repository's nonprod default is off [L490],
-and retention defaults to unset [L491]. Pass both explicitly in any later adoption.
+Under the AVM module, purge protection defaults to on [L206] and is described as irreversible [L489], where this
+repository's nonprod default is off [L490]. Retention defaults to unset [L575]; the input's description names 90 days as
+the default [L491]. Pass both explicitly in any later adoption.
 
 ### Ordered cut-over on the bespoke module
 
@@ -487,8 +502,8 @@ Written for one site; a consumer repeats it per site key.
 13. Remove the leftover access policies and update ADR 0005, the security model page and the guidance file.
 
 Rollback before step 13 is to set the flag back to false. It relies on Azure honouring the leftover policies again,
-which is UNKNOWN [L488]. New sites after the cut-over need an explicit wait between the deployer's assignment and the
-first secret write; the AVM module's own wait is 30 seconds [L497], well under the 10 minute bound [L468].
+which is UNKNOWN. New sites after the cut-over need an explicit wait between the deployer's assignment and the first
+secret write; the AVM module's own wait is 30 seconds [L497], well under the 10 minute bound [L468].
 
 ## Spike and scanner results
 
@@ -538,12 +553,15 @@ Error: Unsupported Terraform Core version
 
 Module module.avm_key_vault (from
 registry.terraform.io/Azure/avm-res-keyvault-vault/azurerm) does not support
-Terraform version 1.9.8.
+Terraform version 1.9.8. To proceed, either choose another supported
+Terraform version or update this version constraint. Version constraints are
+normally set for good reason, so updating the constraint may lead to other
+errors or unexpected behavior.
 ### init exit code: 1
 ```
 
-The spike ran in a scratch directory outside the repository, and its data directories and lock files were deleted
-afterwards.
+The spike and the migration probes ran in scratch directories outside the repository, and their data directories and
+lock files were deleted afterwards.
 
 ### Scanner check
 
@@ -580,8 +598,10 @@ count [L506] and policy file, which turns external-module download off [L21].
   only [L527]. CI would stay green and say nothing.
 
 "Unknown" is derived, not reported by the scanner: the attribute checks registered for each reported resource type,
-minus the skip list, minus the reported results. The one failed result in c5, c8 and c9 is on this repository's own
-module with the spike's placeholder inputs; why it fails there, and whether it fails in CI's root scan, is UNKNOWN.
+minus the skip list, minus the reported results. The one failed result in c5, c9 and c8 is CKV_AZURE_43 on
+`module.local_storage.azurerm_storage_account.main` [L511] [L512] [L513], which is this repository's own storage module
+with the spike's placeholder inputs; why it fails there, and whether it fails in CI's root scan, is UNKNOWN. The one
+failed result in c4 is CKV_AZURE_53 on `module.avm_mysql.azurerm_mysql_flexible_server.this` [L510].
 
 ## Recommendation
 
@@ -616,10 +636,10 @@ The reasons and their ledger rows are in the [per-module table](#per-module).
 ### Pinning policy for 0.x modules
 
 Pin an exact `version` on every AVM module call, as ADR 0012 already requires. The measurements show why a range is
-unsafe: the Key Vault module changed its resource model in a minor release [L446], and its azurerm cap moved down from
-the `< 5.1` the guidance recorded [L528] to `< 5.0` [L3]. The AVM modules pin their own utility module exactly
-[L353]. A chained `moved` depends on the pinned release keeping its own `moved` block [L408]. Review the module's
-`terraform.tf`, its `moved` and `removed` blocks and its defaults on every bump.
+unsafe: the Key Vault module changed its resource model between 0.12.0 [L591] and 0.13.0 [L592], a minor release, and
+its azurerm cap moved down from the `< 5.1` the guidance recorded [L528] to `< 5.0` [L3]. The AVM modules pin their own
+utility module exactly [L353]. A chained `moved` depends on the pinned release keeping its own `moved` block [L408].
+Review the module's `terraform.tf`, its `moved` and `removed` blocks and its defaults on every bump.
 
 ### Does the `lock` input match the AVM shape?
 
@@ -654,11 +674,11 @@ kind of question as whether the deployer may create role assignments.
 ### Does the "security defaults as top-level variables" rule survive?
 
 It survives for this repository's own inputs, and it stops helping at the AVM boundary. **Inferred:** a wrapper can
-still keep its security inputs flat, but the value then flows into an AVM module that CI does not read [L21] [L22]
-and, for an azapi-based module, into resource types the engine has no checks for [L23]. The web-site module also
-places TLS and restriction defaults in `optional()` attributes of an object input [L226] [L227]. After an adoption,
-the evidence for a security default is no longer a passing check. It has to be a test in this repository, for example
-a mock-provider assertion on the value passed to the module.
+still keep its security inputs flat, but the value then flows into an AVM module that CI does not read [L21] [L22] and,
+for an azapi-based module, into resource types the engine has no checks for [L23]. The web-site module also places TLS,
+FTPS and SCM restriction defaults in `optional()` attributes of an object input [L226] [L227] [L232]. After an adoption,
+the evidence for a security default is no longer a passing check. It has to be a test in this repository, for example a
+mock-provider assertion on the value passed to the module.
 
 ### Effort per module
 
@@ -685,9 +705,9 @@ This change edits no guidance. These statements were found out of date and need 
 - It lists five azurerm caps, with Key Vault at `< 5.1` and the component capped [L528]. Today the Key Vault cap is
   `< 5.0` [L3] and the component module requires no azurerm [L70] [L71].
 - It lists the action group and activity-log alert as Proposed or absent [L566]. Both are Available [L83] [L91].
-- It says disabling purge protection [L567] and changing retention [L568] force replacement. In the provider source
-  neither argument is ForceNew [L569]; both are rejected inside the update with an error [L570] [L571] [L572]. What
-  a real plan shows is UNKNOWN.
+- It says disabling purge protection [L567] and changing retention [L568] force replacement. In the provider source the
+  vault resource has one ForceNew attribute [L594], on `name` [L595], and no plan-time diff customisation [L569]; both
+  changes are rejected inside the update with an error [L570] [L571] [L572]. What a real plan shows is UNKNOWN.
 - It names an older scanner engine and action tag [L573] than the workflow pins [L503].
 
 ## UNKNOWN
@@ -698,15 +718,17 @@ Not measured, with what was tried:
   the maintainer's approval.
 - **The azapi state conversion** for each azurerm type used here, and what the first plan shows for the body
   afterwards. Tried: the azapi 2.13.0 source and changelog.
-- **Which body properties each azapi-based module wires into replacement triggers.** Tried: provider documentation.
+- **Which body properties each azapi-based module wires into replacement triggers.** Tried: provider documentation, and
+  the root `main.tf` of the Key Vault, serverfarm and resource group modules. No other module file was read for this.
 - **Whether the instance-keyed `moved` of example (b) carries state through**, and whether `removed` is restricted
   across packages. Tried: plan-level validation.
 - **What a consumer on the fallback path gets if the `import` block is missing.** Not measured.
 - **The exact minimum CLI of the MySQL module.** It fails on 1.9.8 and loads on 1.17.1; no version between was run.
 - **Composition against the composition module**, which itself constrains azapi, random and time. The spike used the
   key-vault module.
-- **Field-by-field coverage** of the CDN profile, WAF policy and hostname-binding inputs, and whether the activity-log
-  alert's generic condition can express the resource-health alert.
+- **Field-by-field coverage** of any candidate's inputs. The per-module table names the inputs that were compared. The
+  CDN profile, WAF policy and hostname-binding inputs were not compared at all, nor whether the activity-log alert's
+  generic condition can express the resource-health alert.
 - **Whether the `lock` object with `notes` is accepted by a module whose type lacks it.** Documentation only.
 - **Key Vault:** which right the API needs to change the permission model; whether an unconditioned Role Based Access
   Control Administrator suffices; whether leftover access policies work again after a switch back; whether App Service
@@ -716,4 +738,4 @@ Not measured, with what was tried:
 - **Telemetry:** whether the deployment shows as a change in every plan.
 - **The second scanner** in the shared scan workflow was not run.
 
-Sources: the [evidence ledger](avm-adoption-assessment-ledger.md), 573 rows.
+Sources: the [evidence ledger](avm-adoption-assessment-ledger.md), 624 rows.
