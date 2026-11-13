@@ -32,8 +32,8 @@ minor and a major release; a major release needs the extra reading in step 1.
    Look for `BREAKING CHANGES`, new provider bounds, and any input whose default changed. A release can also
    change a default without a breaking marker; the upgrade pages say so where it happened (for example the container
    image default in [4.0 to 4.1](../upgrading/v4.0-to-v4.1.md)). A major release can remove an input:
-   [4.3 to 5.0](../upgrading/v4.3-to-v5.0.md) removes the unused Cloudflare account ID and says which callers must
-   edit their configuration before the plan will run.
+   [4.3 to 5.0](../upgrading/v4.3-to-v5.0.md) removes the unused Cloudflare account ID and the deprecated
+   `plan_density_limit`, and says which callers must edit their configuration before the plan will run.
 
 2. **Change the pin in a branch.** Update `?ref=` in every `module` source that points at this repository, and
    change `required_providers` only if the release's notes say a provider range moved. Do not skip releases that
