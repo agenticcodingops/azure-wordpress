@@ -58,8 +58,8 @@ for tf in terraform "$TF_CONSUMER"; do
   rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl
 done
 
-# validate.yml "Checkov": Checkov 3.3.22 (bridgecrewio/checkov-action v12.3128.0), as the suffixed install this file prescribes (keep plain checkov off PATH)
-RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform --quiet --skip-check CKV_TF_1,CKV_TF_2,CKV_AZURE_225,CKV_AZURE_13,CKV_AZURE_88,CKV_AZURE_222,CKV_AZURE_17,CKV_AZURE_94,CKV_AZURE_189,CKV_AZURE_109,CKV_AZURE_41,CKV_AZURE_211,CKV_AZURE_212,CKV_AZURE_206,CKV_AZURE_33,CKV_AZURE_59,CKV_AZURE_34,CKV2_AZURE_32,CKV2_AZURE_56,CKV2_AZURE_21,CKV2_AZURE_40,CKV2_AZURE_33,CKV2_AZURE_1
+# validate.yml "Checkov": Checkov 3.4.3 (bridgecrewio/checkov-action v12.3139.0), as the suffixed install this file prescribes (keep plain checkov off PATH)
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@343 -d . --framework terraform --quiet --skip-check CKV_TF_1,CKV_TF_2,CKV_AZURE_225,CKV_AZURE_13,CKV_AZURE_88,CKV_AZURE_222,CKV_AZURE_17,CKV_AZURE_94,CKV_AZURE_189,CKV_AZURE_109,CKV_AZURE_41,CKV_AZURE_211,CKV_AZURE_212,CKV_AZURE_206,CKV_AZURE_33,CKV_AZURE_59,CKV_AZURE_34,CKV2_AZURE_32,CKV2_AZURE_56,CKV2_AZURE_21,CKV2_AZURE_40,CKV2_AZURE_33,CKV2_AZURE_1
 
 # validate.yml "Documentation": terraform-docs 0.20.0 (terraform-docs/gh-actions v1.4.1), fail-on-diff
 for m in modules/wordpress-site modules/shared-infrastructure modules/app-service modules/database modules/storage modules/key-vault modules/networking modules/dns-zones modules/cloudflare modules/front-door modules/monitoring; do
@@ -157,12 +157,12 @@ The consumer leg is a separate job, not a second matrix dimension, because the b
 
 Why two versions: a construct that needs a newer CLI passes on 1.17.1 and fails for the consumer (`false && tobool("x")` is an error on 1.9.8 and `false` on 1.17.1, because the logical operators short-circuit from 1.12). `validate` on 1.9.8 catches syntax the older CLI rejects and errors in constant expressions such as that one. It treats input variables as unknown, so a guard written as `var.x != null && var.x.y` validates on both versions and fails only in a 1.9.8 plan with `x = null` (measured 2026-11-13): check a change that leans on short-circuiting with a plan or `terraform console` on a 1.9.8 binary. Neither job runs the modules' `>= 1.6.0` floor. Until 2026-11 Format Check and Validate ran 1.9.8; at the switch `fmt -recursive -check` and `validate` on all 11 modules gave the same results on both CLIs, and mock-provider plans of the composition module planned the same resources and argument values (1.17.1 also prints the providers' write-only attributes, which 1.9.8 does not render). Until 2026-09 the jobs ran OpenTofu 1.6.0; `fmt -recursive -check` was clean on both CLIs at that switch. The branch rules for `main` require Format Check, Checkov, Documentation and the 11 `Validate (modules/<name>)` checks from this workflow (read 2026-11-13). Validate on consumer Terraform, Review guard and Scan configuration run on every pull request and are not among the required checks, so a red one does not block the merge button: fix it before merging all the same. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
 
-**That workflow's Checkov is not the Checkov job's, but it shares its settings.** `terraform-scan.yml` calls auto-code-scanning's reusable scan, pinned by SHA (v3.1.2). It runs the Checkov that release pins (3.4.3, against the Checkov job's 3.3.22), with `soft_fail`, and it reads auto-code-scanning's own `configs/azure/.checkov.yaml`, whose skip list is empty. A job in `terraform-scan.yml` parses the trusted base's `validate.yml` Checkov step on pull requests (the current commit otherwise), separately checks proposed policy drift, and passes its `skip_check` and `RENDER_EDGES_DUPLICATE_ITER_COUNT` as the scan's `checkov-skip-checks` and `checkov-render-iter-count` inputs, so each is written once. The scan merges the explicit skip list with its own. In v3.1.2 unchanged inline skips on the same resource and file as the trusted base are honoured, including resources inside nested local modules and plain, `for_each` or `count` module calls with unchanged names and literal sources; new or modified skips require exact occurrence approvals using schema 2.0. This repository has no suppression registry or baseline. Move the `uses:` pin and `scanning-repo-ref` together at v3.1.2: the setup job copies a helper from `scanning-repo-ref`, so a `uses:`-only bump fails it. The scan caller grants `actions: read` alongside `contents: read`, `security-events: write` and `pull-requests: write`, matching the reusable SARIF jobs' permission ceiling. Do not add a third skip-list source, and keep `skip_check` in the format "Checkov skip_check Format" requires: the job strips spaces and drops duplicates before it passes the list on, but the Checkov action's own handling of a folded block is what has misled before.
+**That workflow's Checkov is not the Checkov job's, but it shares its settings.** `terraform-scan.yml` calls auto-code-scanning's reusable scan, pinned by SHA (v3.1.2). It runs the Checkov that release pins (3.4.3), matching the Checkov job's version, with `soft_fail`, and it reads auto-code-scanning's own `configs/azure/.checkov.yaml`, whose skip list is empty. A job in `terraform-scan.yml` parses the trusted base's `validate.yml` Checkov step on pull requests (the current commit otherwise), separately checks proposed policy drift, and passes its `skip_check` and `RENDER_EDGES_DUPLICATE_ITER_COUNT` as the scan's `checkov-skip-checks` and `checkov-render-iter-count` inputs, so each is written once. The scan merges the explicit skip list with its own. In v3.1.2 unchanged inline skips on the same resource and file as the trusted base are honoured, including resources inside nested local modules and plain, `for_each` or `count` module calls with unchanged names and literal sources; new or modified skips require exact occurrence approvals using schema 2.0. This repository has no suppression registry or baseline. Move the `uses:` pin and `scanning-repo-ref` together at v3.1.2: the setup job copies a helper from `scanning-repo-ref`, so a `uses:`-only bump fails it. The scan caller grants `actions: read` alongside `contents: read`, `security-events: write` and `pull-requests: write`, matching the reusable SARIF jobs' permission ceiling. Do not add a third skip-list source, and keep `skip_check` in the format "Checkov skip_check Format" requires: the job strips spaces and drops duplicates before it passes the list on, but the Checkov action's own handling of a folded block is what has misled before.
 
 **`claude-review` was failing on every PR — an expired `CLAUDE_CODE_OAUTH_TOKEN`, not the workflow.
 Resolved 2026-08-02 by rotating the secret; it has been green since.** If you are reading a red
 `claude-review` on an older PR, that is the pre-rotation window, not a regression from your change.
-`main` has no branch protection, so nothing was ever gated on it and those PRs merged red.
+At the time of those failures (through 2026-08-02), `main` had no branch protection, so nothing gated those PRs and they merged red. As read on 2026-11-13, an active repository ruleset now requires 16 status checks on `main`.
 
 > **Corrected 2026-08-02.** This file previously blamed an empty `ANTHROPIC_API_KEY`. That is the
 > wrong secret: `claude-code-review.yml` passes `claude_code_oauth_token`, and `ANTHROPIC_API_KEY`
@@ -379,7 +379,7 @@ PR head — under `pull_request_target` that is the classic privileged-checkout 
 **Branch protection is what closes direct pushes to `main` — keep it on.** Push runs take
 everything from the pushed revision, the workflow file included, so a direct push could weaken
 the guard, the allow-list or the workflow and be judged by its own weakened copy. No workflow
-change can close that. Since 2026-09-24 two layers on the default branch require a PR:
+change can close that. As read on 2026-11-13, two layers on the default branch require a PR, and the active repository ruleset also requires Format Check, Checkov, Documentation, terraform-scan / Aggregate Results, semgrep/ci and the 11 `Validate (modules/<name>)` checks:
 
 - the repository ruleset `required-PR` (id `23947709`): active, **no bypass actors**, and it also
   blocks deletion and force-push. This is the layer that actually stops a direct push.
@@ -589,18 +589,19 @@ Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure`
 
 **Any new Azure resource uses an [Azure Verified Module](https://azure.github.io/Azure-Verified-Modules/) when one is *Available*.** Check the [resource index](https://azure.github.io/Azure-Verified-Modules/indexes/terraform/tf-resource-modules/) and the [pattern index](https://azure.github.io/Azure-Verified-Modules/indexes/terraform/tf-pattern-modules/) before writing the resource. Operator rule, 2026-09-26.
 
-- **If the module is Available,** call it with an exact version, and pass the AVM interfaces through rather than re-implementing them. As measured 2026-09-26, these are Available, all at 0.x except `avm-res-web-serverfarm` (2.x):
+- **If the module is Available,** call it with an exact version, and pass the AVM interfaces through rather than re-implementing them. As measured 2026-11-13, these are Available, all at 0.x except `avm-res-web-serverfarm` (2.x):
   - `avm-res-web-site`, `avm-res-web-serverfarm`
   - `avm-res-dbformysql-flexibleserver`
-  - `avm-res-keyvault-vault`
+  - `avm-res-keyvault-vault` (listed as **Orphaned** in the index on 2026-11-13, not Available)
   - `avm-res-storage-storageaccount`
   - `avm-res-operationalinsights-workspace`, `avm-res-insights-component`
   - `avm-res-cdn-profile`
   - `avm-res-network-virtualnetwork`, `avm-res-network-privatednszone`
+  - `avm-res-insights-actiongroup`, `avm-res-insights-activitylogalert`
 - **Read the module's own constraints before calling it.** Registry data for the latest version of each, measured the same day:
-  - All ten need the `modtm` provider, and all but MySQL need Terraform ≥ 1.9 (Storage ≥ 1.10, Key Vault ≥ 1.11). CI validates with Terraform 1.17.1, which meets all of them, and with 1.9.8, the version the consumer's CI runs, which meets the ≥ 1.9 floor but not Storage's ≥ 1.10 or Key Vault's ≥ 1.11. Adopting either of those two therefore fails the Validate on consumer Terraform job until `TERRAFORM_VERSION_CONSUMER` in `validate.yml` is raised, and it raises the Terraform version every consumer needs (the modules declare `>= 1.6.0` today).
-  - Five cap azurerm below this tree's `~> 5.6`: MySQL and CDN profile (`~> 4.0`), Key Vault (`< 5.1`), Log Analytics and Application Insights (`< 5.0.0`). Terraform intersects the constraints, so they cannot init here; write the azurerm resource until they support 5.6. The other five depend on azapi, not azurerm.
-- **If it is only Proposed, or absent** (as of that date: action group, metric alert, activity-log alert, scheduled-query rule, consumption budget, availability test), write the azurerm resource directly. Shape the variables to the AVM interface conventions so a later switch is cheap:
+  - Seven of the sixteen measured candidates declare the `modtm` provider. All but MySQL need Terraform ≥ 1.9 (Storage ≥ 1.10, Key Vault and network security group ≥ 1.11). CI validates with Terraform 1.17.1, which meets all of them, and with 1.9.8, the version the consumer's CI runs, which meets the ≥ 1.9 floor but not Storage's ≥ 1.10 or the ≥ 1.11 of Key Vault and the network security group. Adopting one of those three therefore fails the Validate on consumer Terraform job until `TERRAFORM_VERSION_CONSUMER` in `validate.yml` is raised, and it raises the Terraform version every consumer needs (the modules declare `>= 1.6.0` today).
+  - As measured 2026-11-13, six cap azurerm below this tree's `~> 5.6`: MySQL (`>= 4.55.0, < 5.0.0`), CDN profile (`~> 4.0`), Key Vault (`< 5.0`), Log Analytics workspace (`< 5.0.0`), Front Door WAF policy (`< 5.0`) and autoscale setting (`< 5.0`). Terraform intersects the constraints, so they cannot init here; write the azurerm resource until they support 5.6. The Application Insights component module requires no azurerm.
+- **If it is only Proposed, or absent** (as of that date: metric alert, scheduled-query rule, consumption budget, availability test), write the azurerm resource directly. Shape the variables to the AVM interface conventions so a later switch is cheap:
   - `lock = { kind, name }` (the current AVM spec adds an optional `notes`; `wordpress-site` and
     `shared-infrastructure` take it, and accept only `kind = "CanNotDelete"`, because ReadOnly blocks the POST
     list operations every refresh makes)
@@ -609,7 +610,7 @@ Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure`
   - `managed_identities = { system_assigned, user_assigned_resource_ids }`
   - `tags`
 - **Existing modules here are bespoke.** Migrate one to AVM only when a planned change already touches it, and never as a drive-by:
-  - Moving state into an AVM module needs `import` plus `removed` blocks, because `moved` cannot cross module packages.
+  - Since Terraform 1.3.0, a [`moved` block can cross a module package boundary](docs/avm-adoption-assessment.md#migration-mechanics), so the module can carry the move and the consumer pastes nothing. Use `import` plus `removed` as the fallback.
   - The AVM Key Vault module defaults to RBAC (`legacy_access_policies_enabled = false`); this repo uses access policies today. On a new vault the deployer needs `Microsoft.Authorization/roleAssignments/write` only for the assignments the module creates through its `role_assignments` inputs (all empty by default), but it still needs data-plane roles for any keys or secrets the module manages: Key Vault Crypto Officer for keys and Key Vault Secrets Officer for secrets, or Key Vault Administrator for both. Moving one of this repo's vaults to RBAC invalidates its access policies, so the App Service identities that read secrets would need role assignments in their place, unless `legacy_access_policies_enabled = true` keeps the policies.
 - In a PR that adds a resource, name the AVM module you considered and why you did or did not use it.
 
@@ -655,8 +656,8 @@ When `cdn_provider = "cloudflare"`, Cloudflare's live IPv4 egress ranges are add
 
 **Key Vault (v3.0.0) — the sharpest trap in the repo, because failure is an errored apply, not just data loss:**
 
-- `purge_protection_enabled` is one-way. Azure permits `false → true` **in place**, but never `true → false`; the reverse forces replacement. The asymmetry matters — hardening later is free.
-- `soft_delete_retention_days` "can only be configured one time and cannot be updated" — any change forces replacement.
+- `purge_protection_enabled` is one-way. Azure permits `false → true` **in place**, but never `true → false`; the provider rejects disabling it during update. What a real plan shows is **UNKNOWN**. The asymmetry matters — hardening later is free.
+- `soft_delete_retention_days` "can only be configured one time and cannot be updated"; the provider rejects a change during update. What a real plan shows is **UNKNOWN**.
 - **Replacing the vault fails unless `key_vault_name_suffix` is bumped in the same change.** Terraform destroys before it creates; the old vault soft-deletes still holding its name, and azurerm's `recover_soft_deleted_key_vaults` **defaults to `true`**, so the create step *recovers the old vault* rather than creating one — with purge protection still on, which the new config then tries to disable. Azure refuses.
 - A purge-protected soft-deleted vault locks its name for the full retention window against **everyone**: `az keyvault purge` returns `MethodNotAllowed` even for subscription Owner. No role or flag shortens it.
 - Recovery restores a vault **in its original region**. Reusing a name while changing `location` silently strands Key Vault in the old region — a data-residency violation. Always bump `key_vault_name_suffix` when changing region.
@@ -755,17 +756,17 @@ rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl   # leave none behind 
 # (TERRAFORM_VERSION_CONSUMER in validate.yml, 1.9.8 today). Repeat the loop with that binary:
 # a module should pass on both. "Local CI parity" has the two-binary loop.
 
-# Checkov — the Checkov job runs 3.3.22, from `runs.image` in the action.yml of the
-# bridgecrewio/checkov-action tag validate.yml pins (v12.3128.0 today). Tags can move and the
+# Checkov — the Checkov job runs 3.4.3, from `runs.image` in the action.yml of the
+# bridgecrewio/checkov-action tag validate.yml pins (v12.3139.0 today). Tags can move and the
 # dependency-update bot bumps this one: re-read action.yml rather than trusting this number.
 #   gh api 'repos/bridgecrewio/checkov-action/contents/action.yml?ref=<tag-from-validate.yml>' \
 #     --jq '.content' | base64 -d | grep image:
 # Install the pinned CLI with a suffix for parity. Push hooks additionally need a trusted checkov executable on PATH.
-pipx install --suffix=@3322 checkov==3.3.22
+pipx install --suffix=@343 checkov==3.4.3
 # The skip list is read from validate.yml, so it cannot drift from what CI skips;
 # inline #checkov:skip comments on a resource apply on their own.
 # The render setting mirrors validate.yml's env (see Static Analysis Constraints).
-RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform -o json \
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@343 -d . --framework terraform -o json \
   --skip-check "$(sed -n 's/^ *skip_check: *\([^[:space:]]*\).*/\1/p' .github/workflows/validate.yml)"
 # Drop --quiet when comparing before/after: it hides PASSED and UNKNOWN, which is
 # exactly the signal you need (see Static Analysis Constraints).
