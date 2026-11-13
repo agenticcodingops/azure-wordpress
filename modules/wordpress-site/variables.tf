@@ -1074,15 +1074,3 @@ variable "lock" {
     error_message = "lock.notes must be at most 512 characters."
   }
 }
-
-# App Service Plan density validation - DEPRECATED: nothing reads this input.
-variable "plan_density_limit" {
-  description = "DEPRECATED, and has no effect: nothing in this module reads it, so it enforces no limit on sites per App Service Plan. It is kept, with its validation, only so existing configurations that set it still plan, and will be removed in a later major release (v5.0.0 keeps it). Remove it from your configuration."
-  type        = number
-  default     = 10
-
-  validation {
-    condition     = var.plan_density_limit >= 1 && var.plan_density_limit <= 20
-    error_message = "Plan density limit must be between 1 and 20."
-  }
-}
