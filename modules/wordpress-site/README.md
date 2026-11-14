@@ -47,8 +47,9 @@ terraform -chdir=modules/wordpress-site test
 
 Setting `database.mysql_version = "8.4"` on an existing site is an **in-place, irreversible major-version upgrade** with
 every azurerm version this module accepts (`~> 5.6`): the plan shows one in-place change to the server's `version`.
-Rolling back means restoring a pre-upgrade backup to a new server, outside this module. A Burstable server needs a
-General Purpose step first; those steps are marked **unmeasured: to be confirmed by a real run**. Keep
+Rolling back means restoring a pre-upgrade backup to a new server, outside this module. For a Burstable server,
+one apply can set a General Purpose SKU and `8.4` together, and a later apply returns the server to Burstable
+(measured once on 2026-11-14). Keep
 `mysql_version = "8.4"` afterwards, because removing it plans a downgrade, which Azure does not support.
 
 The procedure (backup, rehearsal on a restored copy, XA and schema checks, the General Purpose and Burstable paths,
