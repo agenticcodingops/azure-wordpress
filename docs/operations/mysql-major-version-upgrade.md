@@ -130,6 +130,11 @@ Burstable and the module cannot target the copy.
    Expect two restarts and about 7 minutes in all for a small server (about 4 for the resize, about 3 for the
    upgrade). Between the two, the server reports `Ready` on General Purpose and `8.0.21` for a short time; that is not
    the end of the apply, so wait for Terraform to finish.
+   If the apply fails after the resize (this did not happen in the measured run), the server can be left on
+   General Purpose at `8.0.21`. Check it with the command in step 5. A new plan then shows only
+   `~ version = "8.0.21" -> "8.4"`: apply it to retry the upgrade. To return to Burstable without upgrading,
+   set `database.sku_name` back to the Burstable SKU **and** `mysql_version = "8.0.21"`, so the plan changes
+   `sku_name` only.
 5. **Check the server:** tier `GeneralPurpose`, version `8.4`, state `Ready`
    (the `az mysql flexible-server show` command in step 7 above; add `sku:sku.name, tier:sku.tier` to its query).
 6. **Return to Burstable in a later apply:** set `database.sku_name` back to the Burstable SKU, or remove the override
