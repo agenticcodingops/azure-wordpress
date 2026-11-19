@@ -36,7 +36,7 @@ and choose a CDN; [`examples/basic-site`](../examples/basic-site/) shows Cloudfl
 - **Admin rights on the GitHub repository** that holds the configuration, to create the environment the pipeline
   uses.
 - **The Azure CLI**, signed in, for step 1 and Verify.
-- **Terraform 1.6.0 or later** (`modules/wordpress-site/main.tf:15`). The module's own CI validates on 1.17.1 and
+- **Terraform 1.6.0 or later** (`modules/wordpress-site/main.tf:15`). The module's own CI validates on 1.17.2 and
   on 1.9.8; the configuration below was tested on 1.9.8.
 - **Outbound access from the runner:**
   - `github.com` and `release-assets.githubusercontent.com`, for the module source and for the `azapi` and
