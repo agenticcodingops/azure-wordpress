@@ -230,12 +230,18 @@ runs Opus sub-agents.
 
 The plugin's own frontmatter lists an **unbound** `Bash(gh pr comment:*)`, and the CLI **honours
 that grant** in a non-interactive run. Re-measured 2026-10-31 on CLI 2.1.281, 2.1.302, 2.1.310,
-2.1.314 and 2.1.316, with this workflow's exact `--allowedTools` and `--disallowedTools`: a probe
+2.1.314 and 2.1.316, and on 2026-11-19 on 2.1.325 (the CLI action v1.0.276 installs), with this workflow's exact `--allowedTools` and `--disallowedTools`: a probe
 command carrying the plugin's frontmatter ran `gh pr comment 999 …` on a different PR every time
 (two runs per version), and a control command without the grant was denied every time. An earlier
 note here said the grant authorized nothing on 2.1.281; that does not reproduce. So the exact-PR,
 exact-file rules in `--allowedTools` only approve three forms; they do not forbid the rest, and
 injected PR text could have posted on another PR or posted `--body-file .git/config`.
+
+**Permission mode.** From action v1.0.276 sessions start in auto mode, where a classifier approves
+tool calls that no allow rule covers. Every measurement here ran in the earlier mode, so the review
+passes `--permission-mode default` (an unlisted call is denied) and `claude.yml` passes
+`--permission-mode acceptEdits` (edits run, other unlisted calls are denied). Remove either only
+after measuring the guard and the allow rules in auto mode.
 
 The boundary is a `PreToolUse` hook, written by the "Write the review comment guard" step and
 installed through the action's `settings` input. It is an **allow-list, not a keyword match**
@@ -268,8 +274,8 @@ Paths are `//` plus the absolute path.
 Two more ways round the hook were found after it merged, and the second is why the matcher is `*`:
 
 - **Settings from the checkout.** The review runs in the pull request's head. A `.claude/settings.json`
-  there with `{"disableAllHooks": true}` stopped a loaded hook (measured on 2.1.316: the other-PR
-  comment ran), because the action loads user, project and local settings by default and the project
+  there with `{"disableAllHooks": true}` stopped a loaded hook (measured on 2.1.316 and 2.1.325: the
+  other-PR comment ran), because the action loads user, project and local settings by default and the project
   ones win. `claude_args` now passes `--setting-sources user`; the action supports it for exactly
   this reason (`parse-sdk-options.ts`, "to avoid in-repo configs"), and with it the same file changed
   nothing. The hook lives in the user settings, which the `settings` input writes.

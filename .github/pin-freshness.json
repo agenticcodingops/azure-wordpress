@@ -299,7 +299,7 @@
         "type": "github_tags",
         "repo": "anthropics/claude-code-action"
       },
-      "precondition": "Centralized, SHA-pinned claude-code-action (>= v1.0.93, CVE-2025-66032)."
+      "precondition": "Centralized, SHA-pinned claude-code-action (>= v1.0.93, CVE-2025-66032). Hold below v1.0.276 until auto-code-scanning's shared fix loop sets an explicit --permission-mode: from v1.0.276 the action starts sessions in auto mode, and this repository cannot set the fix loop's mode (operator decision, 2026-11-19)."
     },
     {
       "id": "python-pyyaml",
