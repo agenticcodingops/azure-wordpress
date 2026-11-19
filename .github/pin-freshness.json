@@ -33,7 +33,7 @@
         "type": "github_releases",
         "repo": "hashicorp/terraform"
       },
-      "precondition": "Terraform 1.17.1 exactly, as the workflow asserts"
+      "precondition": "Terraform 1.17.2 exactly, as the workflow asserts"
     },
     {
       "id": "terraform-cli-consumer",

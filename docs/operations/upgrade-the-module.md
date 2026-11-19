@@ -10,7 +10,7 @@ minor and a major release; a major release needs the extra reading in step 1.
 - The release you run now, and the one you want. Releases are cut by release-please from conventional commits, so
   `fix:` is a patch, `feat:` a minor and `feat!:` or a `BREAKING CHANGE:` footer a major
   ([Version guarantees](../../README.md#version-guarantees)).
-- Terraform at the version your CI uses. This repository validates with Terraform 1.17.1 and with 1.9.8, the
+- Terraform at the version your CI uses. This repository validates with Terraform 1.17.2 and with 1.9.8, the
   version the deployment guide pins for consumers; the modules accept 1.6.0 or later.
 - Providers pinned exactly in the root and a committed `.terraform.lock.hcl`
   ([deployment guide step 3](../deployment-guide.md#step-3-pin-providers-exactly-and-commit-the-lock-file)).

@@ -9,12 +9,12 @@ pull request.
 1. Fork the repository and clone your fork.
 2. Add the canonical repository as the `upstream` remote.
 3. Install the required tools:
-   - Terraform 1.17.1 (the version CI formats and validates with). CI also validates every module on 1.9.8,
+   - Terraform 1.17.2 (the version CI formats and validates with). CI also validates every module on 1.9.8,
      the version the consumer's CI runs, so a change must validate on both
    - terraform-docs 0.20.0
-   - Checkov 3.4.3
+   - Checkov 3.4.5
    - Trivy
-   - Python 3.11 or newer, with PyYAML 6.0.3 and jsonschema 4.25.1
+   - Python 3.11 or newer, with PyYAML 6.0.3 and jsonschema 4.26.0
    - Lefthook and the scanners configured in `lefthook.yml`
    - Bash 4.4 or newer for shell hooks; on macOS, install a supported Bash and put it first on PATH
 4. Install the repository hooks once per clone:
@@ -67,18 +67,18 @@ Review the resulting diff and ensure a second run is idempotent.
 
 ## Run the compliance scan
 
-CI parity uses Checkov 3.4.3. The v3.1.2 push hooks require a trusted executable
+CI parity uses Checkov 3.4.5. The v3.1.2 push hooks require a trusted executable
 named `checkov` on PATH and scan files changed by each pushed ref. New refs compare with the destination
 remote default; fallback selection counts only that destination's remote-tracking refs. Keep those refs current before pushing. For the suffixed parity command:
 
 ```bash
-pipx install --suffix=@343 checkov==3.4.3
+pipx install --suffix=@345 checkov==3.4.5
 ```
 
 Run it with the same render setting and skip list that the validation workflow uses:
 
 ```bash
-RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@343 -d . --framework terraform --quiet \
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@345 -d . --framework terraform --quiet \
   --skip-check "$(sed -n 's/^ *skip_check: *\([^[:space:]]*\).*/\1/p' .github/workflows/validate.yml)"
 ```
 
@@ -89,7 +89,7 @@ Update the mirror whenever changing the workflow list. CI also reads that policy
 Install hook validation dependencies with Python 3.11 or newer:
 
 ```bash
-python -m pip install PyYAML==6.0.3 jsonschema==4.25.1
+python -m pip install PyYAML==6.0.3 jsonschema==4.26.0
 ```
 
 For tflint, provision a reviewed `.hcl` config and plugin cache outside the checkout,
