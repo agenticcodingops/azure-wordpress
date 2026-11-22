@@ -283,10 +283,11 @@ Two more ways round the hook were found after it merged, and the second is why t
   as `Bash`, so the plugin's `Bash(gh pr comment:*)` grant approves it. What a hook is told differs
   by CLI version: `Monitor` reaches it as `Bash` on 2.1.316 and as `Monitor` on 2.1.302, where a
   Bash-only matcher let a `Monitor` comment on another PR run. The matcher is therefore `*`, and the
-  guard is default-deny: it passes reading and searching the checkout (`Read`, `Grep`, `Glob`, `LS`),
-  sub-agents, task tracking and `ToolSearch`, and the inline-comment tool, applies the shell grammar
+  guard is default-deny: it passes reading and listing the checkout (`Read`, `LS`), sub-agents, task tracking and `ToolSearch`, and the inline-comment tool, applies the shell grammar
   to `Bash`, `Monitor` and `PowerShell`, restricts file writes to the summary, and blocks every other
-  tool, so a tool added to the CLI later fails closed. If a review loses a tool it needs, add it to
+  tool, so a tool added to the CLI later fails closed. That includes `Grep` and `Glob` (#188): the
+  guard does not check the paths they search, so they are blocked rather than exempted, and
+  `--disallowedTools` denies them as well. If a review loses a tool it needs, add it to
   `NO_IO` in the guard and to the test table; do not widen the matcher back to a list.
 - **The plugin's own command.** The review starts from `/code-review:code-review`. On CLI 2.1.316
   the command is expanded up front, but on 2.1.281 the model runs it through the `Skill` tool, and
@@ -310,7 +311,7 @@ runs the decision table through the script, and runs the differential against re
 build if any of these is put back: a backslash allowed in double quotes, an unquoted `#`, line breaks,
 a fail-open hook command, a narrow matcher, a missing `--setting-sources user`, a default-allow guard,
 `Monitor` or `PowerShell` dropped from the shell tools, a bare `Write` allow, a review plugin installed
-from a branch or from an unchecked fetch.
+from a branch or from an unchecked fetch, or `Grep` or `Glob` passed without a check.
 `scripts/tests/mutate_review_guard.py`, in the same job, proves that: each row puts one known bug into a
 copy of the workflow and fails unless a named test goes red. When a review finds a gap in the test, add its
 row there. The test's copies in other repositories are identical, so change them together.
