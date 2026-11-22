@@ -41,6 +41,13 @@ files to satisfy this policy.
   model name is rejected even on an allow-listed address.
 - Never pass `--author`, and never set `GIT_AUTHOR_*` / `GIT_COMMITTER_*` to commit as
   anyone else.
+- Co-authors count as contributors: GitHub lists every co-author of a commit on `main`
+  as a contributor. A `Co-authored-by` line is accepted only when its address is in
+  `.githooks/allowed-authors.txt` or `.githooks/allowed-coauthors.txt`, whatever name it
+  carries. The second file lists the code-review and scanning tools the maintainer
+  allows as co-authors (CodeRabbit, Semgrep, SonarCloud). It does not let them author or
+  commit, and the trailer rule above still rejects a co-author line with a bot or
+  noreply address. Tested by `scripts/tests/coauthor-check.test.sh`.
 
 Merged dependency-update commits with that bot's exact author identity and GitHub's merge
 committer identity are exempt from the push scan of the default branch, so GitHub's own

@@ -14,6 +14,7 @@ email_of() { sed -n 's/^.*<\([^>]*\)>.*$/\1/p'; }
 
 fail=0
 branding_scan "commit message" <"$1" || fail=1
+coauthor_check "commit message" <"$1" || fail=1
 
 # The allow-list also carries GitHub-side merge identities (for CI), so it alone would let a
 # local commit claim one of them. Local commits must be the configured identity, exactly.
