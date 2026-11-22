@@ -175,6 +175,39 @@ jobs:
           GUARD
           node --check "$RUNNER_TEMP/review-comment-guard.js"
 
+      # The review plugin, pinned to a commit, so the guard and the POSTING RULES below always
+      # meet the command they were measured against. The claude-code marketplace resolves
+      # `code-review` from anthropics/claude-plugins-official at `main`, which changed the plugin
+      # on 2026-10-26 with no action bump. The action accepts a marketplace URL only without a
+      # ref, but it takes a local path. That repository's own marketplace name is reserved: CLI
+      # 2.1.325 refuses `claude-plugins-official` from any source but its GitHub repository
+      # (measured 2026-11-21). So this step fetches the pinned commit and wraps the plugin in a
+      # one-plugin marketplace of its own name. The plugin keeps its name, so the command stays
+      # `/code-review:code-review`, the name the guard allows. A fetch of a full SHA is checked
+      # by git against that SHA, and the step fails if HEAD is anything else. The review cannot
+      # edit these files: Edit under $RUNNER_TEMP is denied, and the guard allows no other write.
+      # Re-measure before moving the pin: read the new command file against the POSTING RULES.
+      - name: Fetch the pinned review plugin
+        env:
+          # anthropics/claude-plugins-official 9780cf4, "code-review: add version 1.0.1" (2026-10-26),
+          # the commit that last changed plugins/code-review.
+          PLUGIN_COMMIT: 9780cf407f5593727b668bae95a0c4ae2e0de1ae
+        run: |
+          market="$RUNNER_TEMP/review-plugin"
+          git init --quiet "$market/source"
+          git -C "$market/source" fetch --quiet --depth 1 https://github.com/anthropics/claude-plugins-official.git "$PLUGIN_COMMIT"
+          git -C "$market/source" -c advice.detachedHead=false checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$market/source" rev-parse HEAD)" = "$PLUGIN_COMMIT"
+          test -f "$market/source/plugins/code-review/commands/code-review.md"
+          mkdir -p "$market/.claude-plugin"
+          cat > "$market/.claude-plugin/marketplace.json" <<'MARKET'
+          {
+            "name": "review-plugin-pinned",
+            "owner": { "name": "review workflow" },
+            "plugins": [{ "name": "code-review", "source": "./source/plugins/code-review" }]
+          }
+          MARKET
+
       - name: Run Claude Code Review
         id: claude-review
         # Re-measure before bumping this pin, and before loosening the guard step above: the
@@ -224,8 +257,9 @@ jobs:
           # default; the review never pushes, so ask for read and a leaked token cannot push code.
           additional_permissions: |
             contents: read
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
+          # The pinned plugin the step above fetched (see there).
+          plugin_marketplaces: ${{ runner.temp }}/review-plugin
+          plugins: 'code-review@review-plugin-pinned'
           # Without --comment the plugin reviews and then posts nothing, by design.
           # The POSTING RULES reach the plugin as arguments. Without them the model reaches for
           # `gh api` and heredoc bodies, which the allow-list denies, so nothing gets posted.
