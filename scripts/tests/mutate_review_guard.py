@@ -88,6 +88,8 @@ ROWS = [
     ("guard-step-fails-early", 'cat > "$RUNNER_TEMP/review-comment-guard.js"', 'false\n          cat > "$RUNNER_TEMP/review-comment-guard.js"', DECIDE + "test_bash_commands"),
     ("guard-at-another-path", None, replace_all(r"\$RUNNER_TEMP/review-comment-guard\.js", "$RUNNER_TEMP/review-comment-guard-typo.js"), DECIDE + "test_bash_commands"),
     ("floating-pin", None, replace_all(r"anthropics/claude-code-action@[0-9a-f]{40}", "anthropics/claude-code-action@v1"), WIRING + "test_the_action_is_pinned_to_a_commit"),
+    ("issues-write", "            issues: read\n", "", WIRING + "test_the_action_token_cannot_push_or_write_issues"),
+    ("contents-write", "            contents: read\n", "            contents: write\n", WIRING + "test_the_action_token_cannot_push_or_write_issues"),
     ("floating-plugin", "plugin_marketplaces: ${{ runner.temp }}/review-plugin\n", "plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'\n", WIRING + "test_the_review_plugin_is_pinned_to_a_commit"),
     ("plugin-on-a-branch", None, replace_all(r"PLUGIN_COMMIT: [0-9a-f]{40}", "PLUGIN_COMMIT: main"),WIRING + "test_the_review_plugin_is_pinned_to_a_commit"),
     ("plugin-unchecked", 'test "$(git -C "$market/source" rev-parse HEAD)" = "$PLUGIN_COMMIT"\n', "", WIRING + "test_the_review_plugin_is_pinned_to_a_commit"),

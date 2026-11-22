@@ -253,10 +253,16 @@ jobs:
               }
             }
           # The action's own token is in GH_TOKEN while the review runs, so text in a PR could
-          # make the review disclose it (see claude_args). The action asks for contents: write by
-          # default; the review never pushes, so ask for read and a leaked token cannot push code.
+          # make the review disclose it (see claude_args). The action asks for contents, pull_requests
+          # and issues, all write, and merges these lines over those defaults (src/github/token.ts),
+          # so a scope left out here stays write; the job's own `issues: read` does not bind this
+          # token. The review never pushes and never writes an issue: it posts inline comments through
+          # the pull request review API and the summary with `gh pr comment`. So contents and issues
+          # are read, and a leaked token can neither push code nor edit issues (#188).
           additional_permissions: |
             contents: read
+            pull_requests: write
+            issues: read
           # The pinned plugin the step above fetched (see there).
           plugin_marketplaces: ${{ runner.temp }}/review-plugin
           plugins: 'code-review@review-plugin-pinned'
