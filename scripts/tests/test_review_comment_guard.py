@@ -262,6 +262,14 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertIn('rm -rf -- "$GITHUB_WORKSPACE/.review-summary.md"', step_text("Clear the review summary path"))
         self.assertLess(TEXT.index("Clear the review summary path"), TEXT.index("Write the review comment guard"))
 
+    def test_the_action_token_cannot_push_or_write_issues(self):
+        # The action merges these lines over contents, pull_requests and issues, all write, so a scope left out
+        # stays write. The review only posts to the pull request, so the other two are read (#188).
+        lines = [line.strip() for line in review_block("additional_permissions").split("\n") if line.strip()]
+        scopes = dict(line.split(":", 1) for line in lines if not line.startswith("#"))
+        scopes = {key.strip(): value.strip() for key, value in scopes.items()}
+        self.assertEqual(scopes, {"contents": "read", "pull_requests": "write", "issues": "read"})
+
     def test_the_action_is_pinned_to_a_commit(self):
         match = re.search(r"uses:\s*anthropics/claude-code-action@(\S+)", TEXT)
         self.assertIsNotNone(match)

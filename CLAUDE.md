@@ -349,8 +349,10 @@ text in a PR could try to make the review disclose one. The workflow now:
 - checks out with `persist-credentials: false` (the pinned checkout v7.0.1 would otherwise keep the
   job token in a file under `$RUNNER_TEMP` that the checkout's git config includes), and deletes
   whatever the PR put at the summary's path before the review runs;
-- asks for the action's token with `contents: read` (`additional_permissions`), so a leaked token
-  cannot push code;
+- asks for the action's token with `contents: read`, `pull_requests: write` and `issues: read`
+  (`additional_permissions`), so a leaked token can neither push code nor write issues. The action
+  merges these lines over its defaults (all three write), so a scope left out stays write, and the
+  job's own `permissions:` block does not bind this token (#188);
 - denies the file tools `.git/**`, and `--jq`, `-q`, `--template` and `-t` on `gh`, which can read
   environment variables;
 - tells the review, and every agent it launches, to run `gh pr diff` without redirecting it into a
