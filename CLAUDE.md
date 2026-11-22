@@ -205,8 +205,22 @@ inline-comment tools must be allowed through `claude_args --allowedTools`, mirro
 own `allowed-tools` frontmatter. The workflow now passes both, and pins both actions to commit
 SHAs because the job holds a write token and the OAuth secret. Two consequences worth knowing:
 
-- The plugin stops if it has already commented on the PR, so it reviews a PR **once**, on open,
-  not on every push. It also skips PRs it judges automated or trivial.
+- **Each head commit gets its own review (#188).** Left to itself, the plugin stops once Claude has
+  commented on the PR at all, so it reviewed a PR only once, on open. The step "Find the head to
+  review" now decides, outside the model, and runs first. It reads the live head, not the event's
+  SHA: a run queued behind a review, re-run, or preceded by a bot push that starts no run of its
+  own, reviews the newest commit. It skips the review step when the app (type `Bot`, login
+  `claude[bot]`) has a comment whose first line is `Reviewed head: <that SHA>`, so a user's comment,
+  or a user named `claude`, cannot match. It pins the review to that commit: the checkout is that
+  SHA, and its diff (the compare API's `base...head`) is saved to `review.diff`, which the prompt
+  reads in place of `gh pr diff`, which shows whatever is the head at the moment. A push during a
+  review therefore changes nothing under it. The prompt's REVIEWED HEAD rules review that SHA, pass
+  it as `commit_id` on inline comments, and end every review with that summary, issues or not, so a
+  re-run on the same commit posts nothing. Two gaps remain. The mention workflow posts as the same
+  app, so if asked to write the marker it could suppress the review of one commit. A bot push
+  after the head step leaves that bot head unreviewed, as bot pushes always were. The plugin also
+  skips PRs it judges automated or trivial, and then posts no marker, so the next push is reviewed
+  again.
 - A green check with no comment can still mean "skipped" (see above) — check the PR for the
   review comment before treating it as a clean review.
 - `gh pr comment` is allowed only for the triggering PR, by number or by URL, and only with one
@@ -311,7 +325,8 @@ runs the decision table through the script, and runs the differential against re
 build if any of these is put back: a backslash allowed in double quotes, an unquoted `#`, line breaks,
 a fail-open hook command, a narrow matcher, a missing `--setting-sources user`, a default-allow guard,
 `Monitor` or `PowerShell` dropped from the shell tools, a bare `Write` allow, a review plugin installed
-from a branch or from an unchecked fetch, or `Grep` or `Glob` passed without a check.
+from a branch or from an unchecked fetch, `Grep` or `Glob` passed without a check, or a review that is
+not tied to the head commit that started it.
 `scripts/tests/mutate_review_guard.py`, in the same job, proves that: each row puts one known bug into a
 copy of the workflow and fails unless a named test goes red. When a review finds a gap in the test, add its
 row there. The test's copies in other repositories are identical, so change them together.
@@ -356,8 +371,10 @@ text in a PR could try to make the review disclose one. The workflow now:
   job's own `permissions:` block does not bind this token (#188);
 - denies the file tools `.git/**`, and `--jq`, `-q`, `--template` and `-t` on `gh`, which can read
   environment variables;
-- tells the review, and every agent it launches, to run `gh pr diff` without redirecting it into a
-  file: the CLI checks a redirect's target as a file write, which the allow-list denies.
+- tells the review, and every agent it launches, to read the diff from `review.diff` in the runner
+  temp directory with the Read tool (one exact `Read(...)` allow rule), not with `gh pr diff`: a
+  redirect of that command into a file is checked as a file write, which the allow-list denies, and
+  the command shows the live head, not the commit under review (#188).
 
 This narrows token disclosure but does not stop it: deny rules match command text, and read-only
 shell commands can still print the token, which stays live until the job ends.

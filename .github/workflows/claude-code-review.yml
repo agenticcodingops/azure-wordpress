@@ -18,7 +18,10 @@ jobs:
     # non-human actor. Skip those runs too (the sender check); a human push still runs it.
     if: github.event.pull_request.user.type != 'Bot' && github.event.sender.type != 'Bot'
     # One run per PR at a time, so a push during a review cannot start a second review before
-    # the first has posted. The later run waits, then the plugin sees the review and stops.
+    # the first has posted. The later run waits, then reviews the live head unless a summary
+    # already names it (`Reviewed head: <sha>`; see "Find the head to review", #188). A push
+    # during a review does not disturb it: the review reads a diff and a checkout pinned to its
+    # commit, and the push's own run reviews the new head.
     # Not cancel-in-progress: cancelling could cut a review off part-way through posting.
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -32,9 +35,47 @@ jobs:
       id-token: write
 
     steps:
+      # Each head commit gets one review (#188). Left to itself, the plugin stops once Claude has
+      # commented on the PR at all, so only a PR's first head was ever reviewed. This step decides
+      # instead, outside the model, and pins the whole review to one commit:
+      # - It reads the live head, not the event's SHA, so a run queued behind a review, re-run, or
+      #   preceded by a bot push that starts no run of its own reviews the newest commit.
+      # - It looks for a summary by the review app whose first line is `Reviewed head: <that SHA>`.
+      #   The author must be the app (type Bot, login claude[bot]), so a user's comment, or a user
+      #   named claude, cannot match. A head with a review skips the review step, which is what
+      #   makes a re-run on the same commit post nothing.
+      # - It saves that commit's diff against the base (the compare API's base...head, which is
+      #   what the PR shows) to review.diff. `gh pr diff` always shows the live head, so a push
+      #   during the review would change what the agents read under them; the prompt reads this
+      #   file instead, and the checkout below is the same commit.
+      # Both SHAs are checked to be 40 hex characters before anything uses them. A failed read
+      # fails the job.
+      - name: Find the head to review
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          shas=$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha + " " + .base.sha')
+          SHA=${shas%% *}
+          BASE=${shas#* }
+          for value in "$SHA" "$BASE"; do
+            if ! [[ "$value" =~ ^[0-9a-f]{40}$ ]]; then echo "unexpected SHA: $value" >&2; exit 1; fi
+          done
+          export SHA
+          found=$(gh api --paginate "repos/$REPO/issues/$PR/comments" --jq '.[] | select(.user.type == "Bot" and .user.login == "claude[bot]") | select((.body | split("\n")[0] | rtrimstr("\r")) == "Reviewed head: " + env.SHA) | .id')
+          if [ -n "$found" ]; then reviewed=true; else reviewed=false; fi
+          gh api -H "Accept: application/vnd.github.diff" "repos/$REPO/compare/$BASE...$SHA" > "$RUNNER_TEMP/review.diff"
+          echo "Head $SHA; already reviewed: $reviewed"
+          { echo "sha=$SHA"; echo "reviewed=$reviewed"; } >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The commit under review (see the step above), not the event's merge commit.
+          ref: ${{ steps.head.outputs.sha }}
           fetch-depth: 1
           # The review reads files in this checkout, and the job token can write to PRs, so do
           # not persist it. This checkout version would keep it in a file under $RUNNER_TEMP
@@ -213,6 +254,9 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
+        # Only a head with no review yet (see the step above). An unset output skips it too, but
+        # then that step has failed and the job is already red.
+        if: steps.head.outputs.reviewed == 'false'
         # Re-measure before bumping this pin, and before loosening the guard step above: the
         # plugin's `gh pr comment` grant is honoured on every CLI version measured, so the
         # PR boundary rests on that guard, not on --allowedTools.
@@ -275,16 +319,28 @@ jobs:
           # Measured locally on 2026-09-24 with the same CLI version: 8 denials without the
           # rules, and with them the summary goes out as an allowed `--body-file` command.
           # A redirect such as `gh pr diff <N> > file` is denied too, because its target is
-          # checked as a file write: on one review elsewhere it was 22 of 23 denials. The agents
-          # the plugin launches read the diff, so they get that rule too.
+          # checked as a file write: on one review elsewhere it was 22 of 23 denials. The diff is
+          # now saved before the review (review.diff, read with the Read tool, which the one
+          # `Read(...)` rule in claude_args allows outside the checkout), so no agent needs to
+          # redirect anything.
           # Folded (>-) into one line, which is how the plugin receives arguments.
           prompt: >-
             /code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment
+            REVIEWED HEAD (follow exactly):
+            this run reviews commit ${{ steps.head.outputs.sha }}; call it the reviewed SHA.
+            A workflow step has already checked that no earlier review names this commit, so drop step 1's condition
+            "Claude has already commented on this PR", and tell the step 1 agent so; keep step 1's other conditions.
+            The diff of the reviewed commit is in ${{ runner.temp }}/review.diff, and the checkout is that commit.
+            Read the diff from that file with the Read tool, never with gh pr diff, which shows a later push if one lands,
+            and tell every agent you launch to do the same.
+            Pass commit_id set to the reviewed SHA on every inline comment, and use the reviewed SHA in every code link.
+            Always post exactly one summary comment, after any inline comments, whether or not issues were found.
+            Its first line is exactly `Reviewed head: ${{ steps.head.outputs.sha }}`, followed by the plugin's summary;
+            when issues were posted inline, list each in one line in place of "No issues found".
             POSTING RULES (follow exactly):
-            get the full head commit SHA with `gh pr view ${{ github.event.pull_request.number }} --json headRefOid`, never with gh api.
+            the head commit SHA is the reviewed SHA above; never read it with gh api.
             Read saved tool output with the Read tool, never with shell commands.
-            Run `gh pr diff` without redirecting its output into a file, and tell every agent you launch
-            to do the same and to read saved tool output with the Read tool.
+            Tell every agent you launch to read saved tool output with the Read tool.
             Post inline comments only with the mcp__github_inline_comment__create_inline_comment tool, never with gh api.
             To post the summary comment, first write the body to ${{ github.workspace }}/.review-summary.md with the Write tool,
             then run exactly `gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file ${{ github.workspace }}/.review-summary.md`,
@@ -315,7 +371,7 @@ jobs:
           # these rules were measured in: an unlisted call is denied, not reviewed. The guard
           # hook runs before any permission decision either way.
           claude_args: |
-            --allowedTools "Edit(/${{ github.workspace }}/.review-summary.md),mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file ${{ github.workspace }}/.review-summary.md),Bash(gh pr comment ${{ github.event.pull_request.number }} --body-file ${{ github.workspace }}/.review-summary.md),Bash(gh pr comment https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }} --body-file ${{ github.workspace }}/.review-summary.md),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*)"
+            --allowedTools "Read(/${{ runner.temp }}/review.diff),Edit(/${{ github.workspace }}/.review-summary.md),mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file ${{ github.workspace }}/.review-summary.md),Bash(gh pr comment ${{ github.event.pull_request.number }} --body-file ${{ github.workspace }}/.review-summary.md),Bash(gh pr comment https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }} --body-file ${{ github.workspace }}/.review-summary.md),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*)"
             --disallowedTools "Grep,Glob,Read(./.git/**),Edit(/${{ runner.temp }}/**),Edit(~/.claude/**),Edit(/${{ github.workspace }}/.git/**),Bash(gh * --jq*),Bash(gh * -q*),Bash(gh * --template*),Bash(gh * -t*)"
             --setting-sources user
             --permission-mode default
