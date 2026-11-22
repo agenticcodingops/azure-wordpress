@@ -267,6 +267,32 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertRegex(match.group(1), r"^[0-9a-f]{40}$", "a tag can be moved; pin the action to a commit")
 
+    def test_the_review_plugin_is_pinned_to_a_commit(self):
+        # A marketplace URL resolves the plugin at a branch, so the command the guard and the POSTING RULES were
+        # measured against could change under the action pin. The plugin comes from a commit the fetch step
+        # checks, through a local marketplace that step writes, and that marketplace is the one the review uses.
+        fetch = step_text("Fetch the pinned review plugin")
+        pin = re.search(r"(?m)^\s+PLUGIN_COMMIT:\s*(\S+)\s*$", fetch)
+        self.assertIsNotNone(pin, "the fetch step must name the plugin commit")
+        self.assertRegex(pin.group(1), r"^[0-9a-f]{40}$", "pin the plugin to a full commit SHA")
+        script = step_run_block("Fetch the pinned review plugin")
+        self.assertIn('test "$(git -C "$market/source" rev-parse HEAD)" = "$PLUGIN_COMMIT"', script)
+        self.assertIn('market="$RUNNER_TEMP/review-plugin"', script)
+        manifest = re.search(r"<<'MARKET'\n(.*?)\nMARKET\n", script, re.S)
+        self.assertIsNotNone(manifest, "the fetch step must write the marketplace manifest itself")
+        market = json.loads(manifest.group(1))
+        self.assertEqual([p["name"] for p in market["plugins"]], ["code-review"])
+        self.assertEqual(market["plugins"][0]["source"], "./source/plugins/code-review")
+        review = step_text("Run Claude Code Review")
+        sources = re.findall(r"(?m)^\s+plugin_marketplaces:\s*(.*?)\s*$", review)
+        self.assertEqual(sources, ["${{ runner.temp }}/review-plugin"], "the review must install from the pinned copy")
+        plugins = re.findall(r"(?m)^\s+plugins:\s*'?(.*?)'?\s*$", review)
+        self.assertEqual(plugins, ["code-review@" + market["name"]])
+        # The command the guard lets the Skill tool run is named after the plugin, so the name must not change.
+        self.assertIn('const PLUGIN_COMMANDS = ["code-review:code-review", "code-review"];', extract_guard(TEXT))
+        self.assertIsNone(re.search(r"(?m)^\s+(if|continue-on-error):", fetch), "the fetch step must always run")
+        self.assertLess(TEXT.index("- name: Fetch the pinned review plugin"), TEXT.index("id: claude-review"))
+
 
 # [expected, tool, argument]  expected: "allow" or "block"
 BASH = "Bash"

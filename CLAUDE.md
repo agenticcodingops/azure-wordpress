@@ -293,13 +293,24 @@ Two more ways round the hook were found after it merged, and the second is why t
   blocking that made a read-only run improvise a review with none of the plugin's steps. The guard
   therefore allows the `Skill` tool for that one command, by exact name, and blocks every other
   skill, because a skill's body can carry its own `allowed-tools`.
+- **The plugin is pinned to a commit (#188).** The claude-code marketplace resolved `code-review`
+  from `anthropics/claude-plugins-official` at `main`, which changed the plugin on 2026-10-26 with no
+  action bump. The "Fetch the pinned review plugin" step now fetches one commit (`PLUGIN_COMMIT`),
+  checks HEAD against it, and writes a one-plugin local marketplace, `review-plugin-pinned`, under
+  `$RUNNER_TEMP`. It cannot reuse the upstream marketplace name: CLI 2.1.325 reserves
+  `claude-plugins-official` for its GitHub source and refuses it from a local path. The plugin keeps
+  its name, so the command and the guard's `Skill` allowance are unchanged. The pin-freshness
+  manifest cannot track this pin (the repository has no tags, and the manifest has no commit
+  source), so move it by hand: read the new `commands/code-review.md` against the POSTING RULES and
+  the guard, then measure a real review.
 
 The test (`scripts/tests/test_review_comment_guard.py`, run by the `Review guard` job) extracts the
 guard from the workflow, so the guard that ships is the one that is tested. It checks the hook wiring,
 runs the decision table through the script, and runs the differential against real bash. It fails the
 build if any of these is put back: a backslash allowed in double quotes, an unquoted `#`, line breaks,
 a fail-open hook command, a narrow matcher, a missing `--setting-sources user`, a default-allow guard,
-`Monitor` or `PowerShell` dropped from the shell tools, a bare `Write` allow.
+`Monitor` or `PowerShell` dropped from the shell tools, a bare `Write` allow, a review plugin installed
+from a branch or from an unchecked fetch.
 `scripts/tests/mutate_review_guard.py`, in the same job, proves that: each row puts one known bug into a
 copy of the workflow and fails unless a named test goes red. When a review finds a gap in the test, add its
 row there. The test's copies in other repositories are identical, so change them together.
