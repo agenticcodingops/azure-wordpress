@@ -253,6 +253,13 @@ class WorkflowWiringTests(unittest.TestCase):
         # deny is what keeps the review from copying it into the summary it is allowed to post.
         self.assertIn("Read(./.git/**)", denied[0])
 
+    def test_search_tools_are_disallowed_as_whole_entries(self):
+        denied = [a for a in review_arguments() if a.startswith("--disallowedTools")]
+        self.assertEqual(len(denied), 1)
+        entries = denied[0].removeprefix('--disallowedTools "').removesuffix('"').split(",")
+        self.assertIn("Grep", entries)
+        self.assertIn("Glob", entries)
+
     def test_the_protecting_steps_cannot_be_skipped(self):
         # A step with a condition or continue-on-error can be skipped or fail without stopping the job.
         for name in ("Clear the review summary path", "Write the review comment guard"):
@@ -409,9 +416,12 @@ FILE_CASES = [
     ["block", "Write", {"file_path": SUMMARY, "notebook_path": "/tmp/x"}],
     ["allow", "NotebookEdit", {"notebook_path": SUMMARY}],
     ["allow", "NotebookEdit", {"file_path": SUMMARY, "notebook_path": SUMMARY}],
-    # tools the guard does not manage go on to the normal permission check
+    # read-only tools are allowed only when the guard names them explicitly
     ["allow", "Read", {"file_path": "x"}],
-    ["allow", "Grep", {"pattern": "x"}],
+    ["block", "Grep", {"pattern": "x", "path": WS + "/.git"}],
+    ["block", "Grep", {"pattern": "x"}],
+    ["block", "Glob", {"pattern": "**/.git/config"}],
+    ["block", "Glob", {"pattern": "*", "path": "/runner/temp"}],
     ["allow", "mcp__github_inline_comment__create_inline_comment", {}],
 ]
 
@@ -448,7 +458,7 @@ TOOL_CASES = (
        ["block", "Skill", {"skill": None}],
        ["block", "Skill", {}]]
     # tools that run nothing and write nothing go on to the normal permission check
-    + [["allow", tool, {}] for tool in ("Read", "Grep", "Glob", "LS", "Agent", "Task", "TaskCreate", "TaskGet", "TaskList",
+    + [["allow", tool, {}] for tool in ("Read", "LS", "Agent", "Task", "TaskCreate", "TaskGet", "TaskList",
                                        "TaskUpdate", "TaskOutput", "TaskStop", "BashOutput", "KillShell", "TodoWrite",
                                        "ToolSearch", "mcp__github_inline_comment__create_inline_comment")]
 )

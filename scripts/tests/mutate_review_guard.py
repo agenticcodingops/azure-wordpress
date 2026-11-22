@@ -65,6 +65,7 @@ ROWS = [
     ("shell-tools-narrowed", 'const SHELL_TOOLS = ["Bash", "Monitor", "PowerShell"];', 'const SHELL_TOOLS = ["Bash"];', DECIDE + "test_other_shell_tools_and_unknown_tools"),
     ("first-path-only", "targets.length > 0 && targets.every(", "targets.length > 0 && targets.some(", DECIDE + "test_file_tools"),
     ("write-with-no-path", "targets.length > 0 && targets.every(", "targets.every(", DECIDE + "test_file_tools"),
+    ("search-tools-no-io", 'const NO_IO = ["Read", "LS",', 'const NO_IO = ["Read", "Grep", "Glob", "LS",', DECIDE + "test_file_tools"),
     # The hook's wiring.
     ("fail-open", "review-comment-guard.js" + HOOK_ARGS + "${{ github.workspace }}' || exit 2", "review-comment-guard.js" + HOOK_ARGS + "${{ github.workspace }}' || true", WIRING + "test_the_hook_fails_closed"),
     ("watchdog-too-long", '"the guard timed out."), 10000)', '"the guard timed out."), 100000)', WIRING + "test_the_hook_fails_closed"),
@@ -82,7 +83,8 @@ ROWS = [
     ("settings-under-env", "        with:\n          claude_code_oauth_token", "        env:\n          claude_code_oauth_token", WIRING + "test_settings_from_the_checkout_cannot_turn_the_hook_off"),
     # Rules and steps around the review.
     ("bare-write", '--allowedTools "Edit(', '--allowedTools "Write,Edit(', WIRING + "test_the_review_cannot_write_anywhere_but_the_summary"),
-    ("git-readable", '--disallowedTools "Read(./.git/**),', '--disallowedTools "', WIRING + "test_the_review_cannot_write_anywhere_but_the_summary"),
+    ("git-readable", '--disallowedTools "Grep,Glob,Read(./.git/**),', '--disallowedTools "Grep,Glob,', WIRING + "test_the_review_cannot_write_anywhere_but_the_summary"),
+    ("search-tools-not-disallowed", '--disallowedTools "Grep,Glob,', '--disallowedTools "', WIRING + "test_search_tools_are_disallowed_as_whole_entries"),
     ("cleanup-skipped", "      - name: Clear the review summary path\n", "      - name: Clear the review summary path\n        if: false\n", WIRING + "test_the_protecting_steps_cannot_be_skipped"),
     ("cleanup-before-checkout", None, cleanup_before_checkout, WIRING + "test_the_steps_run_in_the_order_that_protects_the_review"),
     ("guard-step-fails-early", 'cat > "$RUNNER_TEMP/review-comment-guard.js"', 'false\n          cat > "$RUNNER_TEMP/review-comment-guard.js"', DECIDE + "test_bash_commands"),
