@@ -1,4 +1,16 @@
 {
+    "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(npx ctx7@latest library \"Claude Code\" \"skills SKILL.md frontmatter disable-model-invocation allowed-tools argument-hint\")",
+      "mcp__firecrawl__firecrawl_scrape",
+      "Bash(git config *)",
+      "Bash(gh auth *)",
+      "Bash(pwsh -v)",
+      "Bash(gh workflow run wordpress-ops.yml --repo agenticcodingops/trackroutinely *)",
+      "Bash(gh issue close * --repo agenticcodingops/*)"
+    ]
+  },
   "attribution": {
     "commitTrailers": false,
     "commit": "",

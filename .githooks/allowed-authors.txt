@@ -14,3 +14,4 @@ noreply@github.com
 # low-risk PRs through the API, which accepts only the merging account's own verified addresses
 # as the squash author, so the merge uses this one; the committer stays GitHub's web-flow.
 340677216+agenticcodingops-orchestrator@users.noreply.github.com
+autofix@auto-code-scanning.invalid
