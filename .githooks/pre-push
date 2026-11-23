@@ -49,6 +49,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     for c in $commits; do
         short=$(git rev-parse --short "$c")
         git log -1 --format=%B "$c" | uncomment | branding_scan "commit $short" || fail=1
+        git log -1 --format=%B "$c" | coauthor_check "commit $short" || fail=1
         identity_check "$(git log -1 --format=%ae "$c")" author "$short" || fail=1
         identity_check "$(git log -1 --format=%ce "$c")" committer "$short" || fail=1
         name_check "$(git log -1 --format=%an "$c")" author "$short" || fail=1

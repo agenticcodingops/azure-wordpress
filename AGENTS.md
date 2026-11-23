@@ -41,6 +41,14 @@ files to satisfy this policy.
   model name is rejected even on an allow-listed address.
 - Never pass `--author`, and never set `GIT_AUTHOR_*` / `GIT_COMMITTER_*` to commit as
   anyone else.
+- Co-authors count as contributors: GitHub lists every co-author of a commit on `main`
+  as a contributor. A `Co-authored-by` line is accepted only when its address is in
+  `.githooks/allowed-authors.txt` or `.githooks/allowed-coauthors.txt`, whatever name it
+  carries. The maintainer allows CodeRabbit, Semgrep and SonarCloud as co-authors, but
+  the trailer rule above still rejects a co-author line with a bot or noreply address,
+  so the second file lists only the address that passes both: Semgrep's
+  `support@semgrep.com`. Listing does not let a tool author or commit. Tested by
+  `scripts/tests/coauthor-check.test.sh`, which also checks that every entry passes.
 
 Merged dependency-update commits with that bot's exact author identity and GitHub's merge
 committer identity are exempt from the push scan of the default branch, so GitHub's own
@@ -53,7 +61,8 @@ other identity is exempt.
 - Never use `--no-verify`. If a hook blocks you, rewrite the message — do not work
   around the hook.
 - Never edit, delete or weaken anything in `.githooks/`, and never unset or repoint
-  `core.hooksPath`.
+  `core.hooksPath`. The one exception is a change the maintainer asks for, made in a
+  reviewed pull request that only adds or tightens checks, as the co-author check was.
 - Never run `lefthook install --reset-hooks-path` (or `--force`): it unsets
   `core.hooksPath` and silently disables the guard.
 
