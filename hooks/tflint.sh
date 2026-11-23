@@ -78,17 +78,11 @@ for dir in "${scan_dirs[@]}"; do
 
     if [[ ${exit_code} -eq 2 ]]; then
         # tflint uses exit 2 for findings (errors)
-        if command -v jq >/dev/null 2>&1; then
-            # tflint severity: error -> HIGH, warning -> MEDIUM, notice -> LOW
-            local_error="$(echo "${output}" | jq '[.issues[]? | select(.rule.severity == "error")] | length' 2>/dev/null || echo 0)"
-            local_warning="$(echo "${output}" | jq '[.issues[]? | select(.rule.severity == "warning")] | length' 2>/dev/null || echo 0)"
-            local_notice="$(echo "${output}" | jq '[.issues[]? | select(.rule.severity == "notice")] | length' 2>/dev/null || echo 0)"
-            total_high=$((total_high + local_error))
-            total_medium=$((total_medium + local_warning))
-            total_low=$((total_low + local_notice))
-        else
-            total_high=$((total_high + 1))
-        fi
+        # tflint severity: error -> HIGH, warning -> MEDIUM, notice -> LOW
+        read -r local_critical local_high local_medium local_low < <(scanner_severity_counts "${output}" tflint)
+        total_high=$((total_high + local_high))
+        total_medium=$((total_medium + local_medium))
+        total_low=$((total_low + local_low))
         # Show actionable details so developers know what to fix
         print_tflint_findings "${output}"
         overall_exit=1

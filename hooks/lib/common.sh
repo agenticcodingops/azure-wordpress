@@ -91,7 +91,7 @@ hook_verbose() {
 #   exit 2+ = infrastructure error (block; explicit local opt-in warns + allows)
 #
 # Usage: handle_exit_code $tool_exit_code
-# Returns: 0 (pass/fail-open) or 1 (findings found)
+# Returns: 0 (pass, or a tool error with the opt-in) or 1 (findings or incomplete scan)
 handle_exit_code() {
     local exit_code="${1:?Exit code required}"
 
@@ -626,7 +626,7 @@ resolve_config() {
 # Run a Trivy command with DB lock retry logic
 # Usage: run_trivy_with_retry arg1 arg2 arg3 ...
 # Pass arguments as separate words (NOT as a single string with eval).
-# Returns: Trivy exit code (0, 1, or 2 for fail-open on persistent lock)
+# Returns: Trivy exit code, or 2 (a tool error, which blocks) on a persistent lock
 run_trivy_with_retry() {
     local output exit_code diagnostics attempt
     diagnostics="$(mktemp)" || return 2
@@ -657,7 +657,7 @@ generate_id() {
 }
 
 # Check if a tool is available on PATH
-# Usage: require_tool "trivy" || return 2
+# Usage: require_tool "trivy" || exit 0  (exits 1 itself; returns 2 only with the opt-in)
 require_tool() {
     local tool="${1:?Tool name required}"
     if ! type -P -- "${tool}" >/dev/null 2>&1; then
@@ -719,20 +719,80 @@ format_summary() {
     echo "${total} findings (${critical} critical, ${high} high, ${medium} medium, ${low} low)"
 }
 
+# Reporting only; no scanner exit status is interpreted here.
+SCAN_SEVERITY_JQ='
+def normalized($tool):
+    if $tool == "checkov" then
+        if . == null or . == "" then "HIGH"
+        elif . == "CRITICAL" or . == "HIGH" or . == "MEDIUM" or . == "LOW" then .
+        else "MEDIUM" end
+    elif $tool == "tflint" then
+        if . == "error" then "HIGH" elif . == "info" or . == "notice" then "LOW" else "MEDIUM" end
+    elif $tool == "snyk" then
+        if . == "critical" then "CRITICAL" elif . == "high" then "HIGH"
+        elif . == "low" then "LOW" else "MEDIUM" end
+    else
+        if . == "CRITICAL" or . == "HIGH" or . == "MEDIUM" then . else "LOW" end
+    end;
+'
+
+# Always print four integers: callers read them under set -e, where empty output or
+# a carriage return from a native Windows tool would end the hook before it reports.
+scanner_severity_counts() {
+    local counts
+    counts="$(_scanner_severity_counts "$@")" || counts=''
+    # A builtin, so no tr from the scanned checkout's PATH entries can run.
+    counts="${counts//$'\r'/}"
+    [[ "$counts" =~ ^[0-9]+[[:space:]]+[0-9]+[[:space:]]+[0-9]+[[:space:]]+[0-9]+$ ]] || counts='0 0 0 0'
+    printf '%s\n' "$counts"
+}
+
+_scanner_severity_counts() {
+    local json="${1:-}" tool="$2" kind="${3:-Misconfigurations}"
+    if command -v jq >/dev/null 2>&1; then
+        printf '%s\n' "$json" | jq -r --arg tool "$tool" --arg kind "$kind" "$SCAN_SEVERITY_JQ"'
+            [if $tool == "checkov" then
+                (if type == "array" then .[] else . end) | .results.failed_checks[]? | .severity
+             elif $tool == "tflint" then .issues[]? | .rule.severity
+             elif $tool == "snyk" then
+                (if type == "array" then .[] else . end) | .infrastructureAsCodeIssues[]? | .severity
+             else .Results[]? | .[$kind][]? | .Severity end | normalized($tool)] as $levels |
+            ["CRITICAL", "HIGH", "MEDIUM", "LOW"] | map(. as $level | [$levels[] | select(. == $level)] | length) | @tsv
+        ' 2>/dev/null || printf '0 0 0 0\n'
+    else
+        # jq is optional. Python is already a hook prerequisite.
+        local py
+        py="$(find_python)" || { printf '0 0 0 0\n'; return 0; }
+        # -I: never import from the scanned checkout (a repository json.py would run).
+        "$py" -I -c '
+import json, sys
+try:
+    data = json.load(sys.stdin.buffer)
+    tool, kind = sys.argv[1:]
+    docs = data if isinstance(data, list) else [data]
+    if tool == "checkov": values = [f.get("severity") for d in docs for f in d.get("results", {}).get("failed_checks", [])]
+    elif tool == "snyk": values = [f.get("severity") for d in docs for f in d.get("infrastructureAsCodeIssues", [])]
+    elif tool == "tflint": values = [f.get("rule", {}).get("severity") for f in data.get("issues", [])]
+    else: values = [f.get("Severity") for r in data.get("Results", []) for f in r.get(kind, [])]
+    levels = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+    def normalize(v):
+        if tool == "checkov": return "HIGH" if v is None or v == "" else v if isinstance(v, str) and v in levels else "MEDIUM"
+        if tool == "tflint": return {"error":"HIGH", "info":"LOW", "notice":"LOW"}.get(v, "MEDIUM") if isinstance(v, str) else "MEDIUM"
+        if tool == "snyk": return {"critical":"CRITICAL", "high":"HIGH", "low":"LOW"}.get(v, "MEDIUM") if isinstance(v, str) else "MEDIUM"
+        return v if isinstance(v, str) and v in levels else "LOW"
+    normalized = [normalize(v) for v in values]
+    print(*(normalized.count(level) for level in levels))
+except (ValueError, TypeError, AttributeError):
+    print("0 0 0 0")
+' "$tool" "$kind" <<< "$json"
+    fi
+}
+
 # Parse severity counts from Trivy JSON output
 # Usage: parse_trivy_severities "$json_output"
 # Sets: TRIVY_CRITICAL, TRIVY_HIGH, TRIVY_MEDIUM, TRIVY_LOW
 parse_trivy_severities() {
-    local json="${1:-}"
-    if [[ -z "${json}" ]] || ! command -v jq >/dev/null 2>&1; then
-        TRIVY_CRITICAL=0; TRIVY_HIGH=0; TRIVY_MEDIUM=0; TRIVY_LOW=0
-        return 0
-    fi
-
-    TRIVY_CRITICAL="$(echo "${json}" | jq '[.Results[]?.Misconfigurations[]? | select(.Severity == "CRITICAL")] | length' 2>/dev/null || echo 0)"
-    TRIVY_HIGH="$(echo "${json}" | jq '[.Results[]?.Misconfigurations[]? | select(.Severity == "HIGH")] | length' 2>/dev/null || echo 0)"
-    TRIVY_MEDIUM="$(echo "${json}" | jq '[.Results[]?.Misconfigurations[]? | select(.Severity == "MEDIUM")] | length' 2>/dev/null || echo 0)"
-    TRIVY_LOW="$(echo "${json}" | jq '[.Results[]?.Misconfigurations[]? | select(.Severity == "LOW")] | length' 2>/dev/null || echo 0)"
+    read -r TRIVY_CRITICAL TRIVY_HIGH TRIVY_MEDIUM TRIVY_LOW < <(scanner_severity_counts "${1:-}" trivy Misconfigurations)
 }
 
 # Print actionable details for Trivy IaC findings
@@ -746,10 +806,10 @@ print_trivy_iac_findings() {
     fi
 
     local findings
-    findings="$(echo "${json}" | jq -r '
+    findings="$(echo "${json}" | jq -r "$SCAN_SEVERITY_JQ"'
         [.Results[]? | .Target as $target |
          .Misconfigurations[]? |
-         {severity: .Severity, id: .ID, title: .Title, resolution: .Resolution,
+         {severity: (.Severity | normalized("trivy")), id: .ID, title: .Title, resolution: .Resolution,
           target: $target, start: .CauseMetadata.StartLine, end: .CauseMetadata.EndLine,
           resource: .CauseMetadata.Resource}] |
         sort_by(if .severity == "CRITICAL" then 0 elif .severity == "HIGH" then 1
@@ -777,10 +837,10 @@ print_trivy_secret_findings() {
     fi
 
     local findings
-    findings="$(echo "${json}" | jq -r '
+    findings="$(echo "${json}" | jq -r "$SCAN_SEVERITY_JQ"'
         [.Results[]? | .Target as $target |
          .Secrets[]? |
-         {severity: .Severity, rule: .RuleID, title: .Title, target: $target,
+         {severity: (.Severity | normalized("trivy")), rule: .RuleID, title: .Title, target: $target,
           start: .StartLine, end: .EndLine}] |
         .[] |
         "  \(.severity)  \(.rule)  \(.target):\(.start)-\(.end)\n    \(.title)"
@@ -805,9 +865,9 @@ print_checkov_findings() {
     fi
 
     local findings
-    findings="$(echo "${json}" | jq -r '
+    findings="$(echo "${json}" | jq -r "$SCAN_SEVERITY_JQ"'
         [.results?.failed_checks[]? |
-         {severity: (.severity // "UNKNOWN"), id: .check_id, name: .check_name,
+         {severity: (.severity | normalized("checkov")), id: .check_id, name: .check_name,
           resource: .resource_address, file: .file_path,
           start: .file_line_range[0], end: .file_line_range[1],
           guideline: (.guideline // "")}] |
@@ -836,11 +896,11 @@ print_tflint_findings() {
     fi
 
     local findings
-    findings="$(echo "${json}" | jq -r '
+    findings="$(echo "${json}" | jq -r "$SCAN_SEVERITY_JQ"'
         [.issues[]? |
-         {severity: .rule.severity, name: .rule.name, message: .message,
+         {severity: (.rule.severity | normalized("tflint")), name: .rule.name, message: .message,
           file: .range.filename, start: .range.start.line, end: .range.end.line}] |
-        sort_by(if .severity == "error" then 0 elif .severity == "warning" then 1 else 2 end) |
+        sort_by(if .severity == "HIGH" then 0 elif .severity == "MEDIUM" then 1 else 2 end) |
         .[] |
         "  \(.severity | ascii_upcase)  \(.name)  \(.file):\(.start)-\(.end)\n    \(.message)"
     ' 2>/dev/null)" || true
@@ -858,14 +918,5 @@ print_tflint_findings() {
 # Usage: parse_trivy_secret_severities "$json_output"
 # Sets: TRIVY_CRITICAL, TRIVY_HIGH, TRIVY_MEDIUM, TRIVY_LOW
 parse_trivy_secret_severities() {
-    local json="${1:-}"
-    if [[ -z "${json}" ]] || ! command -v jq >/dev/null 2>&1; then
-        TRIVY_CRITICAL=0; TRIVY_HIGH=0; TRIVY_MEDIUM=0; TRIVY_LOW=0
-        return 0
-    fi
-
-    TRIVY_CRITICAL="$(echo "${json}" | jq '[.Results[]?.Secrets[]? | select(.Severity == "CRITICAL")] | length' 2>/dev/null || echo 0)"
-    TRIVY_HIGH="$(echo "${json}" | jq '[.Results[]?.Secrets[]? | select(.Severity == "HIGH")] | length' 2>/dev/null || echo 0)"
-    TRIVY_MEDIUM="$(echo "${json}" | jq '[.Results[]?.Secrets[]? | select(.Severity == "MEDIUM")] | length' 2>/dev/null || echo 0)"
-    TRIVY_LOW="$(echo "${json}" | jq '[.Results[]?.Secrets[]? | select(.Severity == "LOW")] | length' 2>/dev/null || echo 0)"
+    read -r TRIVY_CRITICAL TRIVY_HIGH TRIVY_MEDIUM TRIVY_LOW < <(scanner_severity_counts "${1:-}" trivy Secrets)
 }

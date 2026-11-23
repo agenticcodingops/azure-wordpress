@@ -85,7 +85,7 @@ for dir in "${scan_dirs[@]}"; do
         print_trivy_iac_findings "${output}"
         overall_exit=1
     elif [[ ${exit_code} -ge 2 ]]; then
-        # Infrastructure error — fail-open
+        # Exit 2 or higher is a tool error: blocks unless SCAN_ALLOW_TOOL_ERRORS=1
         handle_exit_code ${exit_code}
     fi
 done

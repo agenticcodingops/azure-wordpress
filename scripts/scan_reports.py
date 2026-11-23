@@ -3,6 +3,36 @@ import json
 from pathlib import Path
 
 
+SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+
+
+def normalize_severity(value, tool):
+    """Normalize labels without changing a caller's case/type policy.
+
+    Callers own validation and case conversion. Dictionary lookup deliberately
+    preserves the existing TypeError for unhashable scanner metadata.
+    """
+    if tool == "checkov":
+        if value is None or value == "":
+            return "HIGH"
+        return dict(zip(SEVERITIES, SEVERITIES)).get(value, "MEDIUM")
+    if tool == "tflint":
+        return {"error": "HIGH", "warning": "MEDIUM", "info": "LOW",
+                "notice": "LOW"}.get(value, "MEDIUM")
+    if tool == "snyk":
+        return {level.lower(): level for level in SEVERITIES}.get(value, "MEDIUM")
+    return dict(zip(SEVERITIES, SEVERITIES)).get(value, "LOW")
+
+
+def count_by_severity(findings):
+    """Count normalized findings, assigning unknown labels to MEDIUM."""
+    counts = dict.fromkeys(SEVERITIES, 0)
+    for finding in findings:
+        severity = finding.get("severity")
+        counts[severity if isinstance(severity, str) and severity in counts else "MEDIUM"] += 1
+    return counts
+
+
 def object_list(value, label):
     if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
         raise ValueError(f"{label} must be an array of objects")

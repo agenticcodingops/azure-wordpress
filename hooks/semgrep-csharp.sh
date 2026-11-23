@@ -27,7 +27,7 @@ start_timer
 hook_log "Scanning... (${#files[@]} C# files, ${ruleset})"
 
 # Single --json run: gives accurate per-severity counts (no --error needed; semgrep
-# exits non-zero only on its OWN errors, which we fail-open on).
+# exits non-zero only on its OWN errors, which block unless SCAN_ALLOW_TOOL_ERRORS=1).
 tmpjson="$(mktemp)"
 trap 'rm -f "${tmpjson}"' EXIT
 semgrep_cmd=("$SCAN_TOOL" scan --config "${ruleset}" --metrics off --json --output "${tmpjson}")
@@ -42,9 +42,9 @@ set -e
 duration_ms="$(stop_timer)"
 
 if [[ ${sg_exit} -gt 1 ]]; then
-    # Infrastructure error (semgrep itself failed) — fail-open
+    # Semgrep itself failed: blocks unless SCAN_ALLOW_TOOL_ERRORS=1
     handle_exit_code ${sg_exit} || exit 1
-    hook_log "PASS: scanner error, allowing commit (fail-open)"
+    hook_log "SKIPPED: scanner error allowed by SCAN_ALLOW_TOOL_ERRORS=1; this is not a clean scan"
     write_scan_json "$(build_pass_json "semgrep-csharp" "." "${duration_ms}")"
     exit 0
 fi

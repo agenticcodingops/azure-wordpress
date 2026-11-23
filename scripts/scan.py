@@ -34,30 +34,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from safe_io import write_text
 from scan_policy import apply_exceptions, occurrence_fingerprint, suppression_file, load_suppression_entries, baseline_keys, scanner_path, checkov_checks
-from scan_reports import validate_report
-
-# Severity normalization mappings
-TRIVY_SEVERITY_MAP = {
-    "CRITICAL": "CRITICAL",
-    "HIGH": "HIGH",
-    "MEDIUM": "MEDIUM",
-    "LOW": "LOW",
-    "UNKNOWN": "LOW",
-}
-
-CHECKOV_SEVERITY_MAP = {
-    "CRITICAL": "CRITICAL",
-    "HIGH": "HIGH",
-    "MEDIUM": "MEDIUM",
-    "LOW": "LOW",
-}
-
-SNYK_SEVERITY_MAP = {
-    "critical": "CRITICAL",
-    "high": "HIGH",
-    "medium": "MEDIUM",
-    "low": "LOW",
-}
+from scan_reports import validate_report, normalize_severity, count_by_severity
 
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 
@@ -131,16 +108,6 @@ def detect_cloud_provider(scan_dir):
     return None
 
 
-def count_by_severity(findings):
-    """Count findings by severity level."""
-    counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
-    for f in findings:
-        sev = f.get("severity", "LOW")
-        if sev in counts:
-            counts[sev] += 1
-    return counts
-
-
 def count_by_tool(findings):
     """Count findings by tool name."""
     counts = {}
@@ -152,17 +119,17 @@ def count_by_tool(findings):
 
 def map_trivy_severity(raw_severity):
     """Map Trivy severity to normalized severity."""
-    return TRIVY_SEVERITY_MAP.get(raw_severity, "LOW")
+    return normalize_severity(raw_severity, "trivy")
 
 
 def map_checkov_severity(raw_severity):
     """Map Checkov severity to normalized severity."""
-    return CHECKOV_SEVERITY_MAP.get(raw_severity, "MEDIUM")
+    return normalize_severity(raw_severity, "checkov")
 
 
 def map_snyk_severity(raw_severity):
     """Map Snyk severity (lowercase) to normalized severity."""
-    return SNYK_SEVERITY_MAP.get(raw_severity.lower() if raw_severity else "", "MEDIUM")
+    return normalize_severity(raw_severity.lower() if raw_severity else "", "snyk")
 
 
 def generate_remediation_url(tool, rule_id):
@@ -195,7 +162,7 @@ def run_trivy(scan_dir, severity_filter=None):
     rc, stdout, stderr = run_cmd(cmd)
 
     if rc != 0:
-        # Infrastructure error - fail-open
+        # Tool error: the scan is incomplete and scan.py exits 2
         print(f"  [WARN] Trivy scan failed (exit {rc}): {stderr.strip()[:200]}", file=sys.stderr)
         return findings, True  # error flag
 
@@ -323,7 +290,7 @@ def run_checkov(scan_dir, auto_fix=False, config_file=None, trusted_root=None):
 
 
 def run_snyk(scan_dir, severity_filter=None):
-    """Run Snyk IaC scan and return normalized findings. Optional — skips if not installed/authenticated."""
+    """Run Snyk IaC scan and return normalized findings. Optional: when selected, a missing CLI or login makes scan.py exit 2."""
     findings = []
 
     # Check if snyk is available
@@ -615,7 +582,7 @@ def main():
         all_findings.extend(checkov_findings)
         total_fix_count += fix_count
 
-    # Run Snyk (optional — skips if not installed or not authenticated)
+    # Run Snyk (optional: once selected, a missing CLI or login is an incomplete scan)
     if "snyk" in tools_to_run:
         snyk_findings, snyk_error = run_snyk(scan_dir, severity_filter)
         if snyk_error:

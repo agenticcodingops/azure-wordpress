@@ -39,7 +39,7 @@ duration_ms="$(stop_timer)"
 
 if [[ ${sg_exit} -gt 1 ]]; then
     handle_exit_code ${sg_exit} || exit 1
-    hook_log "PASS: scanner error, allowing commit (fail-open)"
+    hook_log "SKIPPED: scanner error allowed by SCAN_ALLOW_TOOL_ERRORS=1; this is not a clean scan"
     write_scan_json "$(build_pass_json "semgrep-typescript" "." "${duration_ms}")"
     exit 0
 fi

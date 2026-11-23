@@ -75,9 +75,9 @@ if [[ ${exit_code} -eq 1 ]]; then
     # Show actionable details so developers know what to fix
     print_trivy_secret_findings "${output}"
 elif [[ ${exit_code} -ge 2 ]]; then
-    # Infrastructure error — fail-open
-    handle_exit_code ${exit_code}
-    exit_code=0
+    # Exit 2 or higher is a tool error: blocks unless SCAN_ALLOW_TOOL_ERRORS=1
+    handle_exit_code "${exit_code}" || exit 1
+    exit_code=0 # reached only with the opt-in
 fi
 
 duration_ms="$(stop_timer)"
