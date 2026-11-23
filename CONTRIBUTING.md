@@ -225,5 +225,5 @@ tflint --recursive --config="$(pwd)/.tflint.hcl"
 
 Push hooks continue to require the reviewed config and plugin cache outside the
 checkout, selected by `SCAN_TFLINT_CONFIG` and `SCAN_TFLINT_PLUGIN_DIR`. Provision
-that external config from the same release. The runtime minimums in the local
-scan config remain compatibility floors, not installation pins.
+that external config from the same release. Local scanners run whatever is
+installed on PATH; the scan config no longer records version minimums.
