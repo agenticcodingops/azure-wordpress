@@ -1,7 +1,8 @@
 #!/bin/sh
 # Tests the AI-attribution guard: .githooks/ (branding-guard.sh, guard-helpers.sh and the
-# commit-msg and pre-push hooks) and the run step of .github/workflows/commit-hygiene.yml. The guard is a deny list: an AI assistant must not be an
-# author, committer or co-author, and PR text must not carry an AI attribution line.
+# commit-msg and pre-push hooks) and the run step of .github/workflows/commit-hygiene.yml.
+# The guard is a deny list: an AI assistant must not be an author, committer or co-author,
+# and PR text must not carry an AI attribution line.
 # Everything else passes, free text that names a tool or a file included. The hook cases run
 # in throwaway repositories holding a copy of the shipped .githooks/, so the code under test
 # is the code that ships. Needs git, a POSIX sh, awk and bash (for the workflow step).
