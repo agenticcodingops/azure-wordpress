@@ -11,9 +11,9 @@ uncomment() { sed 's/^[[:space:]#]*//'; }
 is_zero() { [ -z "$(printf '%s' "$1" | tr -d 0)" ]; }
 
 # identity_check covers addresses only. A name is identity too, so reject an AI assistant
-# or model name. Other bots (the fix-loop, dependency, release and code-quality bots) pass.
+# or model name (a model word only with a version, so a person called Haiku passes). Other bots (the fix-loop, dependency, release and code-quality bots) pass.
 name_check() {  # name_check <name> <role> <ref>
-    if printf '%s\n' "$1" | grep -q -i -E "$AI_ERE|$MODEL_ERE"; then
+    if printf '%s\n' "$1" | grep -q -i -E "$AI_ERE|$PERSON_ERE|$MODEL_NAME_ERE"; then
         printf 'BLOCKED: %s name "%s" of %s is an AI assistant or model name.\n' "$2" "$1" "$3" >&2
         return 1
     fi
