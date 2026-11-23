@@ -13,24 +13,23 @@
 AI_NAMES='claude|anthropic|openai|chatgpt|codex|copilot|cursor|gemini|grok|antigravity|aider'
 AI_ERE="(^|[^a-zA-Z])($AI_NAMES)(bot|agent|code|ai|assist)*([^a-zA-Z]|\$)"
 # Assistants that share a name with people (Jules, Devin, Kiro). They match only as the agent:
-# with a bot/agent/ai suffix or a [bot] tag, at a vendor domain, as a whole name field, or as
-# the whole name in a trailer. "Jules Smith" and "Devin Patel" are people and pass.
+# with a bot/agent/ai suffix or a [bot] tag, at a vendor domain (in an address, a URL or a bare
+# host), as a whole name field, or as the whole name in a trailer. "Jules Smith" and "Devin
+# Patel" are people and pass.
 PERSON_NAMES='jules|devin|kiro'
-PERSON_ERE="(^|[^a-zA-Z])($PERSON_NAMES)([-_[:space:]]?(bot|agent|ai)([^a-zA-Z]|\$)|\[bot\])|[@.](jules\.google|devin\.ai|cognition\.ai|kiro\.dev)([^a-zA-Z]|\$)|^[[:space:]]*($PERSON_NAMES)[[:space:]]*\$|:[[:space:]]*($PERSON_NAMES)[[:space:]]*(<|\$)"
-# A GPT model matches on its prefix alone, so suffixed names (GPT-4o, GPT-4.1 mini) are caught.
-MODEL_ERE='(^|[^a-z])((opus|sonnet|haiku|fable)[[:space:]]*[0-9.]*[[:space:]]*(\(|<|$)|gpt-?[0-9])'
-# For a name or an address: a model word counts only with a version number, so a person
-# called Haiku or Fable passes, while opus-4.5@ or sonnet4@ is caught. "Claude Opus" is still
-# caught by AI_ERE. Read here by identity_check and by name_check in guard-helpers.sh.
-MODEL_NAME_ERE='(^|[^a-z])((opus|sonnet|haiku|fable)[[:space:]-]*[0-9]|gpt-?[0-9])'
-# Every assistant pattern. Trailers use this; identity_check adds MODEL_NAME_ERE, and
-# name_check swaps it in for MODEL_ERE.
+PERSON_ERE="(^|[^a-zA-Z])($PERSON_NAMES)([-_[:space:]]?(bot|agent|ai)([^a-zA-Z]|\$)|\[bot\])|(^|[@./])(jules\.google|devin\.ai|cognition\.ai|kiro\.dev)([^a-zA-Z]|\$)|^[[:space:]]*($PERSON_NAMES)[[:space:]]*\$|:[[:space:]]*($PERSON_NAMES)[[:space:]]*(<|\$)"
+# Models. A model word counts only with a version number, the same in a name, an address, a
+# trailer or a byline: Opus 4.5, Sonnet-4.5, opus-4.5@ and sonnet4@ are caught, while a person
+# called Haiku or Fable passes. "Claude Opus" is still caught by AI_ERE. A GPT model matches on
+# its prefix, so suffixed names (GPT-4o, GPT-4.1 mini) are caught.
+MODEL_ERE='(^|[^a-z])((opus|sonnet|haiku|fable)[[:space:]-]*[0-9]|gpt-?[0-9])'
+# Every assistant pattern. Trailers, bylines, names and addresses all use this one list.
 DENY_ERE="$AI_ERE|$PERSON_ERE|$MODEL_ERE"
 # Contributor-credit trailers. Signed-off-by (DCO) is not contributor credit and is not listed.
 TRAILER_ERE='^[[:space:]]*(co-?authored-?by|claude-session|assisted-by|generated-by)[[:space:]]*:'
 # A "Generated with/by/using ..." byline at the start of a line, after optional markup, HTML
 # tags (<sub>, <p>) or an emoji. Matched on lower-cased text. pr_text_scan checks only the
-# generator named right after it, up to ';' or the end of a sentence.
+# generator it names (see byline_generators), never the prose after it.
 BYLINE_ERE='^([^[:alnum:]<]|<[^>]*>)*(:robot:([^[:alnum:]<]|<[^>]*>)*)?generated[[:space:]]+(with|by|using)[[:space:]]*:?[[:space:]]*'
 
 # Commit messages and PR text. Rejects a contributor-credit trailer that names an AI
@@ -49,16 +48,50 @@ attribution_scan() {
     return 0
 }
 
+# Prints what a lower-cased byline line credits as its generator, one candidate per line, so
+# each is matched as a whole identity. Markup goes first: HTML tags, emphasis and code ticks.
+# A leading Markdown link gives its label and its host. Otherwise the text is cut at '(', ';',
+# ' - ' or a sentence end, split into a list at ',', '&', 'and' or 'or', and each item is cut
+# at the first word that starts other prose (for, from, in, with, by, ...). So "terraform-docs
+# for CLAUDE.md" yields only "terraform-docs", and "terraform-docs and Claude" yields both.
+byline_generators() {
+    sed -E "s/$BYLINE_ERE//; s/<[^>]*>/ /g; s/[*\`~]+//g; s/(^|[[:space:]])_+/\1/g; s/_+([[:space:]]|\$)/\1/g" |
+        awk '
+        function trim(t) { sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t); return t }
+        {
+            s = trim($0)
+            j = index(s, "](")
+            if (substr(s, 1, 1) == "[" && j > 0) {
+                url = substr(s, j + 2); k = index(url, ")"); if (k > 0) url = substr(url, 1, k - 1)
+                print trim(substr(s, 2, j - 2))
+                sub(/^[a-z][a-z0-9+.-]*:\/\//, "", url); k = index(url, "/")
+                if (k > 0) url = substr(url, 1, k - 1)
+                print trim(url)
+                next
+            }
+            if (match(s, /[(;]|[.!?]([ \t]|$)| - /)) s = substr(s, 1, RSTART - 1)
+            gsub(/,|&|[ \t]and[ \t]|[ \t]or[ \t]/, "\n", s)
+            n = split(s, part, "\n")
+            for (i = 1; i <= n; i++) {
+                p = " " trim(part[i]) " "
+                if (match(p, /[ \t](for|from|in|on|at|via|to|of|after|under|with|by|using|as|that|which|while|then|but|so|because|when)[ \t]/))
+                    p = substr(p, 1, RSTART - 1)
+                p = trim(p)
+                if (p != "") print p
+            }
+        }'
+}
+
 # PR and issue text only: the trailer rule above plus a "Generated with/by/using <AI>" byline.
 # Never used on commit messages, so a commit body may say anything outside its trailers.
 pr_text_scan() {
     _label="$1"; _text=$(tr -d '\r'); _pfail=0
     printf '%s\n' "$_text" | attribution_scan "$_label" || _pfail=1
-    # Keep only the generator: drop the byline lead-in, then cut at ';' or a sentence end.
     _by=$(printf '%s\n' "$_text" | tr '[:upper:]' '[:lower:]' | grep -n -E "$BYLINE_ERE" 2>/dev/null \
           | while IFS= read -r _l; do
-                _gen=$(printf '%s\n' "${_l#*:}" | sed -E "s/$BYLINE_ERE//; s/(;|\.([[:space:]]|\$)).*//")
-                if printf '%s\n' "$_gen" | grep -q -E "$DENY_ERE"; then printf '%s\n' "$_l"; fi
+                if printf '%s\n' "${_l#*:}" | byline_generators | grep -q -E "$DENY_ERE"; then
+                    printf '%s\n' "$_l"
+                fi
             done)
     if [ -n "$_by" ]; then
         printf '  AI attribution byline:\n%s\n' "$_by" | sed 's/^/    /' >&2
@@ -68,11 +101,10 @@ pr_text_scan() {
     return "$_pfail"
 }
 
-# Rejects an author or committer address that belongs to an AI assistant or model. MODEL_ERE
-# needs a '(', '<' or line end after the version, which an address never has, so the
-# versioned-model pattern is added: opus-4.5@example.com is denied, haiku@example.com passes.
+# Rejects an author or committer address that belongs to an AI assistant or model:
+# opus-4.5@example.com is denied, haiku@example.com passes.
 identity_check() {  # identity_check <email> <role> <ref>
-    if printf '%s\n' "$1" | grep -q -i -E "$DENY_ERE|$MODEL_NAME_ERE"; then
+    if printf '%s\n' "$1" | grep -q -i -E "$DENY_ERE"; then
         printf 'BLOCKED: %s %s of %s is an AI assistant identity.\n' "$2" "$1" "${3:-commit}" >&2
         return 1
     fi

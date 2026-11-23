@@ -23,7 +23,8 @@ not name passes.
   session-link trailer) that names an AI assistant or model. GitHub lists every co-author
   of a commit on `main` as a contributor.
 - In PR descriptions, issues and comments: such a trailer line, or a "Generated with/by/using
-  <AI assistant>" byline (the assistant named right after it). The PR check enforces this
+  <AI assistant>" byline. Only the generator it names is read, through links and emphasis;
+  prose after the generator may name any tool or file. The PR check enforces this
   for the PR body.
 
 ### Allowed
