@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/agenticcodingops/auto-code-scanning/ada95d3e7654300fddf55cb65cdfc11495e96984/schemas/pin-freshness.schema.json",
+  "$schema": "https://raw.githubusercontent.com/agenticcodingops/auto-code-scanning/ea8f45ef8fed3a460b424273fbfd5ab96402e850/schemas/pin-freshness.schema.json",
   "pins": [
     {
       "id": "terraform-cli",
@@ -376,48 +376,6 @@
       "source": {
         "type": "github_releases",
         "repo": "evilmartians/lefthook"
-      },
-      "policy": "minimum"
-    },
-    {
-      "id": "local-trivy-minimum",
-      "locations": [
-        {
-          "file": "scan-config.yaml",
-          "pattern": "(?s:      trivy:.*?version: \">=(?P<value>\\d+\\.\\d+\\.\\d+)\")"
-        }
-      ],
-      "source": {
-        "type": "github_releases",
-        "repo": "aquasecurity/trivy"
-      },
-      "policy": "minimum"
-    },
-    {
-      "id": "local-tflint-minimum",
-      "locations": [
-        {
-          "file": "scan-config.yaml",
-          "pattern": "(?s:      tflint:.*?version: \">=(?P<value>\\d+\\.\\d+\\.\\d+)\")"
-        }
-      ],
-      "source": {
-        "type": "github_releases",
-        "repo": "terraform-linters/tflint"
-      },
-      "policy": "minimum"
-    },
-    {
-      "id": "local-checkov-minimum",
-      "locations": [
-        {
-          "file": "scan-config.yaml",
-          "pattern": "(?s:      checkov:.*?version: \">=(?P<value>\\d+\\.\\d+\\.\\d+)\")"
-        }
-      ],
-      "source": {
-        "type": "pypi",
-        "package": "checkov"
       },
       "policy": "minimum"
     },

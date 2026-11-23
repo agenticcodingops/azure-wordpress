@@ -13,21 +13,24 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read # reusable SARIF upload jobs read the workflow run
   contents: read
-  security-events: write # upload SARIF to code scanning
-  pull-requests: write # PR annotations
 
 jobs:
   terraform-scan:
+    # The called workflow cannot raise these; it needs all four.
+    permissions:
+      actions: read # reusable SARIF upload jobs read the workflow run
+      contents: read
+      security-events: write # upload SARIF to code scanning
+      pull-requests: write # PR annotations
     # PIN to the IMMUTABLE commit SHA. Bump deliberately, and move scanning-repo-ref with it.
-    uses: agenticcodingops/auto-code-scanning/.github/workflows/reusable-scan.yml@ada95d3e7654300fddf55cb65cdfc11495e96984 # v3.1.3
+    uses: agenticcodingops/auto-code-scanning/.github/workflows/reusable-scan.yml@ea8f45ef8fed3a460b424273fbfd5ab96402e850 # v3.1.5
     needs: checkov-settings
     with:
       terraform-directory: "."
       cloud-provider: "azure"
       severity: "CRITICAL,HIGH"
-      scanning-repo-ref: "ada95d3e7654300fddf55cb65cdfc11495e96984" # v3.1.3
+      scanning-repo-ref: "ea8f45ef8fed3a460b424273fbfd5ab96402e850" # v3.1.5
       checkov-skip-checks: ${{ needs.checkov-settings.outputs.skip-checks }}
       checkov-render-iter-count: ${{ needs.checkov-settings.outputs.render-iter-count }}
 
