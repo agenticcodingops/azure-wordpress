@@ -20,7 +20,8 @@ not name passes.
   bot, agent or AI suffix, at the vendor's domain, or as the whole name. "Jules Smith" passes,
   and so does a person called Haiku or Fable (a model word in a name needs a version number).
 - A contributor-credit trailer (`Co-authored-by`, `Assisted-by`, `Generated-by`, or a
-  session-link trailer) that names an AI assistant or model. GitHub lists every co-author
+  session-link trailer: any key containing "session", such as `Session-Link`) that names an
+  AI assistant or model. GitHub lists every co-author
   of a commit on `main` as a contributor.
 - In PR descriptions, issues and comments: such a trailer line, or a "Generated with/by/using
   <AI assistant>" byline. Only the generator it names is read, through links and emphasis;

@@ -25,8 +25,10 @@ PERSON_ERE="(^|[^a-zA-Z])($PERSON_NAMES)([-_[:space:]]?(bot|agent|ai)([^a-zA-Z]|
 MODEL_ERE='(^|[^a-z])((opus|sonnet|haiku|fable)[[:space:]-]*[0-9]|gpt-?[0-9])'
 # Every assistant pattern. Trailers, bylines, names and addresses all use this one list.
 DENY_ERE="$AI_ERE|$PERSON_ERE|$MODEL_ERE"
-# Contributor-credit trailers. Signed-off-by (DCO) is not contributor credit and is not listed.
-TRAILER_ERE='^[[:space:]]*(co-?authored-?by|claude-session|assisted-by|generated-by)[[:space:]]*:'
+# Contributor-credit trailers, session-link trailers included: any key containing "session"
+# (Claude-Session, Codex-Session, Session-Link, Session-Url). Signed-off-by (DCO) is not
+# contributor credit and is not listed.
+TRAILER_ERE='^[[:space:]]*(co-?authored-?by|assisted-by|generated-by|[[:alnum:]_-]*session[[:alnum:]_-]*)[[:space:]]*:'
 # A "Generated with/by/using ..." byline at the start of a line, after optional markup, HTML
 # tags (<sub>, <p>) or an emoji. Matched on lower-cased text. pr_text_scan checks only the
 # generator it names (see byline_generators), never the prose after it.
@@ -50,25 +52,30 @@ attribution_scan() {
 
 # Prints what a lower-cased byline line credits as its generator, one candidate per line, so
 # each is matched as a whole identity. Markup goes first: HTML tags, emphasis and code ticks.
-# A leading Markdown link gives its label and its host. Otherwise the text is cut at '(', ';',
-# ' - ' or a sentence end, split into a list at ',', '&', 'and' or 'or', and each item is cut
-# at the first word that starts other prose (for, from, in, with, by, ...). So "terraform-docs
-# for CLAUDE.md" yields only "terraform-docs", and "terraform-docs and Claude" yields both.
+# Each Markdown link becomes one token that cutting and splitting keep whole, and gives its
+# label and its host. The text is then cut at '(', ';', ' - ' or a sentence end, split into a
+# list at ',', '&', 'and' or 'or', and each item is cut at the first word that starts other
+# prose (for, from, in, with, by, ...). So "terraform-docs for CLAUDE.md" yields only
+# "terraform-docs", and "[terraform-docs](...) and [Claude](...)" yields both labels and hosts.
 byline_generators() {
     sed -E "s/$BYLINE_ERE//; s/<[^>]*>/ /g; s/[*\`~]+//g; s/(^|[[:space:]])_+/\1/g; s/_+([[:space:]]|\$)/\1/g" |
         awk '
         function trim(t) { sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t); return t }
+        function host(u,  k) {
+            sub(/^[a-z][a-z0-9+.-]*:\/\//, "", u); k = index(u, "/")
+            if (k > 0) u = substr(u, 1, k - 1)
+            gsub(/[ \t(;,&]/, "", u); return u
+        }
+        BEGIN { LB = "\035"; HS = "\036"; EN = "\034"; SP = "\037" }
         {
-            s = trim($0)
-            j = index(s, "](")
-            if (substr(s, 1, 1) == "[" && j > 0) {
-                url = substr(s, j + 2); k = index(url, ")"); if (k > 0) url = substr(url, 1, k - 1)
-                print trim(substr(s, 2, j - 2))
-                sub(/^[a-z][a-z0-9+.-]*:\/\//, "", url); k = index(url, "/")
-                if (k > 0) url = substr(url, 1, k - 1)
-                print trim(url)
-                next
+            s = trim($0); out = ""
+            while (match(s, /\[[^]]*\]\([^)]*\)/)) {
+                lk = substr(s, RSTART, RLENGTH); j = index(lk, "](")
+                lbl = substr(lk, 2, j - 2); gsub(/[ \t(;,&]/, SP, lbl)
+                out = out substr(s, 1, RSTART - 1) LB lbl HS host(substr(lk, j + 2, length(lk) - j - 2)) EN
+                s = substr(s, RSTART + RLENGTH)
             }
+            s = out s
             if (match(s, /[(;]|[.!?]([ \t]|$)| - /)) s = substr(s, 1, RSTART - 1)
             gsub(/,|&|[ \t]and[ \t]|[ \t]or[ \t]/, "\n", s)
             n = split(s, part, "\n")
@@ -76,6 +83,13 @@ byline_generators() {
                 p = " " trim(part[i]) " "
                 if (match(p, /[ \t](for|from|in|on|at|via|to|of|after|under|with|by|using|as|that|which|while|then|but|so|because|when)[ \t]/))
                     p = substr(p, 1, RSTART - 1)
+                while ((a = index(p, LB)) > 0) {
+                    rest = substr(p, a + 1); b = index(rest, HS); c = index(rest, EN)
+                    lbl = substr(rest, 1, b - 1); gsub(SP, " ", lbl); lbl = trim(lbl)
+                    if (lbl != "") print lbl
+                    h = substr(rest, b + 1, c - b - 1); if (h != "") print h
+                    p = substr(p, 1, a - 1) " " substr(rest, c + 1)
+                }
                 p = trim(p)
                 if (p != "") print p
             }
