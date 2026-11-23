@@ -13,11 +13,12 @@ Reusable Terraform/OpenTofu modules for deploying WordPress on Azure. A consumer
 ## Commands
 
 ```bash
-# Format. CI runs Terraform 1.9.8 (`TERRAFORM_VERSION` in validate.yml); use the same binary
+# Format. CI formats with Terraform 1.17.2 (`TERRAFORM_VERSION` in validate.yml); use the same binary
 terraform fmt -recursive -check -diff
 terraform fmt -recursive
 
-# Validate a module (must init first, no backend needed)
+# Validate a module (must init first, no backend needed). CI validates on 1.17.2 and on the
+# consumer's 1.9.8 (`TERRAFORM_VERSION_CONSUMER`); a module should pass on both
 cd modules/<module> && terraform init -backend=false && terraform validate
 
 # Security scan
@@ -40,19 +41,25 @@ Run these before pushing. They are what CI runs on a pull request, at the same v
 
 ```bash
 set -euo pipefail   # stop at the first failed check
-# validate.yml "Terraform Version" and "Format Check": Terraform 1.9.8 exactly, as the workflow asserts
-terraform version | grep -q '^Terraform v1.9.8$' || { echo 'CI runs Terraform 1.9.8; install that binary'; exit 1; }
+# validate.yml "Terraform Version" and "Format Check": Terraform 1.17.2 exactly, as the workflow asserts
+terraform version | grep -q '^Terraform v1.17.2$' || { echo 'CI formats with Terraform 1.17.2; install that binary'; exit 1; }
 terraform fmt -recursive -check -diff
 
-# validate.yml "Validate": Terraform 1.9.8, init and validate each module
-for m in modules/wordpress-site modules/shared-infrastructure modules/app-service modules/database modules/storage modules/key-vault modules/networking modules/dns-zones modules/cloudflare modules/front-door modules/monitoring; do
-  terraform -chdir="$m" init -backend=false && terraform -chdir="$m" validate || exit 1
+# validate.yml "Validate" (Terraform 1.17.2) and "Validate on consumer Terraform" (the consumer's
+# version, TERRAFORM_VERSION_CONSUMER in validate.yml): init and validate each module with both.
+# TF_CONSUMER is the path of the second binary. A module must pass on both.
+TF_CONSUMER_VERSION=1.9.8
+"${TF_CONSUMER:?set TF_CONSUMER to the path of the consumer-version terraform binary}" version | grep -Fqx "Terraform v${TF_CONSUMER_VERSION}" || { echo "TF_CONSUMER must be Terraform ${TF_CONSUMER_VERSION}"; exit 1; }
+for tf in terraform "$TF_CONSUMER"; do
+  for m in modules/wordpress-site modules/shared-infrastructure modules/app-service modules/database modules/storage modules/key-vault modules/networking modules/dns-zones modules/cloudflare modules/front-door modules/monitoring; do
+    "$tf" -chdir="$m" init -backend=false && "$tf" -chdir="$m" validate || exit 1
+  done
+  # leave nothing behind: lock files make terraform-docs resolve providers differently from CI
+  rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl
 done
-# leave nothing behind: lock files make terraform-docs resolve providers differently from CI
-rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl
 
-# validate.yml "Checkov": Checkov 3.3.22 (bridgecrewio/checkov-action v12.3128.0), as the suffixed install this file prescribes (keep plain checkov off PATH)
-RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform --quiet --skip-check CKV_TF_1,CKV_TF_2,CKV_AZURE_225,CKV_AZURE_13,CKV_AZURE_88,CKV_AZURE_222,CKV_AZURE_17,CKV_AZURE_94,CKV_AZURE_189,CKV_AZURE_109,CKV_AZURE_41,CKV_AZURE_211,CKV_AZURE_212,CKV_AZURE_206,CKV_AZURE_33,CKV_AZURE_59,CKV_AZURE_34,CKV2_AZURE_32,CKV2_AZURE_56,CKV2_AZURE_21,CKV2_AZURE_40,CKV2_AZURE_33,CKV2_AZURE_1
+# validate.yml "Checkov": Checkov 3.4.5 (bridgecrewio/checkov-action v12.3141.0), as the suffixed install this file prescribes (keep plain checkov off PATH)
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@345 -d . --framework terraform --quiet --skip-check CKV_TF_1,CKV_TF_2,CKV_AZURE_225,CKV_AZURE_13,CKV_AZURE_88,CKV_AZURE_222,CKV_AZURE_17,CKV_AZURE_94,CKV_AZURE_189,CKV_AZURE_109,CKV_AZURE_41,CKV_AZURE_211,CKV_AZURE_212,CKV_AZURE_206,CKV_AZURE_33,CKV_AZURE_59,CKV_AZURE_34,CKV2_AZURE_32,CKV2_AZURE_56,CKV2_AZURE_21,CKV2_AZURE_40,CKV2_AZURE_33,CKV2_AZURE_1
 
 # validate.yml "Documentation": terraform-docs 0.20.0 (terraform-docs/gh-actions v1.4.1), fail-on-diff
 for m in modules/wordpress-site modules/shared-infrastructure modules/app-service modules/database modules/storage modules/key-vault modules/networking modules/dns-zones modules/cloudflare modules/front-door modules/monitoring; do
@@ -64,8 +71,8 @@ On Windows the checkout is CRLF. Run the commands on an LF copy: `tmp=$(mktemp -
 
 terraform-docs --output-check fails on the default branch when measured on a Windows machine on 2026-10-11 because modules/wordpress-site/README.md is out of date.
 
-- semgrep.yml: runs in CI only: `semgrep ci` needs SEMGREP_APP_TOKEN (semgrep 1.178.0).
-- terraform-scan.yml: runs in CI only: the shared scan workflow at v3.1.2 (Trivy IaC, Checkov, tflint) uploads SARIF.
+- semgrep.yml: runs in CI only: `semgrep ci` needs SEMGREP_APP_TOKEN (semgrep 1.185.0).
+- terraform-scan.yml: runs in CI only: the shared scan workflow at v3.1.5 (Trivy IaC, Checkov, tflint) uploads SARIF.
 - commit-hygiene.yml "Commit Metadata": runs in CI only: it reads the push or pull_request_target event. The same scanner is `.githooks/branding-guard.sh`, installed with `sh .githooks/install.sh`.
 - the automated review workflows: runs in CI only: they post a review and need a token.
 
@@ -122,6 +129,8 @@ All module READMEs use `<!-- BEGIN_TF_DOCS -->` / `<!-- END_TF_DOCS -->` markers
 
 Do NOT leave `.terraform/` or `.terraform.lock.hcl` in module directories when running terraform-docs — lock files cause provider versions to resolve differently than CI (which runs without `terraform init`).
 
+**Stay on 0.20.0 until the action moves (measured 2026-11-13).** v1.4.1 is the action's latest release, and its default branch still builds from the 0.20.0 image, so CI cannot run a newer CLI through it. From 0.22.0 the delimiter row of every generated table is written with spaces (`| ---- | ---- |`, not `|------|------|`): 0.24.0 fails `--output-check` on all 11 unchanged READMEs, and the READMEs that 0.24.0 writes (56 delimiter rows changed across the 11 files, nothing else) fail the 0.20.0 check, which is the one CI runs. Moving means replacing the action step and regenerating the READMEs in the same change.
+
 ## Key Patterns
 
 **WordPress container:** Uses `mcr.microsoft.com/appsvc/wordpress-debian-php`. This container expects `DATABASE_HOST`, `DATABASE_NAME`, `DATABASE_USERNAME`, `DATABASE_PASSWORD` env vars (NOT the standard `WORDPRESS_DB_*` names). The app-service module constructs these internally from its input variables.
@@ -142,14 +151,18 @@ Update the `?ref=` references in README.md and examples/ to the version being re
 
 ## CI Pipeline (.github/workflows/validate.yml)
 
-Four jobs: Format Check (`terraform fmt`), Validate (11 modules), Checkov, Documentation (terraform-docs). Format Check and Validate run **Terraform 1.9.8**, the version the consumer's CI runs, installed by `hashicorp/setup-terraform` pinned to a commit SHA with `terraform_wrapper: false`. The version lives once, in the workflow-level `TERRAFORM_VERSION`, and each job's `Terraform Version` step fails if the installed CLI does not print exactly that version. Until 2026-09 they ran OpenTofu 1.6.0; `fmt -recursive -check` was clean on both CLIs at the switch. All must pass before merge. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
+Seven jobs: Format Check (`terraform fmt`), Validate (11 modules), Validate on consumer Terraform (the same 11 modules), Checkov, Review guard, Documentation (terraform-docs), Scan configuration. Format Check and Validate run **Terraform 1.17.2**; Validate on consumer Terraform runs **1.9.8**, the version the consumer's CI runs (both decided 2026-11-13). Each is installed by `hashicorp/setup-terraform` pinned to a commit SHA with `terraform_wrapper: false`. Each version lives once, in the workflow-level `TERRAFORM_VERSION` and `TERRAFORM_VERSION_CONSUMER`, and each job's `Terraform Version` step fails if the installed CLI does not print exactly the version that job asked for. So CI validates every module on both versions and formats on 1.17.2 only.
 
-**That workflow's Checkov is not the Checkov job's, but it shares its settings.** `terraform-scan.yml` calls auto-code-scanning's reusable scan, pinned by SHA (v3.1.2). It runs the Checkov that release pins (3.4.3, against the Checkov job's 3.3.22), with `soft_fail`, and it reads auto-code-scanning's own `configs/azure/.checkov.yaml`, whose skip list is empty. A job in `terraform-scan.yml` parses the trusted base's `validate.yml` Checkov step on pull requests (the current commit otherwise), separately checks proposed policy drift, and passes its `skip_check` and `RENDER_EDGES_DUPLICATE_ITER_COUNT` as the scan's `checkov-skip-checks` and `checkov-render-iter-count` inputs, so each is written once. The scan merges the explicit skip list with its own. In v3.1.2 unchanged inline skips on the same resource and file as the trusted base are honoured, including resources inside nested local modules and plain, `for_each` or `count` module calls with unchanged names and literal sources; new or modified skips require exact occurrence approvals using schema 2.0. This repository has no suppression registry or baseline. Move the `uses:` pin and `scanning-repo-ref` together at v3.1.2: the setup job copies a helper from `scanning-repo-ref`, so a `uses:`-only bump fails it. The scan caller grants `actions: read` alongside `contents: read`, `security-events: write` and `pull-requests: write`, matching the reusable SARIF jobs' permission ceiling. Do not add a third skip-list source, and keep `skip_check` in the format "Checkov skip_check Format" requires: the job strips spaces and drops duplicates before it passes the list on, but the Checkov action's own handling of a folded block is what has misled before.
+The consumer leg is a separate job, not a second matrix dimension, because the branch rules require the checks `Validate (modules/<name>)` by name: a second dimension would rename them and the required checks would wait forever. Its checks are named `Validate on consumer Terraform (modules/<name>)` and are not required until the maintainer adds them to the branch rules. Keep the two module lists in the workflow identical. Move `TERRAFORM_VERSION_CONSUMER` when the consumer moves, not when a new release appears.
+
+Why two versions: a construct that needs a newer CLI passes on 1.17.2 and fails for the consumer (`false && tobool("x")` is an error on 1.9.8 and `false` on 1.17.2, because the logical operators short-circuit from 1.12). `validate` on 1.9.8 catches syntax the older CLI rejects and errors in constant expressions such as that one. It treats input variables as unknown, so a guard written as `var.x != null && var.x.y` validates on both versions and fails only in a 1.9.8 plan with `x = null` (measured 2026-11-13): check a change that leans on short-circuiting with a plan or `terraform console` on a 1.9.8 binary. Neither job runs the modules' `>= 1.6.0` floor. Until 2026-11 Format Check and Validate ran 1.9.8; at the switch `fmt -recursive -check` and `validate` on all 11 modules gave the same results on both CLIs, and mock-provider plans of the composition module planned the same resources and argument values (1.17.1 also printed the providers' write-only attributes, which 1.9.8 does not render). Until 2026-09 the jobs ran OpenTofu 1.6.0; `fmt -recursive -check` was clean on both CLIs at that switch. The branch rules for `main` require Format Check, Checkov, Documentation and the 11 `Validate (modules/<name>)` checks from this workflow (read 2026-11-13). Validate on consumer Terraform, Review guard and Scan configuration run on every pull request and are not among the required checks, so a red one does not block the merge button: fix it before merging all the same. IaC misconfiguration scanning is covered by the Terraform Security Scan workflow (Trivy IaC + Checkov + tflint); the standalone tfsec job was removed (EOL, folded into Trivy; aquasecurity org IP allow-list 403s the action download on runners).
+
+**That workflow's Checkov is not the Checkov job's, but it shares its settings.** `terraform-scan.yml` calls auto-code-scanning's reusable scan, pinned by SHA (v3.1.5). It runs the Checkov that release pins (3.4.5, through the checkov-action release that v3.1.5 pins), the same version as the Checkov job's, with `soft_fail`, and it reads auto-code-scanning's own `configs/azure/.checkov.yaml`, whose skip list is empty. A job in `terraform-scan.yml` parses the trusted base's `validate.yml` Checkov step on pull requests (the current commit otherwise), separately checks proposed policy drift, and passes its `skip_check` and `RENDER_EDGES_DUPLICATE_ITER_COUNT` as the scan's `checkov-skip-checks` and `checkov-render-iter-count` inputs, so each is written once. The scan merges the explicit skip list with its own. In v3.1.5 unchanged inline skips on the same resource and file as the trusted base are honoured, including resources inside nested local modules and plain, `for_each` or `count` module calls with unchanged names and literal sources; new or modified skips require exact occurrence approvals using schema 2.0. This repository has no suppression registry or baseline. Move the `uses:` pin and `scanning-repo-ref` together at v3.1.5: the setup job copies a helper from `scanning-repo-ref`, so a `uses:`-only bump fails it. The scan caller's `terraform-scan` job grants `actions: read` alongside `contents: read`, `security-events: write` and `pull-requests: write`, matching the reusable SARIF jobs' permission ceiling; the workflow level grants only `contents: read`. Do not add a third skip-list source, and keep `skip_check` in the format "Checkov skip_check Format" requires: the job strips spaces and drops duplicates before it passes the list on, but the Checkov action's own handling of a folded block is what has misled before.
 
 **`claude-review` was failing on every PR — an expired `CLAUDE_CODE_OAUTH_TOKEN`, not the workflow.
 Resolved 2026-08-02 by rotating the secret; it has been green since.** If you are reading a red
 `claude-review` on an older PR, that is the pre-rotation window, not a regression from your change.
-`main` has no branch protection, so nothing was ever gated on it and those PRs merged red.
+At the time of those failures (through 2026-08-02), `main` had no branch protection, so nothing gated those PRs and they merged red. As read on 2026-11-13, an active repository ruleset now requires 16 status checks on `main`.
 
 > **Corrected 2026-08-02.** This file previously blamed an empty `ANTHROPIC_API_KEY`. That is the
 > wrong secret: `claude-code-review.yml` passes `claude_code_oauth_token`, and `ANTHROPIC_API_KEY`
@@ -192,8 +205,22 @@ inline-comment tools must be allowed through `claude_args --allowedTools`, mirro
 own `allowed-tools` frontmatter. The workflow now passes both, and pins both actions to commit
 SHAs because the job holds a write token and the OAuth secret. Two consequences worth knowing:
 
-- The plugin stops if it has already commented on the PR, so it reviews a PR **once**, on open,
-  not on every push. It also skips PRs it judges automated or trivial.
+- **Each head commit gets its own review (#188).** Left to itself, the plugin stops once Claude has
+  commented on the PR at all, so it reviewed a PR only once, on open. The step "Find the head to
+  review" now decides, outside the model, and runs first. It reads the live head, not the event's
+  SHA: a run queued behind a review, re-run, or preceded by a bot push that starts no run of its
+  own, reviews the newest commit. It skips the review step when the app (type `Bot`, login
+  `claude[bot]`) has a comment whose first line is `Reviewed head: <that SHA>`, so a user's comment,
+  or a user named `claude`, cannot match. It pins the review to that commit: the checkout is that
+  SHA, and its diff (the compare API's `base...head`) is saved to `review.diff`, which the prompt
+  reads in place of `gh pr diff`, which shows whatever is the head at the moment. A push during a
+  review therefore changes nothing under it. The prompt's REVIEWED HEAD rules review that SHA, pass
+  it as `commit_id` on inline comments, and end every review with that summary, issues or not, so a
+  re-run on the same commit posts nothing. Two gaps remain. The mention workflow posts as the same
+  app, so if asked to write the marker it could suppress the review of one commit. A bot push
+  after the head step leaves that bot head unreviewed, as bot pushes always were. The plugin also
+  skips PRs it judges automated or trivial, and then posts no marker, so the next push is reviewed
+  again.
 - A green check with no comment can still mean "skipped" (see above) — check the PR for the
   review comment before treating it as a clean review.
 - `gh pr comment` is allowed only for the triggering PR, by number or by URL, and only with one
@@ -217,12 +244,18 @@ runs Opus sub-agents.
 
 The plugin's own frontmatter lists an **unbound** `Bash(gh pr comment:*)`, and the CLI **honours
 that grant** in a non-interactive run. Re-measured 2026-10-31 on CLI 2.1.281, 2.1.302, 2.1.310,
-2.1.314 and 2.1.316, with this workflow's exact `--allowedTools` and `--disallowedTools`: a probe
+2.1.314 and 2.1.316, and on 2026-11-19 on 2.1.325 (the CLI action v1.0.276 installs), with this workflow's exact `--allowedTools` and `--disallowedTools`: a probe
 command carrying the plugin's frontmatter ran `gh pr comment 999 …` on a different PR every time
 (two runs per version), and a control command without the grant was denied every time. An earlier
 note here said the grant authorized nothing on 2.1.281; that does not reproduce. So the exact-PR,
 exact-file rules in `--allowedTools` only approve three forms; they do not forbid the rest, and
 injected PR text could have posted on another PR or posted `--body-file .git/config`.
+
+**Permission mode.** From action v1.0.276 sessions start in auto mode, where a classifier approves
+tool calls that no allow rule covers. Every measurement here ran in the earlier mode, so the review
+passes `--permission-mode default` (an unlisted call is denied) and `claude.yml` passes
+`--permission-mode acceptEdits` (edits run, other unlisted calls are denied). Remove either only
+after measuring the guard and the allow rules in auto mode.
 
 The boundary is a `PreToolUse` hook, written by the "Write the review comment guard" step and
 installed through the action's `settings` input. It is an **allow-list, not a keyword match**
@@ -255,8 +288,8 @@ Paths are `//` plus the absolute path.
 Two more ways round the hook were found after it merged, and the second is why the matcher is `*`:
 
 - **Settings from the checkout.** The review runs in the pull request's head. A `.claude/settings.json`
-  there with `{"disableAllHooks": true}` stopped a loaded hook (measured on 2.1.316: the other-PR
-  comment ran), because the action loads user, project and local settings by default and the project
+  there with `{"disableAllHooks": true}` stopped a loaded hook (measured on 2.1.316 and 2.1.325: the
+  other-PR comment ran), because the action loads user, project and local settings by default and the project
   ones win. `claude_args` now passes `--setting-sources user`; the action supports it for exactly
   this reason (`parse-sdk-options.ts`, "to avoid in-repo configs"), and with it the same file changed
   nothing. The hook lives in the user settings, which the `settings` input writes.
@@ -264,23 +297,36 @@ Two more ways round the hook were found after it merged, and the second is why t
   as `Bash`, so the plugin's `Bash(gh pr comment:*)` grant approves it. What a hook is told differs
   by CLI version: `Monitor` reaches it as `Bash` on 2.1.316 and as `Monitor` on 2.1.302, where a
   Bash-only matcher let a `Monitor` comment on another PR run. The matcher is therefore `*`, and the
-  guard is default-deny: it passes reading and searching the checkout (`Read`, `Grep`, `Glob`, `LS`),
-  sub-agents, task tracking and `ToolSearch`, and the inline-comment tool, applies the shell grammar
+  guard is default-deny: it passes reading and listing the checkout (`Read`, `LS`), sub-agents, task tracking and `ToolSearch`, and the inline-comment tool, applies the shell grammar
   to `Bash`, `Monitor` and `PowerShell`, restricts file writes to the summary, and blocks every other
-  tool, so a tool added to the CLI later fails closed. If a review loses a tool it needs, add it to
+  tool, so a tool added to the CLI later fails closed. That includes `Grep` and `Glob` (#188): the
+  guard does not check the paths they search, so they are blocked rather than exempted, and
+  `--disallowedTools` denies them as well. If a review loses a tool it needs, add it to
   `NO_IO` in the guard and to the test table; do not widen the matcher back to a list.
 - **The plugin's own command.** The review starts from `/code-review:code-review`. On CLI 2.1.316
   the command is expanded up front, but on 2.1.281 the model runs it through the `Skill` tool, and
   blocking that made a read-only run improvise a review with none of the plugin's steps. The guard
   therefore allows the `Skill` tool for that one command, by exact name, and blocks every other
   skill, because a skill's body can carry its own `allowed-tools`.
+- **The plugin is pinned to a commit (#188).** The claude-code marketplace resolved `code-review`
+  from `anthropics/claude-plugins-official` at `main`, which changed the plugin on 2026-10-26 with no
+  action bump. The "Fetch the pinned review plugin" step now fetches one commit (`PLUGIN_COMMIT`),
+  checks HEAD against it, and writes a one-plugin local marketplace, `review-plugin-pinned`, under
+  `$RUNNER_TEMP`. It cannot reuse the upstream marketplace name: CLI 2.1.325 reserves
+  `claude-plugins-official` for its GitHub source and refuses it from a local path. The plugin keeps
+  its name, so the command and the guard's `Skill` allowance are unchanged. The pin-freshness
+  manifest cannot track this pin (the repository has no tags, and the manifest has no commit
+  source), so move it by hand: read the new `commands/code-review.md` against the POSTING RULES and
+  the guard, then measure a real review.
 
 The test (`scripts/tests/test_review_comment_guard.py`, run by the `Review guard` job) extracts the
 guard from the workflow, so the guard that ships is the one that is tested. It checks the hook wiring,
 runs the decision table through the script, and runs the differential against real bash. It fails the
 build if any of these is put back: a backslash allowed in double quotes, an unquoted `#`, line breaks,
 a fail-open hook command, a narrow matcher, a missing `--setting-sources user`, a default-allow guard,
-`Monitor` or `PowerShell` dropped from the shell tools, a bare `Write` allow.
+`Monitor` or `PowerShell` dropped from the shell tools, a bare `Write` allow, a review plugin installed
+from a branch or from an unchecked fetch, `Grep` or `Glob` passed without a check, or a review that is
+not tied to the head commit that started it.
 `scripts/tests/mutate_review_guard.py`, in the same job, proves that: each row puts one known bug into a
 copy of the workflow and fails unless a named test goes red. When a review finds a gap in the test, add its
 row there. The test's copies in other repositories are identical, so change them together.
@@ -319,12 +365,16 @@ text in a PR could try to make the review disclose one. The workflow now:
 - checks out with `persist-credentials: false` (the pinned checkout v7.0.1 would otherwise keep the
   job token in a file under `$RUNNER_TEMP` that the checkout's git config includes), and deletes
   whatever the PR put at the summary's path before the review runs;
-- asks for the action's token with `contents: read` (`additional_permissions`), so a leaked token
-  cannot push code;
+- asks for the action's token with `contents: read`, `pull_requests: write` and `issues: read`
+  (`additional_permissions`), so a leaked token can neither push code nor write issues. The action
+  merges these lines over its defaults (all three write), so a scope left out stays write, and the
+  job's own `permissions:` block does not bind this token (#188);
 - denies the file tools `.git/**`, and `--jq`, `-q`, `--template` and `-t` on `gh`, which can read
   environment variables;
-- tells the review, and every agent it launches, to run `gh pr diff` without redirecting it into a
-  file: the CLI checks a redirect's target as a file write, which the allow-list denies.
+- tells the review, and every agent it launches, to read the diff from `review.diff` in the runner
+  temp directory with the Read tool (one exact `Read(...)` allow rule), not with `gh pr diff`: a
+  redirect of that command into a file is checked as a file write, which the allow-list denies, and
+  the command shows the live head, not the commit under review (#188).
 
 This narrows token disclosure but does not stop it: deny rules match command text, and read-only
 shell commands can still print the token, which stays live until the job ends.
@@ -366,7 +416,7 @@ PR head — under `pull_request_target` that is the classic privileged-checkout 
 **Branch protection is what closes direct pushes to `main` — keep it on.** Push runs take
 everything from the pushed revision, the workflow file included, so a direct push could weaken
 the guard, the allow-list or the workflow and be judged by its own weakened copy. No workflow
-change can close that. Since 2026-09-24 two layers on the default branch require a PR:
+change can close that. As read on 2026-11-13, two layers on the default branch require a PR, and the active repository ruleset also requires Format Check, Checkov, Documentation, terraform-scan / Aggregate Results, semgrep/ci and the 11 `Validate (modules/<name>)` checks:
 
 - the repository ruleset `required-PR` (id `23947709`): active, **no bypass actors**, and it also
   blocks deletion and force-push. This is the layer that actually stops a direct push.
@@ -576,18 +626,19 @@ Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure`
 
 **Any new Azure resource uses an [Azure Verified Module](https://azure.github.io/Azure-Verified-Modules/) when one is *Available*.** Check the [resource index](https://azure.github.io/Azure-Verified-Modules/indexes/terraform/tf-resource-modules/) and the [pattern index](https://azure.github.io/Azure-Verified-Modules/indexes/terraform/tf-pattern-modules/) before writing the resource. Operator rule, 2026-09-26.
 
-- **If the module is Available,** call it with an exact version, and pass the AVM interfaces through rather than re-implementing them. As measured 2026-09-26, these are Available, all at 0.x except `avm-res-web-serverfarm` (2.x):
+- **If the module is Available,** call it with an exact version, and pass the AVM interfaces through rather than re-implementing them. As measured 2026-11-13, these are Available, all at 0.x except `avm-res-web-serverfarm` (2.x):
   - `avm-res-web-site`, `avm-res-web-serverfarm`
   - `avm-res-dbformysql-flexibleserver`
-  - `avm-res-keyvault-vault`
+  - `avm-res-keyvault-vault` (listed as **Orphaned** in the index on 2026-11-13, not Available)
   - `avm-res-storage-storageaccount`
   - `avm-res-operationalinsights-workspace`, `avm-res-insights-component`
   - `avm-res-cdn-profile`
   - `avm-res-network-virtualnetwork`, `avm-res-network-privatednszone`
+  - `avm-res-insights-actiongroup`, `avm-res-insights-activitylogalert`
 - **Read the module's own constraints before calling it.** Registry data for the latest version of each, measured the same day:
-  - All ten need the `modtm` provider, and all but MySQL need Terraform ≥ 1.9 (Storage ≥ 1.10, Key Vault ≥ 1.11). CI validates with Terraform 1.9.8. That meets the ≥ 1.9 floor, but not Storage's ≥ 1.10 or Key Vault's ≥ 1.11, so adopting either of those two still means raising `TERRAFORM_VERSION` in `validate.yml` first.
-  - Five cap azurerm below this tree's `~> 5.6`: MySQL and CDN profile (`~> 4.0`), Key Vault (`< 5.1`), Log Analytics and Application Insights (`< 5.0.0`). Terraform intersects the constraints, so they cannot init here; write the azurerm resource until they support 5.6. The other five depend on azapi, not azurerm.
-- **If it is only Proposed, or absent** (as of that date: action group, metric alert, activity-log alert, scheduled-query rule, consumption budget, availability test), write the azurerm resource directly. Shape the variables to the AVM interface conventions so a later switch is cheap:
+  - Seven of the sixteen measured candidates declare the `modtm` provider. All but MySQL need Terraform ≥ 1.9 (Storage ≥ 1.10, Key Vault and network security group ≥ 1.11). CI validates with Terraform 1.17.2, which meets all of them, and with 1.9.8, the version the consumer's CI runs, which meets the ≥ 1.9 floor but not Storage's ≥ 1.10 or the ≥ 1.11 of Key Vault and the network security group. Adopting one of those three therefore fails the Validate on consumer Terraform job until `TERRAFORM_VERSION_CONSUMER` in `validate.yml` is raised, and it raises the Terraform version every consumer needs (the modules declare `>= 1.6.0` today).
+  - As measured 2026-11-13, six cap azurerm below this tree's `~> 5.6`: MySQL (`>= 4.55.0, < 5.0.0`), CDN profile (`~> 4.0`), Key Vault (`< 5.0`), Log Analytics workspace (`< 5.0.0`), Front Door WAF policy (`< 5.0`) and autoscale setting (`< 5.0`). Terraform intersects the constraints, so they cannot init here; write the azurerm resource until they support 5.6. The Application Insights component module requires no azurerm.
+- **If it is only Proposed, or absent** (as of that date: metric alert, scheduled-query rule, consumption budget, availability test), write the azurerm resource directly. Shape the variables to the AVM interface conventions so a later switch is cheap:
   - `lock = { kind, name }` (the current AVM spec adds an optional `notes`; `wordpress-site` and
     `shared-infrastructure` take it, and accept only `kind = "CanNotDelete"`, because ReadOnly blocks the POST
     list operations every refresh makes)
@@ -596,7 +647,7 @@ Nine modules carry a `versions.tf`; `wordpress-site` and `shared-infrastructure`
   - `managed_identities = { system_assigned, user_assigned_resource_ids }`
   - `tags`
 - **Existing modules here are bespoke.** Migrate one to AVM only when a planned change already touches it, and never as a drive-by:
-  - Moving state into an AVM module needs `import` plus `removed` blocks, because `moved` cannot cross module packages.
+  - Since version 1.3.0 of Terraform, a [`moved` block can cross a module package boundary](docs/avm-adoption-assessment.md#migration-mechanics), so the module can carry the move and the consumer pastes nothing. Use `import` plus `removed` as the fallback.
   - The AVM Key Vault module defaults to RBAC (`legacy_access_policies_enabled = false`); this repo uses access policies today. On a new vault the deployer needs `Microsoft.Authorization/roleAssignments/write` only for the assignments the module creates through its `role_assignments` inputs (all empty by default), but it still needs data-plane roles for any keys or secrets the module manages: Key Vault Crypto Officer for keys and Key Vault Secrets Officer for secrets, or Key Vault Administrator for both. Moving one of this repo's vaults to RBAC invalidates its access policies, so the App Service identities that read secrets would need role assignments in their place, unless `legacy_access_policies_enabled = true` keeps the policies.
 - In a PR that adds a resource, name the AVM module you considered and why you did or did not use it.
 
@@ -642,8 +693,8 @@ When `cdn_provider = "cloudflare"`, Cloudflare's live IPv4 egress ranges are add
 
 **Key Vault (v3.0.0) — the sharpest trap in the repo, because failure is an errored apply, not just data loss:**
 
-- `purge_protection_enabled` is one-way. Azure permits `false → true` **in place**, but never `true → false`; the reverse forces replacement. The asymmetry matters — hardening later is free.
-- `soft_delete_retention_days` "can only be configured one time and cannot be updated" — any change forces replacement.
+- `purge_protection_enabled` is one-way. Azure permits `false → true` **in place**, but never `true → false`; the provider rejects disabling it during update. What a real plan shows is **UNKNOWN**. The asymmetry matters — hardening later is free.
+- `soft_delete_retention_days` "can only be configured one time and cannot be updated"; the provider rejects a change during update. What a real plan shows is **UNKNOWN**.
 - **Replacing the vault fails unless `key_vault_name_suffix` is bumped in the same change.** Terraform destroys before it creates; the old vault soft-deletes still holding its name, and azurerm's `recover_soft_deleted_key_vaults` **defaults to `true`**, so the create step *recovers the old vault* rather than creating one — with purge protection still on, which the new config then tries to disable. Azure refuses.
 - A purge-protected soft-deleted vault locks its name for the full retention window against **everyone**: `az keyvault purge` returns `MethodNotAllowed` even for subscription Owner. No role or flag shortens it.
 - Recovery restores a vault **in its original region**. Reusing a name while changing `location` silently strands Key Vault in the old region — a data-residency violation. Always bump `key_vault_name_suffix` when changing region.
@@ -726,10 +777,10 @@ Limits worth stating in any report: these are greenfield **create** plans, so th
 Pin to the exact versions CI uses, or results diverge:
 
 ```bash
-# Terraform 1.9.8 — TERRAFORM_VERSION in validate.yml. Check the binary first: a newer
+# Terraform 1.17.2 — TERRAFORM_VERSION in validate.yml. Check the binary first: a different
 # terraform earlier on PATH gives different results. Verify a download against
-# https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_SHA256SUMS.
-terraform version            # must print v1.9.8
+# https://releases.hashicorp.com/terraform/1.17.2/terraform_1.17.2_SHA256SUMS.
+terraform version            # must print v1.17.2
 
 # Format — the same command CI runs, from the repo root
 terraform fmt -recursive -check -diff
@@ -738,18 +789,21 @@ terraform fmt -recursive -check -diff
 rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl
 for m in modules/*/; do (cd "$m" && terraform init -backend=false >/dev/null && terraform validate); done
 rm -rf modules/*/.terraform modules/*/.terraform.lock.hcl   # leave none behind (see terraform-docs)
+# CI runs the same init and validate a second time on the consumer's version
+# (TERRAFORM_VERSION_CONSUMER in validate.yml, 1.9.8 today). Repeat the loop with that binary:
+# a module should pass on both. "Local CI parity" has the two-binary loop.
 
-# Checkov — the Checkov job runs 3.3.22, from `runs.image` in the action.yml of the
-# bridgecrewio/checkov-action tag validate.yml pins (v12.3128.0 today). Tags can move and the
+# Checkov — the Checkov job runs 3.4.5, from `runs.image` in the action.yml of the
+# bridgecrewio/checkov-action tag validate.yml pins (v12.3141.0 today). Tags can move and the
 # dependency-update bot bumps this one: re-read action.yml rather than trusting this number.
 #   gh api 'repos/bridgecrewio/checkov-action/contents/action.yml?ref=<tag-from-validate.yml>' \
 #     --jq '.content' | base64 -d | grep image:
 # Install the pinned CLI with a suffix for parity. Push hooks additionally need a trusted checkov executable on PATH.
-pipx install --suffix=@3322 checkov==3.3.22
+pipx install --suffix=@345 checkov==3.4.5
 # The skip list is read from validate.yml, so it cannot drift from what CI skips;
 # inline #checkov:skip comments on a resource apply on their own.
 # The render setting mirrors validate.yml's env (see Static Analysis Constraints).
-RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform -o json \
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@345 -d . --framework terraform -o json \
   --skip-check "$(sed -n 's/^ *skip_check: *\([^[:space:]]*\).*/\1/p' .github/workflows/validate.yml)"
 # Drop --quiet when comparing before/after: it hides PASSED and UNKNOWN, which is
 # exactly the signal you need (see Static Analysis Constraints).
@@ -765,7 +819,7 @@ Local hooks run via **lefthook**, entered through `.githooks/` (`sh .githooks/in
 
 Shell hooks require **Bash 4.4 or newer** and report that minimum at startup when the shell is unsupported. On macOS, install a supported Bash and put it first on PATH. Windows report publication retries access-denied errors within the existing retry limit; path-safety failures stop immediately.
 
-The vendored v3.1.2 hooks require **Python 3.11 or newer**, PyYAML and jsonschema. Install the dependencies with `python -m pip install PyYAML==6.0.3 jsonschema==4.25.1`. Pre-commit validates the exact staged `scan-config.yaml`, even when the worktree differs. Pre-commit security scanners read staged index blobs; pre-push scanners read pushed object tips and their changed paths. SQLFluff still reads the working tree. Checkov configuration accepts only passive keys. Python and every scanner must resolve outside both the scanned and consumer checkouts; repository-local paths are refused even with `SCAN_ALLOW_TOOL_ERRORS=1`. Trusted executable configuration must resolve outside the checkout; Semgrep ruleset overrides may be registry references, staged files inside the checkout, or external paths. Pre-push uses one stdin reader to scan files changed by each pushed ref with Checkov and tflint. New refs compare with the destination remote default and fallback commit selection counts only that destination's remote-tracking refs; keep those refs current. Checkov scans selected files only; tflint retains the full immutable tree for context and filters findings to selected files. Uncommitted files and index contents cannot replace those bytes. Missing tools, invalid configuration, missing policies and unsafe tree entries now block scans.
+The vendored v3.1.5 hooks require **Python 3.11 or newer**, PyYAML and jsonschema. Install the dependencies with `python -m pip install PyYAML==6.0.3 jsonschema==4.26.0`. Pre-commit validates the exact staged `scan-config.yaml`, even when the worktree differs. Pre-commit security scanners read staged index blobs; pre-push scanners read pushed object tips and their changed paths. SQLFluff still reads the working tree. Checkov configuration accepts only passive keys. Python and every scanner must resolve outside both the scanned and consumer checkouts; repository-local paths are refused even with `SCAN_ALLOW_TOOL_ERRORS=1`. Trusted executable configuration must resolve outside the checkout; Semgrep ruleset overrides may be registry references, staged files inside the checkout, or external paths. Pre-push uses one stdin reader to scan files changed by each pushed ref with Checkov and tflint. New refs compare with the destination remote default and fallback commit selection counts only that destination's remote-tracking refs; keep those refs current. Checkov scans selected files only; tflint retains the full immutable tree for context and filters findings to selected files. Uncommitted files and index contents cannot replace those bytes. Missing tools, invalid configuration, missing policies and unsafe tree entries now block scans. From v3.1.5 the PowerShell hooks that run on Windows also block when a scanner crashes or reports no exit code, so a broken local Trivy, Checkov or tflint install stops the commit or push until it is fixed.
 
 Push snapshots require the tracked `.scanning/configs/.checkov.yaml`. Its exclusions mirror `validate.yml`'s single canonical `skip_check` list, and the settings job in `terraform-scan.yml` fails if they drift. The validation job also consumes this policy. When changing the canonical list, regenerate the mirror in the same change. `RENDER_EDGES_DUPLICATE_ITER_COUNT=50` must also be set locally for CI parity.
 

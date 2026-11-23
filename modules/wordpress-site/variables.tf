@@ -545,7 +545,6 @@ variable "cloudflare" {
   description = "Cloudflare configuration"
   type = object({
     enabled                        = optional(bool, false)
-    account_id                     = optional(string, "")
     domain                         = optional(string, "")
     subdomain                      = optional(string, "")
     proxied                        = optional(bool, true)
@@ -1073,17 +1072,5 @@ variable "lock" {
   validation {
     condition     = var.lock == null ? true : (var.lock.notes == null ? true : length(var.lock.notes) <= 512)
     error_message = "lock.notes must be at most 512 characters."
-  }
-}
-
-# App Service Plan density validation - DEPRECATED: nothing reads this input.
-variable "plan_density_limit" {
-  description = "DEPRECATED, and has no effect: nothing in this module reads it, so it enforces no limit on sites per App Service Plan. It is kept, with its validation, only so existing configurations that set it still plan, and will be removed in the next major release. Remove it from your configuration."
-  type        = number
-  default     = 10
-
-  validation {
-    condition     = var.plan_density_limit >= 1 && var.plan_density_limit <= 20
-    error_message = "Plan density limit must be between 1 and 20."
   }
 }

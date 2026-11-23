@@ -8,7 +8,7 @@ cleanly. It needs no CDN account and no DNS changes: the site is served on the A
 
 Code references are `file:line` at commit
 [`b592e13`](https://github.com/agenticcodingops/azure-wordpress/tree/b592e13ad09938075b0e8f7a1dd51cfbe007320b),
-which is release v4.3.0; v4.3.1 changed one CI workflow and v4.3.2 changed only `modules/front-door/main.tf` (the route from line 98 on, and the three rules), so every reference on this page holds at v4.3.2.
+which is release v4.3.0; v4.3.1 changed one CI workflow and v4.3.2 changed only `modules/front-door/main.tf` (the route from line 98 on, and the three rules), so every reference on this page holds at v4.3.2. The module source on this page pins v5.0.0, and the references have not been re-anchored to it: v4.3.5 and v5.0.0 moved lines in some of the cited files (`modules/wordpress-site/main.tf` in both), so read a line number against v4.3.2.
 
 ## When to use
 
@@ -36,8 +36,8 @@ and choose a CDN; [`examples/basic-site`](../examples/basic-site/) shows Cloudfl
 - **Admin rights on the GitHub repository** that holds the configuration, to create the environment the pipeline
   uses.
 - **The Azure CLI**, signed in, for step 1 and Verify.
-- **Terraform 1.6.0 or later** (`modules/wordpress-site/main.tf:15`). The module's own CI uses 1.9.8, and the
-  configuration below was tested on 1.9.8.
+- **Terraform 1.6.0 or later** (`modules/wordpress-site/main.tf:15`). The module's own CI validates on 1.17.2 and
+  on 1.9.8; the configuration below was tested on 1.9.8.
 - **Outbound access from the runner:**
   - `github.com` and `release-assets.githubusercontent.com`, for the module source and for the `azapi` and
     `cloudflare` provider downloads (the registry sends those to GitHub release downloads, which redirect to
@@ -91,7 +91,7 @@ resource "random_password" "wp_admin" {
 }
 
 module "wordpress" {
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v5.0.0"
 
   project_name = local.project_name
   site_name    = local.site_name

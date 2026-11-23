@@ -105,18 +105,19 @@ try {
         try {
             $json = $result.Output | ConvertFrom-Json
             $secrets = $json.Results | ForEach-Object { $_.Secrets } | Where-Object { $_ }
-            $totalCritical = @($secrets | Where-Object { $_.Severity -eq 'CRITICAL' }).Count
-            $totalHigh = @($secrets | Where-Object { $_.Severity -eq 'HIGH' }).Count
-            $totalMedium = @($secrets | Where-Object { $_.Severity -eq 'MEDIUM' }).Count
-            $totalLow = @($secrets | Where-Object { $_.Severity -eq 'LOW' }).Count
+            $counts = Get-ScannerSeverityCounts -Findings @($secrets) -Tool trivy
+            $totalCritical = $counts.CRITICAL
+            $totalHigh = $counts.HIGH
+            $totalMedium = $counts.MEDIUM
+            $totalLow = $counts.LOW
         } catch {
             $totalHigh = 1
         }
         # Show actionable details so developers know what to fix
         Show-TrivySecretFindings -JsonOutput $result.Output
         $exitCode = 1
-    } elseif ($result.ExitCode -ge 2) {
-        # Infrastructure error — fail-open
+    } elseif ($result.ExitCode -ne 0) {
+        # Any exit but 0 or 1 is a tool error, including crashes and missing codes: blocks unless SCAN_ALLOW_TOOL_ERRORS=1
         $null = Get-HookExitCode -ToolExitCode $result.ExitCode
         $exitCode = 0
     } else {

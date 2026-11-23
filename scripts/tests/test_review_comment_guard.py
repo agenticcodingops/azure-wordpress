@@ -100,6 +100,21 @@ def step_text(name):
     return TEXT[start:end if end != -1 else len(TEXT)]
 
 
+def step_env(name):
+    """The `env:` mapping of one workflow step, as {name: value}. Comments are not entries."""
+    lines = step_text(name).split("\n")
+    start = next(i for i, line in enumerate(lines) if re.match(r"\s+env:\s*$", line))
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    env = {}
+    for line in lines[start + 1:]:
+        if line.strip() and len(line) - len(line.lstrip()) <= indent:
+            break
+        if line.strip() and not line.strip().startswith("#"):
+            key, value = line.strip().split(":", 1)
+            env[key.strip()] = value.strip()
+    return env
+
+
 def step_run_block(name):
     """The shell script of a `run: |` step, de-indented the way the runner does."""
     lines = step_text(name).split("\n")
@@ -253,6 +268,13 @@ class WorkflowWiringTests(unittest.TestCase):
         # deny is what keeps the review from copying it into the summary it is allowed to post.
         self.assertIn("Read(./.git/**)", denied[0])
 
+    def test_search_tools_are_disallowed_as_whole_entries(self):
+        denied = [a for a in review_arguments() if a.startswith("--disallowedTools")]
+        self.assertEqual(len(denied), 1)
+        entries = denied[0].removeprefix('--disallowedTools "').removesuffix('"').split(",")
+        self.assertIn("Grep", entries)
+        self.assertIn("Glob", entries)
+
     def test_the_protecting_steps_cannot_be_skipped(self):
         # A step with a condition or continue-on-error can be skipped or fail without stopping the job.
         for name in ("Clear the review summary path", "Write the review comment guard"):
@@ -262,10 +284,87 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertIn('rm -rf -- "$GITHUB_WORKSPACE/.review-summary.md"', step_text("Clear the review summary path"))
         self.assertLess(TEXT.index("Clear the review summary path"), TEXT.index("Write the review comment guard"))
 
+    def test_the_action_token_cannot_push_or_write_issues(self):
+        # The action merges these lines over contents, pull_requests and issues, all write, so a scope left out
+        # stays write. The review only posts to the pull request, so the other two are read (#188).
+        lines = [line.strip() for line in review_block("additional_permissions").split("\n") if line.strip()]
+        scopes = dict(line.split(":", 1) for line in lines if not line.startswith("#"))
+        scopes = {key.strip(): value.strip() for key, value in scopes.items()}
+        self.assertEqual(scopes, {"contents": "read", "pull_requests": "write", "issues": "read"})
+
+    def test_each_head_is_reviewed_once(self):
+        # The plugin's step 1 stops once Claude has commented at all, so every head after the first went unreviewed.
+        # A step outside the model reads the live head and skips the review when the app has already posted a summary
+        # naming it; the prompt reviews that commit, anchors inline comments to it, re-checks the head before posting
+        # and always posts the summary, so a re-run on the same commit posts nothing (#188).
+        step = step_text("Find the head to review")
+        self.assertIsNone(re.search(r"(?m)^\s+(if|continue-on-error):", step), "the head step must always run")
+        self.assertRegex(step, r"(?m)^\s+id:\s*head\s*$")
+        # Every step output the workflow reads must come from that id, or a renamed id would leave the review
+        # step's condition unset and skip every review while the job stays green.
+        self.assertEqual(set(re.findall(r"steps\.([A-Za-z0-9_-]+)\.outputs", TEXT)), {"head"})
+        self.assertEqual(step_env("Find the head to review"), {
+            "GH_TOKEN": "${{ github.token }}", "PR": "${{ github.event.pull_request.number }}", "REPO": "${{ github.repository }}"})
+        # The head step runs first, and the checkout is the commit it chose, not the event's merge commit.
+        self.assertLess(TEXT.index("- name: Find the head to review"), TEXT.index("- name: Checkout repository"))
+        checkout = step_text("Checkout repository")
+        self.assertEqual(re.findall(r"(?m)^\s+ref:\s*(.+?)\s*$", checkout), ["${{ steps.head.outputs.sha }}"])
+        script = step_run_block("Find the head to review")
+        self.assertTrue(script.startswith("set -euo pipefail\n"), "a failed read must fail the job")
+        self.assertIn('select(.user.type == "Bot" and .user.login == "claude[bot]")', script)
+        self.assertIn('(.body | split("\\n")[0] | rtrimstr("\\r")) == "Reviewed head: " + env.SHA', script)
+        review_if = re.search(r"(?m)^\s+if:\s*(.+)$", step_text("Run Claude Code Review"))
+        self.assertIsNotNone(review_if, "the review step must be skipped for a head that has a review")
+        self.assertEqual(review_if.group(1).strip(), "steps.head.outputs.reviewed == 'false'")
+        prompt = " ".join(review_block("prompt").split())
+        head = "${{ steps.head.outputs.sha }}"
+        self.assertIn("this run reviews commit " + head, prompt)
+        self.assertNotIn("github.event.pull_request.head.sha", prompt, "the event SHA can be older than the head reviewed")
+        self.assertIn('drop step 1\'s condition "Claude has already commented on this PR", and tell the step 1 agent so', prompt)
+        self.assertIn("The diff of the reviewed commit is in ${{ runner.temp }}/review.diff", prompt)
+        self.assertIn("Read the diff from that file with the Read tool, never with gh pr diff", prompt)
+        # The diff is outside the checkout, so reading it needs an allow rule: one exact file, nothing wider.
+        allowed = [a for a in review_arguments() if a.startswith("--allowedTools")]
+        self.assertEqual(len(allowed), 1)
+        entries = allowed[0].removeprefix('--allowedTools "').removesuffix('"').split(",")
+        self.assertEqual([e for e in entries if e.startswith("Read")], ["Read(/${{ runner.temp }}/review.diff)"])
+        self.assertIn('> "$RUNNER_TEMP/review.diff"', script)
+        self.assertIn("Pass commit_id set to the reviewed SHA on every inline comment", prompt)
+        self.assertIn("Always post exactly one summary comment", prompt)
+        self.assertIn("Its first line is exactly `Reviewed head: " + head + "`", prompt)
+        self.assertLess(prompt.index("REVIEWED HEAD"), prompt.index("POSTING RULES"))
+        self.assertNotIn("get the full head commit SHA with", prompt, "a SHA read at an unspecified time can differ from the reviewed one")
+
     def test_the_action_is_pinned_to_a_commit(self):
         match = re.search(r"uses:\s*anthropics/claude-code-action@(\S+)", TEXT)
         self.assertIsNotNone(match)
         self.assertRegex(match.group(1), r"^[0-9a-f]{40}$", "a tag can be moved; pin the action to a commit")
+
+    def test_the_review_plugin_is_pinned_to_a_commit(self):
+        # A marketplace URL resolves the plugin at a branch, so the command the guard and the POSTING RULES were
+        # measured against could change under the action pin. The plugin comes from a commit the fetch step
+        # checks, through a local marketplace that step writes, and that marketplace is the one the review uses.
+        fetch = step_text("Fetch the pinned review plugin")
+        pin = re.search(r"(?m)^\s+PLUGIN_COMMIT:\s*(\S+)\s*$", fetch)
+        self.assertIsNotNone(pin, "the fetch step must name the plugin commit")
+        self.assertRegex(pin.group(1), r"^[0-9a-f]{40}$", "pin the plugin to a full commit SHA")
+        script = step_run_block("Fetch the pinned review plugin")
+        self.assertIn('test "$(git -C "$market/source" rev-parse HEAD)" = "$PLUGIN_COMMIT"', script)
+        self.assertIn('market="$RUNNER_TEMP/review-plugin"', script)
+        manifest = re.search(r"<<'MARKET'\n(.*?)\nMARKET\n", script, re.S)
+        self.assertIsNotNone(manifest, "the fetch step must write the marketplace manifest itself")
+        market = json.loads(manifest.group(1))
+        self.assertEqual([p["name"] for p in market["plugins"]], ["code-review"])
+        self.assertEqual(market["plugins"][0]["source"], "./source/plugins/code-review")
+        review = step_text("Run Claude Code Review")
+        sources = re.findall(r"(?m)^\s+plugin_marketplaces:\s*(.*?)\s*$", review)
+        self.assertEqual(sources, ["${{ runner.temp }}/review-plugin"], "the review must install from the pinned copy")
+        plugins = re.findall(r"(?m)^\s+plugins:\s*'?(.*?)'?\s*$", review)
+        self.assertEqual(plugins, ["code-review@" + market["name"]])
+        # The command the guard lets the Skill tool run is named after the plugin, so the name must not change.
+        self.assertIn('const PLUGIN_COMMANDS = ["code-review:code-review", "code-review"];', extract_guard(TEXT))
+        self.assertIsNone(re.search(r"(?m)^\s+(if|continue-on-error):", fetch), "the fetch step must always run")
+        self.assertLess(TEXT.index("- name: Fetch the pinned review plugin"), TEXT.index("id: claude-review"))
 
 
 # [expected, tool, argument]  expected: "allow" or "block"
@@ -345,6 +444,8 @@ CASES = [
     ["block", BASH, ""],
     # plain reads that must keep working
     ["allow", BASH, "gh pr view 48 --json headRefOid"],
+    ["allow", BASH, "gh pr view 48 --json comments"],
+    ["block", BASH, "gh pr view 48 --json comments --jq .comments"],
     ["allow", BASH, "gh pr view 48 --repo o/r --json state,isDraft,title,author,headRefOid,baseRefName,files,comments,reviews"],
     ["allow", BASH, "gh pr diff 48"],
     ["allow", BASH, "gh pr diff 48 --name-only"],
@@ -375,9 +476,12 @@ FILE_CASES = [
     ["block", "Write", {"file_path": SUMMARY, "notebook_path": "/tmp/x"}],
     ["allow", "NotebookEdit", {"notebook_path": SUMMARY}],
     ["allow", "NotebookEdit", {"file_path": SUMMARY, "notebook_path": SUMMARY}],
-    # tools the guard does not manage go on to the normal permission check
+    # read-only tools are allowed only when the guard names them explicitly
     ["allow", "Read", {"file_path": "x"}],
-    ["allow", "Grep", {"pattern": "x"}],
+    ["block", "Grep", {"pattern": "x", "path": WS + "/.git"}],
+    ["block", "Grep", {"pattern": "x"}],
+    ["block", "Glob", {"pattern": "**/.git/config"}],
+    ["block", "Glob", {"pattern": "*", "path": "/runner/temp"}],
     ["allow", "mcp__github_inline_comment__create_inline_comment", {}],
 ]
 
@@ -414,7 +518,7 @@ TOOL_CASES = (
        ["block", "Skill", {"skill": None}],
        ["block", "Skill", {}]]
     # tools that run nothing and write nothing go on to the normal permission check
-    + [["allow", tool, {}] for tool in ("Read", "Grep", "Glob", "LS", "Agent", "Task", "TaskCreate", "TaskGet", "TaskList",
+    + [["allow", tool, {}] for tool in ("Read", "LS", "Agent", "Task", "TaskCreate", "TaskGet", "TaskList",
                                        "TaskUpdate", "TaskOutput", "TaskStop", "BashOutput", "KillShell", "TodoWrite",
                                        "ToolSearch", "mcp__github_inline_comment__create_inline_comment")]
 )
@@ -615,6 +719,103 @@ class BashDifferentialTests(GuardTestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertFalse(os.path.lexists(planted), "the planted link survived the cleanup step")
         self.assertTrue(os.path.exists(secret), "the cleanup must remove the link, not what it points at")
+
+    HEAD_SHA = "0123456789abcdef0123456789abcdef01234567"
+    BASE_SHA = "89abcdef0123456789abcdef0123456789abcdef"
+
+    def run_head_step(self, head, comments, base=BASE_SHA, fail=""):
+        """Run the workflow's "Find the head to review" script with a stub gh that answers from these values.
+
+        The stub hands the step's own --jq filters to the real jq, so the filters that ship are the ones tested.
+        `fail` names one gh call (pull, comments or compare) that exits non-zero. Returns the exit status, the
+        step outputs, stderr, and the saved diff (None when the file was not written)."""
+        if shutil.which("jq") is None:
+            if IS_LINUX:
+                raise AssertionError("jq is required to test the head step's filters")
+            self.skipTest("needs jq")
+        case = tempfile.mkdtemp(dir=self.tmp)
+        bin_dir = os.path.join(case, "bin")
+        temp = os.path.join(case, "runner-temp")
+        os.makedirs(bin_dir)
+        os.makedirs(temp)
+        stub = os.path.join(bin_dir, "gh")
+        with open(stub, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(
+                "#!/usr/bin/env bash\n"
+                'if [ "$#" = 4 ] && [ "$1 $2 $3" = "api repos/o/r/pulls/48 --jq" ]; then\n'
+                '  [ "$STUB_FAIL" = pull ] && exit 1; exec jq -r "$4" "$STUB_PULL"; fi\n'
+                'if [ "$#" = 5 ] && [ "$1 $2 $3 $4" = "api --paginate repos/o/r/issues/48/comments --jq" ]; then\n'
+                '  [ "$STUB_FAIL" = comments ] && exit 1; exec jq -r "$5" "$STUB_COMMENTS"; fi\n'
+                'if [ "$#" = 4 ] && [ "$1" = api ] && [ "$2" = -H ] && [ "$3" = "Accept: application/vnd.github.diff" ]; then\n'
+                '  [ "$STUB_FAIL" = compare ] && exit 1; printf "diff of %s\\n" "$4"; exit 0; fi\n'
+                'echo "unexpected gh call: $*" >&2; exit 99\n')
+        os.chmod(stub, 0o700)  # owner only; it must be executable to be found on PATH
+        pull_file = os.path.join(case, "pull.json")
+        with open(pull_file, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump({"head": {"sha": head}, "base": {"sha": base}}, handle)
+        comments_file = os.path.join(case, "comments.json")
+        with open(comments_file, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(comments, handle)
+        script = os.path.join(case, "step.sh")
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(step_run_block("Find the head to review"))
+        output = os.path.join(case, "output")
+        open(output, "w", encoding="utf-8").close()
+        env = {**os.environ, "PATH": bin_dir + os.pathsep + os.environ.get("PATH", ""), "GITHUB_OUTPUT": output,
+               "RUNNER_TEMP": temp, "PR": "48", "REPO": "o/r", "STUB_PULL": pull_file, "STUB_COMMENTS": comments_file,
+               "STUB_FAIL": fail}
+        done = subprocess.run([self.bash, "--noprofile", "--norc", script], env=env, capture_output=True, text=True, timeout=30, check=False)
+        with open(output, encoding="utf-8") as handle:
+            values = dict(line.split("=", 1) for line in handle.read().split("\n") if "=" in line)
+        diff_path = os.path.join(temp, "review.diff")
+        diff = Path(diff_path).read_text(encoding="utf-8") if os.path.exists(diff_path) else None
+        return done.returncode, values, done.stderr, diff
+
+    def test_the_head_step_skips_only_a_head_the_app_has_reviewed(self):
+        sha = self.HEAD_SHA
+        other = "fedcba9876543210fedcba9876543210fedcba98"
+        app = {"login": "claude[bot]", "type": "Bot"}
+        marker = "Reviewed head: " + sha + "\n\n## Code review\n\nNo issues found."
+        cases = [
+            ("no comments", [], "false"),
+            ("the app's summary for this head", [{"id": 1, "user": app, "body": marker}], "true"),
+            ("the app's summary with CRLF line ends", [{"id": 1, "user": app, "body": marker.replace("\n", "\r\n")}], "true"),
+            ("the app's summary for another head", [{"id": 1, "user": app, "body": marker.replace(sha, other)}], "false"),
+            ("a user called claude", [{"id": 1, "user": {"login": "claude", "type": "User"}, "body": marker}], "false"),
+            ("a user claiming the app's login", [{"id": 1, "user": {"login": "claude[bot]", "type": "User"}, "body": marker}], "false"),
+            ("another bot", [{"id": 1, "user": {"login": "github-actions[bot]", "type": "Bot"}, "body": marker}], "false"),
+            ("the marker on a later line", [{"id": 1, "user": app, "body": "## Code review\n" + marker}], "false"),
+            ("a longer SHA after the marker", [{"id": 1, "user": app, "body": "Reviewed head: " + sha + "ff"}], "false"),
+            ("an older review and this one", [{"id": 1, "user": app, "body": marker.replace(sha, other)},
+                                              {"id": 2, "user": app, "body": marker}], "true"),
+        ]
+        for name, comments, expected in cases:
+            with self.subTest(name):
+                code, values, err, diff = self.run_head_step(sha, comments)
+                self.assertEqual(code, 0, err)
+                self.assertEqual(values, {"sha": sha, "reviewed": expected})
+                # The saved diff is the reviewed commit against the base, the three-dot form the PR itself shows.
+                self.assertEqual(diff, "diff of repos/o/r/compare/" + self.BASE_SHA + "..." + sha + "\n")
+
+    def test_the_head_step_fails_on_a_sha_it_cannot_trust(self):
+        bad = ("", "main", "0123456789ABCDEF0123456789ABCDEF01234567", "0123456789abcdef0123456789abcdef0123456",
+               "0123456789abcdef0123456789abcdef01234567; id", "$(id)", "0123456789abcdef0123456789abcdef01234567 x")
+        for value in bad:
+            for head, base in ((value, self.BASE_SHA), (self.HEAD_SHA, value)):
+                with self.subTest(head=head, base=base):
+                    code, values, _err, diff = self.run_head_step(head, [], base=base)
+                    self.assertNotEqual(code, 0)
+                    self.assertEqual(values, {}, "no output may reach the prompt")
+                    self.assertIsNone(diff, "no diff may be saved for an untrusted SHA")
+
+    def test_the_head_step_fails_closed_when_a_read_fails(self):
+        # A failed read must fail the job: a comment read that failed open would review every head again, and a
+        # failed diff read would leave the review nothing pinned to read.
+        for fail in ("pull", "comments", "compare"):
+            with self.subTest(fail=fail):
+                code, values, _err, _diff = self.run_head_step(self.HEAD_SHA, [], fail=fail)
+                self.assertNotEqual(code, 0)
+                self.assertEqual(values, {}, "no output may reach the review step")
 
     def test_the_reported_payloads_really_make_two_calls_in_bash(self):
         # If these stop making two calls, the harness can no longer see the bug class it exists for.

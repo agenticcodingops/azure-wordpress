@@ -16,4 +16,4 @@ Setting another version: neither source states whether the server is updated in 
 
 ## Procedure
 
-The procedure for this upgrade is in the [MySQL major-version upgrade runbook](../operations/mysql-major-version-upgrade.md). It rests on the findings in [#70](https://github.com/agenticcodingops/azure-wordpress/issues/70), which this page cites above; they are not in `CHANGELOG.md` or the release notes. The Burstable steps are unmeasured and still need a real run.
+The procedure for this upgrade is in the [MySQL major-version upgrade runbook](../operations/mysql-major-version-upgrade.md). It rests on the findings in [#70](https://github.com/agenticcodingops/azure-wordpress/issues/70), which this page cites above; they are not in `CHANGELOG.md` or the release notes. The Burstable steps were measured in one real run on 2026-11-14.

@@ -1,78 +1,8 @@
 # Cloudflare WAF Configuration for WordPress
-# Creates managed ruleset overrides to prevent false positives in WordPress admin
-#
-# CRITICAL: Without these exclusions, Cloudflare WAF blocks:
-# - WordPress visual editor (XSS-like content)
-# - Plugin/theme uploads
-# - Customizer changes
-# - Post/page editing with special characters
-#
-# This is equivalent to Azure WAF rules 942230, 941320 exclusions
+# Configures rate limiting and custom rules when enable_waf is true.
+# Managed rulesets and their exceptions are configured separately by the operator.
 #
 # NOTE: Compatible with Cloudflare provider v5.x
-
-# ============================================================================
-# WAF MANAGED RULES OVERRIDE
-# ============================================================================
-
-# Skip WAF for WordPress admin operations
-resource "cloudflare_ruleset" "wordpress_waf_exceptions" {
-  count = var.enable_waf ? 1 : 0
-
-  zone_id     = local.zone_id
-  name        = "WordPress WAF Exceptions"
-  description = "Skip managed WAF rules for WordPress admin to prevent false positives"
-  kind        = "zone"
-  phase       = "http_request_firewall_managed"
-
-  rules = [
-    # Rule 1: Skip all WAF rules for WordPress admin paths
-    {
-      action = "skip"
-      action_parameters = {
-        ruleset = "current"
-      }
-      expression  = <<-EOT
-        (http.request.uri.path contains "/wp-admin/") or
-        (http.request.uri.path contains "/wp-login.php") or
-        (http.request.uri.path eq "/wp-cron.php") or
-        (http.request.uri.path eq "/xmlrpc.php")
-      EOT
-      description = "Skip WAF for WordPress admin paths"
-      enabled     = true
-      ref         = "wp_admin_skip"
-    },
-    # Rule 2: Skip WAF for authenticated WordPress users (logged-in cookies)
-    {
-      action = "skip"
-      action_parameters = {
-        ruleset = "current"
-      }
-      expression  = <<-EOT
-        (http.cookie contains "wordpress_logged_in_") or
-        (http.cookie contains "wordpress_sec_") or
-        (http.cookie contains "wp-settings-")
-      EOT
-      description = "Skip WAF for authenticated WordPress users"
-      enabled     = true
-      ref         = "wp_auth_skip"
-    },
-    # Rule 3: Skip WAF for WordPress REST API (used by Gutenberg editor)
-    {
-      action = "skip"
-      action_parameters = {
-        ruleset = "current"
-      }
-      expression  = <<-EOT
-        (http.request.uri.path contains "/wp-json/") and
-        (http.cookie contains "wordpress_logged_in_")
-      EOT
-      description = "Skip WAF for authenticated WordPress REST API requests"
-      enabled     = true
-      ref         = "wp_rest_skip"
-    }
-  ]
-}
 
 # ============================================================================
 # RATE LIMITING FOR WORDPRESS LOGIN

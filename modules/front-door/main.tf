@@ -231,10 +231,40 @@ resource "azurerm_cdn_frontdoor_rule" "cache_static" {
 
   depends_on = [azurerm_cdn_frontdoor_rule.cache_uploads] # takes order 2 only after uploads has left it
 
+  # Front Door accepts at most 10 match values per condition, and conditions in one rule are
+  # ANDed, so the font types live in cache_static_fonts below (#170).
   conditions {
     request_file_extension {
       operator   = "Equal"
-      values     = ["css", "js", "jpg", "jpeg", "png", "gif", "ico", "woff", "woff2", "ttf", "svg"]
+      values     = ["css", "js", "jpg", "jpeg", "png", "gif", "ico", "svg"]
+      transforms = ["Lowercase"]
+    }
+  }
+
+  actions {
+    route_configuration_override {
+      caching {
+        behaviour              = "OverrideAlways"
+        duration               = "${format("%02d", floor(var.cache_static_minutes / 60))}:${format("%02d", var.cache_static_minutes % 60)}:00"
+        compression_enabled    = true
+        query_string_behaviour = "UseQueryString"
+      }
+    }
+  }
+}
+
+# Rule: Cache static fonts. Split from CacheStaticAssets, whose 11 values Front Door rejected
+# (#170). Order 4 is free, so no existing rule moves and no renumbering sequence is needed.
+resource "azurerm_cdn_frontdoor_rule" "cache_static_fonts" {
+  name                      = "CacheStaticFonts"
+  cdn_frontdoor_rule_set_id = azurerm_cdn_frontdoor_rule_set.caching.id
+  order                     = 4
+  behaviour_on_match        = "Continue"
+
+  conditions {
+    request_file_extension {
+      operator   = "Equal"
+      values     = ["woff", "woff2", "ttf"]
       transforms = ["Lowercase"]
     }
   }

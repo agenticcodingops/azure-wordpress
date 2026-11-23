@@ -46,7 +46,7 @@ data "azurerm_client_config" "current" {}
 
 module "shared" {
   # Pin to a specific version tag for stability
-  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v5.0.0"
 
   project_name    = var.project_name
   environment     = var.environment
@@ -64,7 +64,7 @@ module "shared" {
 module "wordpress_sites" {
   for_each = var.sites
   # Pin to a specific version tag for stability
-  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v4.3.2"
+  source = "github.com/agenticcodingops/azure-wordpress//modules/wordpress-site?ref=v5.0.0"
 
   project_name  = var.project_name
   site_name     = each.key
@@ -109,11 +109,10 @@ module "wordpress_sites" {
   # Cloudflare CDN
   cdn_provider = "cloudflare"
   cloudflare = {
-    enabled    = true
-    account_id = var.cloudflare_account_id
-    domain     = var.cloudflare_domain
-    subdomain  = each.value.subdomain
-    proxied    = true
+    enabled   = true
+    domain    = var.cloudflare_domain
+    subdomain = each.value.subdomain
+    proxied   = true
   }
 
   # Database per site (required for isolation)

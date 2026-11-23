@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0](https://github.com/agenticcodingops/azure-wordpress/compare/v4.3.5...v5.0.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **wordpress-site:** the plan_density_limit input of modules/wordpress-site is removed. A module block that still sets it fails with "Unsupported argument" at terraform init or terraform validate, before anything is planned. Delete the argument; the value was never used, so no plan changes. Callers that do not set it need no change.
+* **cloudflare:** callers of modules/cloudflare must stop passing cloudflare_account_id, or Terraform stops with "Unsupported argument". For this removal, callers of modules/wordpress-site need no change: an account_id left inside the cloudflare object is ignored and can be deleted at any time. No resource changes.
+
+### Features
+
+* **cloudflare:** remove the unused cloudflare_account_id input ([443655d](https://github.com/agenticcodingops/azure-wordpress/commit/443655d0c2d0acdf18699203da36cfb31e9d7c1f))
+* **wordpress-site:** remove the deprecated plan_density_limit input ([#178](https://github.com/agenticcodingops/azure-wordpress/issues/178)) ([f47306e](https://github.com/agenticcodingops/azure-wordpress/commit/f47306ed6146a5040b2366223495c2cc04fc3c6c))
+
+## [4.3.5](https://github.com/agenticcodingops/azure-wordpress/compare/v4.3.4...v4.3.5) (2026-11-12)
+
+
+### Bug Fixes
+
+* **front-door:** split the static cache rule to stay within 10 match values ([#171](https://github.com/agenticcodingops/azure-wordpress/issues/171)) ([d3a35d5](https://github.com/agenticcodingops/azure-wordpress/commit/d3a35d5effcfc5755c5760a7dbb60319c22081e0))
+* **wordpress-site:** give each origin restriction list one owner ([#167](https://github.com/agenticcodingops/azure-wordpress/issues/167)) ([cad0d0c](https://github.com/agenticcodingops/azure-wordpress/commit/cad0d0c9070b1145d7f3cfa40559e73699910a0d))
+
+## [4.3.4](https://github.com/agenticcodingops/azure-wordpress/compare/v4.3.3...v4.3.4) (2026-11-12)
+
+
+### Bug Fixes
+
+* **cloudflare:** remove ineffective managed-phase ruleset ([#166](https://github.com/agenticcodingops/azure-wordpress/issues/166)) ([9185ae7](https://github.com/agenticcodingops/azure-wordpress/commit/9185ae74df6cf2ac6d616d7392e3721f9c3549f8))
+
+## [4.3.3](https://github.com/agenticcodingops/azure-wordpress/compare/v4.3.2...v4.3.3) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ci:** read the Checkov floor from PyPI in the freshness manifest ([#163](https://github.com/agenticcodingops/azure-wordpress/issues/163)) ([226e76d](https://github.com/agenticcodingops/azure-wordpress/commit/226e76df0cd1d9015b7d7caadaac356645e1042b))
+
 ## [4.3.2](https://github.com/agenticcodingops/azure-wordpress/compare/v4.3.1...v4.3.2) (2026-10-31)
 
 

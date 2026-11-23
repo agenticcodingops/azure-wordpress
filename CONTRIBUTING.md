@@ -9,11 +9,12 @@ pull request.
 1. Fork the repository and clone your fork.
 2. Add the canonical repository as the `upstream` remote.
 3. Install the required tools:
-   - Terraform 1.9.8 (the version used by CI)
+   - Terraform 1.17.2 (the version CI formats and validates with). CI also validates every module on 1.9.8,
+     the version the consumer's CI runs, so a change must validate on both
    - terraform-docs 0.20.0
-   - Checkov 3.3.22
+   - Checkov 3.4.5
    - Trivy
-   - Python 3.11 or newer, with PyYAML 6.0.3 and jsonschema 4.25.1
+   - Python 3.11 or newer, with PyYAML 6.0.3 and jsonschema 4.26.0
    - Lefthook and the scanners configured in `lefthook.yml`
    - Bash 4.4 or newer for shell hooks; on macOS, install a supported Bash and put it first on PATH
 4. Install the repository hooks once per clone:
@@ -31,8 +32,8 @@ Create a short-lived branch with a descriptive prefix such as `feature/`, `fix/`
 
 ## Format and validate Terraform
 
-Confirm that the selected binary is the same version as CI, then run the CI commands
-from the repository root:
+Confirm that the selected binary is the version CI formats with (`TERRAFORM_VERSION` in
+`.github/workflows/validate.yml`), then run the CI commands from the repository root:
 
 ```bash
 terraform version
@@ -42,6 +43,10 @@ for module in modules/*/; do
   (cd "$module" && terraform init -backend=false && terraform validate) || exit 1
 done
 ```
+
+CI runs the `init` and `validate` loop a second time on the version the consumer's CI runs
+(`TERRAFORM_VERSION_CONSUMER` in the same workflow). Repeat the loop with a binary of that
+version: a change must validate on both.
 
 CI starts without module lock files. If local initialization created `.terraform/`
 directories or module lock files, remove them before checking generated documentation.
@@ -62,18 +67,18 @@ Review the resulting diff and ensure a second run is idempotent.
 
 ## Run the compliance scan
 
-CI parity uses Checkov 3.3.22. The v3.1.2 push hooks require a trusted executable
+CI parity uses Checkov 3.4.5. The v3.1.5 push hooks require a trusted executable
 named `checkov` on PATH and scan files changed by each pushed ref. New refs compare with the destination
 remote default; fallback selection counts only that destination's remote-tracking refs. Keep those refs current before pushing. For the suffixed parity command:
 
 ```bash
-pipx install --suffix=@3322 checkov==3.3.22
+pipx install --suffix=@345 checkov==3.4.5
 ```
 
 Run it with the same render setting and skip list that the validation workflow uses:
 
 ```bash
-RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@3322 -d . --framework terraform --quiet \
+RENDER_EDGES_DUPLICATE_ITER_COUNT=50 checkov@345 -d . --framework terraform --quiet \
   --skip-check "$(sed -n 's/^ *skip_check: *\([^[:space:]]*\).*/\1/p' .github/workflows/validate.yml)"
 ```
 
@@ -84,13 +89,14 @@ Update the mirror whenever changing the workflow list. CI also reads that policy
 Install hook validation dependencies with Python 3.11 or newer:
 
 ```bash
-python -m pip install PyYAML==6.0.3 jsonschema==4.25.1
+python -m pip install PyYAML==6.0.3 jsonschema==4.26.0
 ```
 
 For tflint, provision a reviewed `.hcl` config and plugin cache outside the checkout,
 then set absolute `SCAN_TFLINT_CONFIG` and `SCAN_TFLINT_PLUGIN_DIR` paths. Start with
 the pinned platform release's `configs/azure/.tflint.hcl`, without any `plugin_dir`
-setting. Missing prerequisites now block local scans. The push off-switch is read
+setting. Missing prerequisites now block local scans, and so does a scanner that
+crashes or reports no exit code (on Windows too, from v3.1.5). The push off-switch is read
 from the pushed commit, while staged configuration validation always runs.
 There is no suppression registry or baseline here to migrate to schema 2.0. The local hook also runs Trivy at its configured severity:
 
@@ -209,7 +215,7 @@ constraints.
 ## Local linter configuration
 
 The root `.tflint.hcl` is byte-identical to the scanning platform's
-`configs/azure/.tflint.hcl` at v3.1.2. Its embedded example uses the platform's
+`configs/azure/.tflint.hcl` at v3.1.5. Its embedded example uses the platform's
 standard layout; for this repository's root mirror, run:
 
 ```bash
@@ -219,5 +225,5 @@ tflint --recursive --config="$(pwd)/.tflint.hcl"
 
 Push hooks continue to require the reviewed config and plugin cache outside the
 checkout, selected by `SCAN_TFLINT_CONFIG` and `SCAN_TFLINT_PLUGIN_DIR`. Provision
-that external config from the same release. The runtime minimums in the local
-scan config remain compatibility floors, not installation pins.
+that external config from the same release. Local scanners run whatever is
+installed on PATH; the scan config no longer records version minimums.

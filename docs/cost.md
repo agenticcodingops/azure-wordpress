@@ -79,7 +79,7 @@ Notes:
    that holds the rules, every site in the zone loses them.
 
    `cloudflare.enable_waf` needs Business or higher: its login rate limit matches on the request method, which
-   Cloudflare offers in rate-limiting rules from Business up (`modules/cloudflare/waf.tf:101-104`;
+   Cloudflare offers in rate-limiting rules from Business up (`modules/cloudflare/waf.tf`, `wp_login_ratelimit`;
    [rate limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)). Business is necessary but not
    sufficient: both rate-limit rules omit the `cf.colo.id` characteristic, so do not rely on `enable_waf` on any plan
    until the module adds it (see the [security model](security-model.md#waf-rules-beyond-what-the-cdn-plan-provides)).

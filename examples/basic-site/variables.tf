@@ -42,11 +42,6 @@ variable "cloudflare_api_token" {
   sensitive   = true
 }
 
-variable "cloudflare_account_id" {
-  description = "Cloudflare account ID"
-  type        = string
-}
-
 variable "cloudflare_domain" {
   description = "Root domain registered in Cloudflare"
   type        = string

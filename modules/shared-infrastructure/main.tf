@@ -8,7 +8,7 @@
 #
 # Usage:
 #   module "shared_infrastructure" {
-#     source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v4.3.2"
+#     source = "github.com/agenticcodingops/azure-wordpress//modules/shared-infrastructure?ref=v5.0.0"
 #
 #     project_name       = "myproject"
 #     environment        = "nonprod"

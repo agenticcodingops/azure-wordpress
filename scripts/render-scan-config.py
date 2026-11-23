@@ -33,6 +33,31 @@ def enable_fix_loop(text: str) -> str:
     return re.sub(r"(\nfix_loop:\n  enabled: )false", r"\1true", text, count=1)
 
 
+def fix_loop_value(text: str) -> str:
+    """Report only a definite YAML boolean; reporting must never block setup."""
+    try:
+        import yaml
+    except ImportError:
+        return "unknown"
+    try:
+        config = yaml.safe_load(text)
+        loop = config.get("fix_loop") if isinstance(config, dict) else None
+        enabled = loop.get("enabled") if isinstance(loop, dict) else None
+    except (yaml.YAMLError, ValueError, RecursionError):
+        return "unknown"
+    return str(enabled).lower() if isinstance(enabled, bool) else "unknown"
+
+
+def report_fix_loop(value: str, requested: bool) -> None:
+    if value == "true" and not requested:
+        print("WARNING: file enables fix_loop without --enable-fix-loop; setup installs the caller, "
+              "creates labels and checks secrets only with --enable-fix-loop. "
+              "If these are not already configured, run setup with that flag.")
+    elif value == "false" and requested:
+        print("WARNING: --enable-fix-loop was given but the file still has fix_loop.enabled: false; "
+              "review the file or use --force to overwrite it.")
+
+
 def main(argv) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tier", required=True, choices=["starter", "standard", "strict"])
@@ -50,7 +75,13 @@ def main(argv) -> int:
 
     out = assert_safe_path(args.out)
     if out.exists() and not args.force:
-        print(f"[render-scan-config] {out} already exists; leaving as-is (use --force to overwrite)")
+        try:
+            value = fix_loop_value(out.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError):
+            value = "unknown"
+        print(f"[render-scan-config] {out} already exists; leaving as-is "
+              f"(use --force to overwrite; fix_loop={value})")
+        report_fix_loop(value, args.enable_fix_loop)
         return 0
 
     text = template.read_text(encoding="utf-8")
@@ -64,7 +95,9 @@ def main(argv) -> int:
         text = enable_fix_loop(text)
 
     write_text(out, text)
-    print(f"[render-scan-config] wrote {out} (tier={args.tier}, languages={langs}, fix_loop={args.enable_fix_loop})")
+    value = fix_loop_value(text)
+    print(f"[render-scan-config] wrote {out} (tier={args.tier}, languages={langs}, fix_loop={value})")
+    report_fix_loop(value, args.enable_fix_loop)
     return 0
 
 

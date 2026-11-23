@@ -22,12 +22,34 @@ Diagrams of the deployment order, request flows, secrets, network and monitoring
 
 Upgrade notes for this module are in the [upgrade guide](../../docs/upgrading/README.md).
 
+From v5.0.0 the `cloudflare` object has no `account_id` attribute: nothing read it. A call that still sets it keeps
+working, because Terraform drops an attribute the object type does not declare; see
+[4.3 to 5.0](../../docs/upgrading/v4.3-to-v5.0.md).
+
+v5.0.0 also removes the deprecated `plan_density_limit` input, which nothing read. A call that still sets it fails
+with `Unsupported argument`, so delete the argument; see
+[Callers that set `plan_density_limit`](../../docs/upgrading/v4.3-to-v5.0.md#callers-that-set-plan_density_limit).
+
+For existing Front Door deployments, see the
+[origin restriction upgrade notes](../../docs/upgrading/front-door-origin-restrictions.md); no manual state step is needed.
+The profile GUID now reaches both the production app and its staging slot before their lists are written.
+Keep `front_door.enabled = true` when `cdn_provider = "azure_front_door"`.
+
+Offline dependency graph checks (`tests/front-door-dependencies.tftest.hcl`) use Terraform 1.7 or later and mocked
+providers; consumers of the module are unaffected:
+
+```bash
+terraform -chdir=modules/wordpress-site init -backend=false
+terraform -chdir=modules/wordpress-site test
+```
+
 ## Upgrading MySQL 8.0 to 8.4
 
 Setting `database.mysql_version = "8.4"` on an existing site is an **in-place, irreversible major-version upgrade** with
 every azurerm version this module accepts (`~> 5.6`): the plan shows one in-place change to the server's `version`.
-Rolling back means restoring a pre-upgrade backup to a new server, outside this module. A Burstable server needs a
-General Purpose step first; those steps are marked **unmeasured: to be confirmed by a real run**. Keep
+Rolling back means restoring a pre-upgrade backup to a new server, outside this module. For a Burstable server,
+one apply can set a General Purpose SKU and `8.4` together, and a later apply returns the server to Burstable
+(measured once on 2026-11-14). Keep
 `mysql_version = "8.4"` afterwards, because removing it plans a downgrade, which Azure does not support.
 
 The procedure (backup, rehearsal on a restored copy, XA and schema checks, the General Purpose and Burstable paths,
@@ -687,7 +709,6 @@ the shared plan, fail in the same way.
 
 | Name | Version |
 |------|---------|
-| <a name="provider_azapi"></a> [azapi](#provider\_azapi) | >= 1.13.0, < 3.0 |
 | <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | ~> 5.6 |
 | <a name="provider_cloudflare"></a> [cloudflare](#provider\_cloudflare) | ~> 5.0 |
 | <a name="provider_random"></a> [random](#provider\_random) | >= 3.5.0, < 4.0 |
@@ -710,7 +731,6 @@ the shared plan, fail in the same way.
 
 | Name | Type |
 |------|------|
-| [azapi_update_resource.app_service_front_door_restriction](https://registry.terraform.io/providers/azure/azapi/latest/docs/resources/update_resource) | resource |
 | [azurerm_app_service_custom_hostname_binding.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/app_service_custom_hostname_binding) | resource |
 | [azurerm_application_insights.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/application_insights) | resource |
 | [azurerm_application_insights_standard_web_test.main](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/application_insights_standard_web_test) | resource |
@@ -761,7 +781,7 @@ the shared plan, fail in the same way.
 | <a name="input_availability_tests"></a> [availability\_tests](#input\_availability\_tests) | Standard availability tests against the site's Application Insights component, one per map entry; each gets one metric alert that fires when failed\_location\_count or more locations fail. Empty (the default) creates nothing. url defaults to https://<custom\_domain><path>, so tests probe the public site through the CDN. Requires alert\_recipients or extra\_action\_group\_ids. Each test is billed per execution; see the README before adding locations or raising the frequency. | <pre>map(object({<br/>    url                              = optional(string)      # null => "https://<custom_domain><path>"<br/>    path                             = optional(string, "/") # used only when url is null<br/>    http_verb                        = optional(string, "GET")<br/>    headers                          = optional(map(string), {}) # Host and User-Agent are reserved by the service<br/>    expected_status_code             = optional(number, 200)<br/>    content_match                    = optional(string) # the test passes only if this text is found<br/>    content_match_ignore_case        = optional(bool, false)<br/>    ssl_check_enabled                = optional(bool)        # null => true when the URL is https<br/>    ssl_cert_remaining_lifetime      = optional(number)      # days, 1-365; needs an https URL and the SSL check<br/>    frequency                        = optional(number, 300) # seconds: 300, 600 or 900<br/>    timeout                          = optional(number, 30)  # seconds: 30, 60, 90 or 120<br/>    geo_locations                    = optional(list(string), ["emea-ru-msa-edge", "emea-se-sto-edge", "emea-nl-ams-azr", "emea-gb-db3-azr", "emea-fr-pra-edge"])<br/>    failed_location_count            = optional(number) # null => max(1, locations - 2)<br/>    follow_redirects_enabled         = optional(bool, true)<br/>    parse_dependent_requests_enabled = optional(bool, false) # true also fetches media, which a deny-by-default blob endpoint refuses<br/>    retry_enabled                    = optional(bool, true)<br/>    enabled                          = optional(bool, true)<br/>    alert_severity                   = optional(number, 1)<br/>    description                      = optional(string)<br/>  }))</pre> | `{}` | no |
 | <a name="input_cdn_origin_header_values"></a> [cdn\_origin\_header\_values](#input\_cdn\_origin\_header\_values) | Values accepted in the optional CDN origin header. Supply 1 to 8 values when app\_service.cdn\_origin\_header\_name is set. Treat them as bearer secrets. | `list(string)` | `[]` | no |
 | <a name="input_cdn_provider"></a> [cdn\_provider](#input\_cdn\_provider) | CDN provider: 'cloudflare' (uses Cloudflare CDN/WAF), 'azure\_front\_door' (uses Azure Front Door), 'direct' (no CDN) | `string` | `"direct"` | no |
-| <a name="input_cloudflare"></a> [cloudflare](#input\_cloudflare) | Cloudflare configuration | <pre>object({<br/>    enabled                        = optional(bool, false)<br/>    account_id                     = optional(string, "")<br/>    domain                         = optional(string, "")<br/>    subdomain                      = optional(string, "")<br/>    proxied                        = optional(bool, true)<br/>    enable_waf                     = optional(bool, false) # Needs Business or higher: the login rate-limit rule matches the request method<br/>    enable_page_rules              = optional(bool, true)  # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)<br/>    enable_cache_rules             = optional(bool, false) # Works on Free: 5 of the 10 cache rules it allows<br/>    enable_zone_setting_overrides  = optional(bool, false) # Some settings can't be modified on Free plan<br/>    enable_wordpress_optimizations = optional(bool, true)<br/>  })</pre> | `{}` | no |
+| <a name="input_cloudflare"></a> [cloudflare](#input\_cloudflare) | Cloudflare configuration | <pre>object({<br/>    enabled                        = optional(bool, false)<br/>    domain                         = optional(string, "")<br/>    subdomain                      = optional(string, "")<br/>    proxied                        = optional(bool, true)<br/>    enable_waf                     = optional(bool, false) # Needs Business or higher: the login rate-limit rule matches the request method<br/>    enable_page_rules              = optional(bool, true)  # Free plan: 3 rules (wp-admin bypass, wp-login bypass, wp-content cache)<br/>    enable_cache_rules             = optional(bool, false) # Works on Free: 5 of the 10 cache rules it allows<br/>    enable_zone_setting_overrides  = optional(bool, false) # Some settings can't be modified on Free plan<br/>    enable_wordpress_optimizations = optional(bool, true)<br/>  })</pre> | `{}` | no |
 | <a name="input_custom_domain"></a> [custom\_domain](#input\_custom\_domain) | Custom domain for the WordPress site | `string` | n/a | yes |
 | <a name="input_database"></a> [database](#input\_database) | Database configuration. sku\_name, backup\_retention\_days and geo\_redundant\_backup default by environment when unset - see Environment-aware Defaults in the repository README. NOTE: geo\_redundant\_backup forces replacement of the MySQL server, so set it explicitly on an existing deployment before upgrading. mysql\_version defaults to 8.0.21; changing it on an existing server is an in-place, irreversible major-version upgrade (see Upgrading MySQL 8.0 to 8.4 in this module's README). slow\_query\_log\_enabled (default false) sets the slow\_query\_log and long\_query\_time server parameters (long\_query\_time defaults to 2 seconds), so the MySqlSlowLogs category of the MySQL diagnostic setting carries rows. | <pre>object({<br/>    sku_name                  = optional(string)<br/>    storage_size_gb           = optional(number, 100)<br/>    storage_iops              = optional(number, 700)<br/>    backup_retention_days     = optional(number)<br/>    geo_redundant_backup      = optional(bool)<br/>    high_availability_mode    = optional(string, "Disabled")<br/>    storage_auto_grow_enabled = optional(bool, true)<br/>    # Constant default, not environment-aware. See mysql_version in modules/database.<br/>    mysql_version = optional(string, "8.0.21")<br/>    # Opt-in slow query log; constant defaults. Audit logging is not offered.<br/>    slow_query_log_enabled = optional(bool, false)<br/>    long_query_time        = optional(number, 2)<br/>  })</pre> | `{}` | no |
 | <a name="input_deployer_object_id"></a> [deployer\_object\_id](#input\_deployer\_object\_id) | Object ID of the principal that runs terraform apply; it gets the Terraform secret-management access policy on the site's Key Vault. Null (the default) keeps the module's own azurerm\_client\_config read. Set it, together with deployer\_tenant\_id, only when plan and apply run as different identities or when the caller needs its own depends\_on on this module; pass a lowercase value known at plan time. The policy's object\_id forces replacement, so a value that differs from the principal that created the existing policy replaces it: do that only as a planned identity cutover. | `string` | `null` | no |
@@ -793,7 +813,6 @@ the shared plan, fail in the same way.
 | <a name="input_mysql_entra_stage_identity_enabled"></a> [mysql\_entra\_stage\_identity\_enabled](#input\_mysql\_entra\_stage\_identity\_enabled) | Stage 1 of the passwordless database path, off by default. Attaches mysql\_entra\_server\_identity to the MySQL server, sets mysql\_entra\_admin as its Microsoft Entra administrator, and attaches mysql\_entra\_app\_identity to the production app (SystemAssigned, UserAssigned). No app setting changes, so the app keeps using its password. Requires the three inputs. None of it replaces the server or the app, and turning it off removes the identity and the administrator again. | `bool` | `false` | no |
 | <a name="input_mysql_require_secure_transport"></a> [mysql\_require\_secure\_transport](#input\_mysql\_require\_secure\_transport) | Set the MySQL require\_secure\_transport server parameter to ON, so the server refuses connections made without TLS, token logins included. The default, false, keeps the OFF every earlier release set. PHP connects with TLS by default (DB\_SSL\_CONNECTION defaults to true) but the image does not verify the server certificate, so this closes the plain-text path without adding verification. Not one of the four stages; it applies at once and refuses any client that does not use TLS, so check the app and any other client first. | `bool` | `false` | no |
 | <a name="input_networking"></a> [networking](#input\_networking) | Networking configuration | <pre>object({<br/>    vnet_address_space           = optional(string, "10.0.0.0/16")<br/>    app_subnet_cidr              = optional(string, "10.0.0.0/24")<br/>    db_subnet_cidr               = optional(string, "10.0.1.0/24")<br/>    private_endpoint_subnet_cidr = optional(string, "10.0.2.0/24")<br/>  })</pre> | `{}` | no |
-| <a name="input_plan_density_limit"></a> [plan\_density\_limit](#input\_plan\_density\_limit) | DEPRECATED, and has no effect: nothing in this module reads it, so it enforces no limit on sites per App Service Plan. It is kept, with its validation, only so existing configurations that set it still plan, and will be removed in the next major release. Remove it from your configuration. | `number` | `10` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Project name used in resource naming (lowercase, 2-24 chars) | `string` | n/a | yes |
 | <a name="input_shared_plan_sku"></a> [shared\_plan\_sku](#input\_shared\_plan\_sku) | SKU of the shared App Service Plan. Required when app\_service.use\_shared\_plan = true to determine feature availability. | `string` | `null` | no |
 | <a name="input_shared_resource_group_name"></a> [shared\_resource\_group\_name](#input\_shared\_resource\_group\_name) | Name of the shared resource group where the shared App Service Plan is located. Required when app\_service.use\_shared\_plan = true. | `string` | `null` | no |

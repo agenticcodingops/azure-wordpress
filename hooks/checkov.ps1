@@ -47,10 +47,11 @@ try {
                 $json = $outputText | ConvertFrom-Json
                 $failedChecks = $json.results.failed_checks
                 if ($failedChecks) {
-                    $totalCritical += @($failedChecks | Where-Object { $_.severity -eq 'CRITICAL' }).Count
-                    $totalHigh += @($failedChecks | Where-Object { $_.severity -eq 'HIGH' }).Count
-                    $totalMedium += @($failedChecks | Where-Object { $_.severity -eq 'MEDIUM' }).Count
-                    $totalLow += @($failedChecks | Where-Object { $_.severity -eq 'LOW' -or $null -eq $_.severity }).Count
+                    $counts = Get-ScannerSeverityCounts -Findings @($failedChecks) -Tool checkov
+                    $totalCritical += $counts.CRITICAL
+                    $totalHigh += $counts.HIGH
+                    $totalMedium += $counts.MEDIUM
+                    $totalLow += $counts.LOW
                 }
             } catch {
                 $totalCritical += 1
@@ -58,8 +59,8 @@ try {
             # Show actionable details so developers know what to fix
             Show-CheckovFindings -JsonOutput ($output -join "`n")
             $overallExit = 1
-        } elseif ($exitCode -ge 2) {
-            # Infrastructure error — fail-open
+        } elseif ($exitCode -ne 0) {
+            # Any exit but 0 or 1 is a tool error, including crashes and missing codes: blocks unless SCAN_ALLOW_TOOL_ERRORS=1
             $null = Get-HookExitCode -ToolExitCode $exitCode
         }
     }

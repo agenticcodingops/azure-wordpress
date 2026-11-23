@@ -39,7 +39,7 @@ $durationMs = Stop-ScanTimer
 try {
     if ($sgExit -notin @(0, 1)) {
         $null = Get-HookExitCode -ToolExitCode $sgExit
-        Write-HookLog "PASS: scanner error, allowing commit (fail-open)"
+        Write-HookLog "SKIPPED: scanner error allowed by SCAN_ALLOW_TOOL_ERRORS=1; this is not a clean scan"
         Write-ScanJson (Build-PassJson -Tool 'semgrep-csharp' -DurationMs $durationMs)
         exit 0
     }

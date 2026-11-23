@@ -1,0 +1,12 @@
+# Tools the maintainer allows as co-authors (decision of 2026-11-22), one address per
+# line, matched exactly and case-insensitively. Lines starting with '#' are ignored.
+# Co-author only: these identities may never author or commit. Each one can appear as a
+# contributor if it co-authors a commit on main. Policy: AGENTS.md.
+#
+# The maintainer allowed CodeRabbit, Semgrep and SonarCloud. Only Semgrep's commit
+# address is listed: the tools' GitHub bot and noreply addresses would still be
+# rejected by the trailer rule in branding-guard.sh, which runs first and is left
+# unchanged here. scripts/tests/coauthor-check.test.sh checks that every entry passes
+# both checks.
+# Semgrep (its commits use support@semgrep.com)
+support@semgrep.com

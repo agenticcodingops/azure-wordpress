@@ -7,8 +7,9 @@ earlier server was created with) and you want it on 8.4. A new server created wi
 
 **This is an in-place, irreversible major-version upgrade.** The findings below come from issue #70, which cites the
 provider source and a real plan. The `mysql_version` description and the site module README now state them, while the
-changelog and release notes do not (see [MySQL 8.0 to 8.4](../upgrading/mysql-8.0-to-8.4.md)). Treat the General Purpose and
-Memory Optimized path below as the sourced one, and the Burstable path as **unmeasured: to be confirmed by a real run**.
+changelog and release notes do not (see [MySQL 8.0 to 8.4](../upgrading/mysql-8.0-to-8.4.md)). The General Purpose and
+Memory Optimized path below rests on those sources. The Burstable path was measured in one real run on 2026-11-14
+(Terraform 1.17.1, azurerm 5.14.0), on an empty server with no load: see [Steps (Burstable)](#steps-burstable).
 
 What the sources say:
 
@@ -20,7 +21,9 @@ What the sources say:
   new server ([Microsoft Learn, major version upgrade](https://learn.microsoft.com/en-us/azure/mysql/flexible-server/how-to-upgrade)).
 - **Burstable needs a General Purpose step.** Microsoft documents the Burstable upgrade only as a portal workflow that
   first moves the server to General Purpose. The Azure CLI refuses a major upgrade on the Burstable tier, per
-  issue #70's reading of the CLI source. The provider has no such check.
+  issue #70's reading of the CLI source. The provider has no such check. One Terraform apply that changes both the
+  SKU and the version works: on 2026-11-14 the provider sent two separate requests, the SKU change first and the
+  version change second, and the server ended on General Purpose, `8.4`, `Ready`.
 - **A plan validation cannot protect you.** A variable cannot tell an upgrade from a new server, and rejecting `"8.4"`
   on a Burstable SKU would also reject creating a supported 8.4 Burstable server.
 
@@ -109,19 +112,38 @@ What the sources say:
 8. **Keep `mysql_version = "8.4"` from now on.** Removing it or setting it back plans a downgrade, which Azure does not
    support; the input's default is `8.0.21`.
 
-## Steps (Burstable): unmeasured, to be confirmed by a real run
+## Steps (Burstable)
 
-Issue #70's proposed procedure, which no run has confirmed. Rehearse it first on a restored copy, using Microsoft's portal
-workflow below, because the Azure CLI refuses a major upgrade on Burstable and the module cannot target the copy.
+Measured once, on 2026-11-14, with Terraform 1.17.1 and azurerm 5.14.0. The server was new, held an empty database and
+had no client load, so the durations below are a floor: a server with data and traffic can take longer. Rehearse on a
+restored copy first, using Microsoft's portal workflow below, because the Azure CLI refuses a major upgrade on
+Burstable and the module cannot target the copy.
 
 1. Do steps 1 to 4 above.
 2. **Upgrade and resize in one apply.** In the configuration set `database.sku_name` to a General Purpose SKU (for
-   example `GP_Standard_D2ds_v4`) **and** `mysql_version = "8.4"`. The provider resizes first and sends the version in its
-   own request. Each compute change restarts the server.
-3. Check the server: General Purpose, `8.4`, `Ready`.
-4. **Return to Burstable in a later apply:** set `database.sku_name` back to the Burstable SKU, or remove the override
+   example `GP_Standard_D2ds_v4`) **and** `mysql_version = "8.4"`. Keep your other `database` keys.
+3. **Plan and read it.** It must show one in-place update of
+   `module.<site>.module.database.azurerm_mysql_flexible_server.main` with two changed attributes, the SKU
+   (`~ sku_name = "B_Standard_B2s" -> "GP_Standard_D2ds_v4"`) and the version (`~ version = "8.0.21" -> "8.4"`), and
+   `0 to add, 1 to change, 0 to destroy`. Stop if it shows `forces replacement`.
+4. **Apply in the maintenance window.** The provider resizes first and then sends the version in a request of its own.
+   Expect two restarts and about 7 minutes in all for a small server (about 4 for the resize, about 3 for the
+   upgrade). Between the two, the server reports `Ready` on General Purpose and `8.0.21` for a short time; that is not
+   the end of the apply, so wait for Terraform to finish.
+   If the apply fails after the resize (this did not happen in the measured run), the server can be left on
+   General Purpose at `8.0.21`. Check it with the command in step 5. A new plan then shows only
+   `~ version = "8.0.21" -> "8.4"`: apply it to retry the upgrade. To return to Burstable without upgrading,
+   set `database.sku_name` back to the Burstable SKU **and** `mysql_version = "8.0.21"`, so the plan changes
+   `sku_name` only.
+5. **Check the server:** tier `GeneralPurpose`, version `8.4`, state `Ready`
+   (the `az mysql flexible-server show` command in step 7 above; add `sku:sku.name, tier:sku.tier` to its query).
+6. **Return to Burstable in a later apply:** set `database.sku_name` back to the Burstable SKU, or remove the override
    so the nonprod default applies. Keep `mysql_version = "8.4"`.
-5. Check the server again.
+   The plan shows one in-place change, `sku_name` only, and `0 to destroy`. The resize restarts the server once; it took
+   about 4 minutes.
+7. **Check the server again:** tier `Burstable`, version `8.4`, state `Ready`. A re-plan reports no changes.
+
+The server is billed at the General Purpose rate from step 4 until step 6 finishes, so do step 6 soon after step 5.
 
 Microsoft's own portal workflow for Burstable moves the server to General Purpose, upgrades it, and (by choice) returns it
 to Burstable, defaulting to `B2S`. That is a different path from the one above and is not what this module does.

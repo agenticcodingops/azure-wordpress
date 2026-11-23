@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/agenticcodingops/auto-code-scanning/schemas/scan-config.schema.json",
   "title": "scan-config.yaml",
-  "description": "Schema for the multi-language scan->fix platform config. Validated by hooks/validate-scan-config and in CI.",
+  "description": "Schema for the multi-language scan->fix platform config. Validated by the validate-scan-config hook; the reusable workflows do not validate a consumer's config. Keys marked deprecated are still accepted so existing configs validate.",
   "type": "object",
   "required": ["schema_version", "languages"],
   "comment-additionalProperties": "false at the root catches typos like 'fx_loop' that would silently leave the fix-loop disabled. All known top-level keys are declared below.",
@@ -24,17 +24,20 @@
           "type": "boolean",
           "description": "When false, skip all local pre-commit/pre-push hooks (CI + fix-loop unaffected)."
         },
-        "results_dir": { "type": "string" },
+        "results_dir": { "type": "string", "deprecated": true, "description": "Ignored: nothing reads it. Hooks write to .scanning/." },
         "severity_levels": {
           "type": "array",
+          "deprecated": true, "description": "Ignored: nothing reads it.",
           "items": { "$ref": "#/$defs/severity" }
         },
         "blocking_severities": {
           "type": "array",
+          "deprecated": true, "description": "Ignored: nothing reads it. Each hook and workflow sets its own threshold.",
           "items": { "$ref": "#/$defs/severity" }
         },
         "performance": {
           "type": "object",
+          "deprecated": true, "description": "Ignored: nothing reads it. No hook enforces a time limit.",
           "additionalProperties": true,
           "properties": {
             "pre_commit_max_seconds": { "type": "integer", "minimum": 1 },
@@ -42,12 +45,12 @@
             "per_hook_max_seconds": { "type": "integer", "minimum": 1 }
           }
         },
-        "exclude_paths": { "type": "array", "items": { "type": "string" } }
+        "exclude_paths": { "type": "array", "deprecated": true, "description": "Ignored: nothing reads it.", "items": { "type": "string" } }
       }
     },
     "languages": {
       "type": "object",
-      "description": "Language plugins. Each key is a language name; terraform, csharp, typescript, sql, python, powershell, shell, docker, kubernetes are recognised.",
+      "description": "Languages. terraform, csharp, typescript and sql have scanners; any other name is accepted and has none.",
       "minProperties": 1,
       "additionalProperties": { "$ref": "#/$defs/language" }
     },
@@ -55,8 +58,8 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "workflow_file": { "type": "string" },
-        "sarif_upload": { "type": "boolean" },
+        "workflow_file": { "type": "string", "deprecated": true, "description": "Ignored: nothing reads it." },
+        "sarif_upload": { "type": "boolean", "deprecated": true, "description": "Ignored: nothing reads it. Use the upload-sarif workflow input." },
         "sarif": {
           "type": "object",
           "additionalProperties": false,
@@ -67,12 +70,25 @@
             }
           }
         },
-        "fail_on": { "type": "array", "items": { "$ref": "#/$defs/severity" } },
-        "required_checks": { "type": "array", "items": { "type": "string" } }
+        "fail_on": { "type": "array", "deprecated": true, "description": "Ignored: nothing reads it. Use the workflow inputs.", "items": { "$ref": "#/$defs/severity" } },
+        "required_checks": {
+          "type": "array",
+          "description": "Informational list of check names. No hook or workflow reads it.",
+          "items": { "type": "string" }
+        }
       }
     },
-    "reporting": { "type": "object", "additionalProperties": true },
-    "suppressions": { "type": "object", "additionalProperties": true },
+    "reporting": { "type": "object", "deprecated": true, "description": "Ignored: nothing reads it.", "additionalProperties": true },
+    "suppressions": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "file": { "description": "Path of the suppression registry." },
+        "max_duration_days": { "deprecated": true, "description": "Ignored: nothing reads it. Use settings.max_expiry_days in the registry." },
+        "require_approval": { "deprecated": true, "description": "Ignored: nothing reads it. Use settings.require_security_approval in the registry." },
+        "review_frequency_days": { "deprecated": true, "description": "Ignored: nothing reads it." }
+      }
+    },
     "fix_loop": { "$ref": "#/$defs/fix_loop" }
   },
   "$defs": {
@@ -89,13 +105,17 @@
       "required": ["enabled"],
       "additionalProperties": true,
       "properties": {
-        "enabled": { "type": "boolean" },
-        "description": { "type": "string" },
+        "enabled": {
+          "type": "boolean",
+          "description": "Selects hosted Semgrep languages (csharp, typescript) and the C# on-demand scan, and tells setup verification what to check. A non-empty languages input on the calling workflow overrides it for hosted Semgrep. Does not switch local hooks on or off: the hook manifest and file types decide those."
+        },
+        "description": { "type": "string", "deprecated": true, "description": "Ignored: nothing reads it." },
         "file_patterns": {
           "type": "array",
+          "deprecated": true, "description": "Ignored: nothing reads it. Each hook matches its own file types.",
           "items": { "type": "string" }
         },
-        "exclude_patterns": { "type": "array", "items": { "type": "string" } },
+        "exclude_patterns": { "type": "array", "deprecated": true, "description": "Ignored: nothing reads it.", "items": { "type": "string" } },
         "build": {
           "type": "object",
           "description": "Per-project build settings. Solves the dotnet-format path bug by config (never hardcoded).",
@@ -107,6 +127,7 @@
         },
         "tools": {
           "type": "object",
+          "deprecated": true, "description": "Ignored: nothing reads it. Change the hook manifest or the workflow inputs.",
           "additionalProperties": { "$ref": "#/$defs/tool" }
         }
       }
@@ -116,18 +137,18 @@
       "required": ["enabled"],
       "additionalProperties": true,
       "properties": {
-        "enabled": { "type": "boolean" },
+        "enabled": { "type": "boolean", "deprecated": true, "description": "Ignored: nothing reads it." },
         "version": {
           "type": "string",
           "deprecated": true,
           "description": "Ignored: nothing reads it. CI uses the scanner versions pinned in the auto-code-scanning release; local hooks run whatever is on PATH. Still accepted so existing configs validate."
         },
-        "description": { "type": "string" },
-        "config_file": { "type": "string" },
-        "auto_fix": { "type": "boolean" },
-        "args": { "type": "array", "items": { "type": "string" } },
-        "stage": { "$ref": "#/$defs/stage" },
-        "full_scan_stage": { "$ref": "#/$defs/stage" }
+        "description": { "type": "string", "deprecated": true, "description": "Ignored: nothing reads it." },
+        "config_file": { "type": "string", "deprecated": true, "description": "Ignored: nothing reads it." },
+        "auto_fix": { "type": "boolean", "deprecated": true, "description": "Ignored: nothing reads it." },
+        "args": { "type": "array", "deprecated": true, "description": "Ignored: nothing reads it.", "items": { "type": "string" } },
+        "stage": { "$ref": "#/$defs/stage", "deprecated": true, "description": "Ignored: nothing reads it." },
+        "full_scan_stage": { "$ref": "#/$defs/stage", "deprecated": true, "description": "Ignored: nothing reads it." }
       }
     },
     "fix_loop": {
@@ -139,7 +160,8 @@
         "enabled": { "type": "boolean" },
         "label": {
           "type": "string",
-          "description": "PR label that opts a PR into auto-fix (default 'ai-autofix')."
+          "deprecated": true,
+          "description": "Ignored: nothing uses it. The workflow copies it to an output that no job consumes; the caller workflow owns the opt-in label."
         },
         "human_review_label": {
           "type": "string",
@@ -160,7 +182,7 @@
         },
         "claude_code_action_ref": {
           "type": "string",
-          "description": "SHA-pinned claude-code-action ref. Its bundled CLI must be past CLI 1.0.93, the fix for CVE-2025-66032.",
+          "description": "Mirror of the SHA-pinned claude-code-action ref in the reusable workflow. Still required when enabled, but not read at run time.",
           "pattern": "^anthropics/claude-code-action@[0-9a-f]{40}$"
         },
         "build_verify_cmd": {
@@ -169,6 +191,8 @@
         },
         "required_secrets": {
           "type": "array",
+          "deprecated": true,
+          "description": "Ignored: nothing reads it. Setup checks the supported secret names directly.",
           "items": { "type": "string" }
         }
       },

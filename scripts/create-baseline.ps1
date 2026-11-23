@@ -87,6 +87,10 @@ $ErrorActionPreference = "Stop"
 if ($PolicyRoot -and $BaseCommit) { throw 'Supply either PolicyRoot or BaseCommit, not both' }
 
 . "$PSScriptRoot/../hooks/lib/common.ps1"
+if (-not (Get-Command Get-ScannerSeverity -CommandType Function -ErrorAction SilentlyContinue)) {
+    # Parser error handling would otherwise turn the missing helper into an empty result.
+    throw 'hooks/lib/common.ps1 is older than this script: re-vendor hooks/lib/common.ps1 from the same release'
+}
 $sourceRoot = git rev-parse --show-toplevel
 if ($LASTEXITCODE -ne 0) { $sourceRoot = (Get-Location).Path }
 if ($PolicyRoot) {
@@ -310,6 +314,10 @@ function New-TflintBaseline {
         }
     }
 
+    # Not normalised to MEDIUM: a baseline is never created from such a report.
+    foreach ($entry in $entries) {
+        if ($null -eq $entry.severity) { throw 'tflint reported a finding without a severity; baseline not created' }
+    }
     Write-Host "  tflint: $($entries.Count) findings baselined" -ForegroundColor Gray
     return $entries
 }
@@ -383,7 +391,10 @@ $dedupedEntries = @((Get-Content -LiteralPath $metadataFile -Raw | ConvertFrom-J
 # Summary
 $bySeverity = @{ CRITICAL = 0; HIGH = 0; MEDIUM = 0; LOW = 0 }
 foreach ($entry in $dedupedEntries) {
-    $sev = $entry.severity.ToUpper()
+    $sev = if ($entry.severity -is [string] -or $null -eq $entry.severity) {
+        if ($entry.severity -in @('CRITICAL', 'HIGH', 'MEDIUM', 'LOW')) { $entry.severity.ToUpper() }
+        else { Get-ScannerSeverity -Severity $entry.severity -Tool $entry.tool }
+    } else { $entry.severity.ToUpper() }
     if ($bySeverity.ContainsKey($sev)) { $bySeverity[$sev]++ }
 }
 
