@@ -388,9 +388,9 @@ shell commands can still print the token, which stays live until the job ends.
 Policy, prohibited items and setup live in [AGENTS.md](AGENTS.md). What follows is the
 repo-specific behaviour it does not cover.
 
-**It is a deny list.** The hooks and the workflow reject an AI assistant (`AI_NAMES` and
-`MODEL_ERE` in `.githooks/branding-guard.sh`) as author, committer or credited co-author, and
-the PR check also rejects an AI byline in the PR body. Every other identity passes: the local
+**It is a deny list.** The hooks and the workflow reject an AI assistant (`AI_NAMES`,
+`PERSON_NAMES` and `MODEL_ERE` in `.githooks/branding-guard.sh`) as author, committer or
+credited co-author, and the PR check also rejects an AI byline in the PR body. Every other identity passes: the local
 maintainer, GitHub's web-flow merges (`noreply@github.com`), the release-please commits, the
 orchestrator machine user, the fix-loop bot, the dependency-update bot and the code-quality
 bots. No address list needs maintaining. `commit-msg` additionally requires a local commit's

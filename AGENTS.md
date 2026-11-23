@@ -7,7 +7,7 @@ they use. Project engineering guidance — architecture, CI, the release process
 ## AI attribution policy
 
 An AI assistant must never be credited as a contributor. The list of AI assistants is
-`AI_NAMES` (plus `MODEL_ERE` for model names) in `.githooks/branding-guard.sh`, the single
+`AI_NAMES`, `PERSON_NAMES` and `MODEL_ERE` in `.githooks/branding-guard.sh`, the single
 source of truth for every enforcement layer below. It is a deny list: any identity it does
 not name passes.
 
@@ -16,11 +16,15 @@ not name passes.
 - An AI assistant (Claude, Anthropic, Codex, OpenAI, ChatGPT, Copilot, Cursor, Gemini, Grok,
   Antigravity, Jules, Kiro, Devin, Aider) or a model name (Opus, Sonnet, Haiku, Fable,
   GPT-n) as a commit **author** or **committer**, by name or by address.
+  Jules, Kiro and Devin are also people's names, so they count only as the agent: with a
+  bot, agent or AI suffix, at the vendor's domain, or as the whole name. "Jules Smith" passes,
+  and so does a person called Haiku or Fable (a model word in a name needs a version number).
 - A contributor-credit trailer (`Co-authored-by`, `Assisted-by`, `Generated-by`, or a
   session-link trailer) that names an AI assistant or model. GitHub lists every co-author
   of a commit on `main` as a contributor.
-- In PR descriptions, issues and comments: such a trailer line, or a "Generated with/by
-  <AI assistant>" byline. The PR check enforces this for the PR body.
+- In PR descriptions, issues and comments: such a trailer line, or a "Generated with/by/using
+  <AI assistant>" byline (the assistant named right after it). The PR check enforces this
+  for the PR body.
 
 ### Allowed
 
