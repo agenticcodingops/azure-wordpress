@@ -8,6 +8,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
+# An incomplete scan blocks. With the explicit local opt-in it warns and returns.
+scan_incomplete() {
+    if [[ "${SCAN_ALLOW_TOOL_ERRORS:-0}" == 1 ]]; then
+        hook_warn "eslint: $1; scan incomplete, explicit local fail-open opt-in (SCAN_ALLOW_TOOL_ERRORS=1)"
+        return 0
+    fi
+    hook_error "eslint: $1; scan incomplete. $2"
+    exit 1
+}
+
+# Read NUL-delimited staged paths. Print 'inside', 'outside', or nothing for a missing
+# directory: see lib/working_dir.py.
+inspect_working_dir() {
+    local py
+    py="$(find_python)" || return 1
+    "$py" -B -E -P "${SCRIPT_DIR}/lib/working_dir.py" "${SCAN_CONFIG_FILE:-scan-config.yaml}"
+}
+
 read_nul_paths all_ts get_staged_files ts tsx js jsx
 if [[ ${#all_ts[@]} -eq 0 ]]; then
     hook_log "PASS: No TS/JS files staged"
@@ -15,6 +33,15 @@ if [[ ${#all_ts[@]} -eq 0 ]]; then
 fi
 
 working_dir="$(read_scan_config languages.typescript.build.working_dir '.')"
+missing_dir="working_dir '${working_dir}' is not an existing directory"
+fix_dir="Fix languages.typescript.build.working_dir in scan-config.yaml."
+
+# Check before the prefix filter, which would report a missing directory as a PASS.
+dir_state=""
+if [[ "${working_dir}" != "." ]]; then
+    dir_state="$(printf '%s\0' "${all_ts[@]}" | inspect_working_dir)" || dir_state=""
+    [[ -n "${dir_state}" || -d "${working_dir}" ]] || scan_incomplete "${missing_dir}" "${fix_dir}"
+fi
 
 # Relativize staged paths to working_dir.
 files=()
@@ -25,14 +52,20 @@ for f in "${all_ts[@]}"; do
         files+=("${f#${working_dir%/}/}")
     fi
 done
-[[ ${#files[@]} -eq 0 ]] && { hook_log "PASS: No staged TS/JS under '${working_dir}'"; exit 0; }
+if [[ ${#files[@]} -eq 0 ]]; then
+    if [[ "${dir_state}" == inside* ]]; then
+        hook_warn "eslint: nothing under working_dir '${working_dir}' was selected, so nothing was linted. Write the value exactly as Git spells the directory, or '.' for the repository root."
+    else
+        hook_log "PASS: No staged TS/JS under '${working_dir}'"
+    fi
+    exit 0
+fi
 
-# Fail-open if the configured working_dir doesn't exist on disk — otherwise a runner
-# gets selected and the later `cd "${working_dir}"` exits 1, which we'd misread as a
-# lint failure and BLOCK the commit. A missing dir is an infra error, not a finding.
-[[ -d "${working_dir}" ]] || { hook_warn "eslint: working_dir '${working_dir}' not found - allowing commit (fail-open)"; exit 0; }
+# The cd below needs the directory exactly as configured. With the opt-in, skip here:
+# a failed cd would otherwise be misread as a lint failure.
+[[ -d "${working_dir}" ]] || { scan_incomplete "${missing_dir}" "${fix_dir}"; exit 0; }
 
-# Resolve an eslint runner; fail-open (skip) if the consumer has no eslint set up.
+# Resolve a runner; finding none is an incomplete scan.
 # Repository binaries and executable configs require explicit trust.
 if [[ "${SCAN_TRUST_REPO_CODE:-0}" == 1 ]]; then
 runner=()
@@ -43,10 +76,11 @@ elif command -v eslint >/dev/null 2>&1; then
 elif command -v npx >/dev/null 2>&1 && \
      (cd "${working_dir}" && npx --no-install eslint --version >/dev/null 2>&1); then
     # Only use the npx fallback once we've confirmed eslint is actually runnable
-    # (--no-install errors instead of installing) — otherwise fail open below.
+    # (--no-install errors instead of installing) — otherwise the scan is incomplete.
     runner=(npx --no-install eslint)
 else
-    hook_warn "eslint not found (no node_modules/.bin/eslint, eslint, or runnable npx eslint) - allowing commit (fail-open)"
+    scan_incomplete "no eslint runner found (node_modules/.bin/eslint, eslint on PATH, or runnable npx eslint)" \
+        "Provision the eslint runner: install it in '${working_dir}' (node_modules) or put it on PATH."
     exit 0
 fi
 

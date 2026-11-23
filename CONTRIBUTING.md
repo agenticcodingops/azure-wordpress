@@ -67,7 +67,7 @@ Review the resulting diff and ensure a second run is idempotent.
 
 ## Run the compliance scan
 
-CI parity uses Checkov 3.4.5. The v3.1.3 push hooks require a trusted executable
+CI parity uses Checkov 3.4.5. The v3.1.5 push hooks require a trusted executable
 named `checkov` on PATH and scan files changed by each pushed ref. New refs compare with the destination
 remote default; fallback selection counts only that destination's remote-tracking refs. Keep those refs current before pushing. For the suffixed parity command:
 
@@ -95,7 +95,8 @@ python -m pip install PyYAML==6.0.3 jsonschema==4.26.0
 For tflint, provision a reviewed `.hcl` config and plugin cache outside the checkout,
 then set absolute `SCAN_TFLINT_CONFIG` and `SCAN_TFLINT_PLUGIN_DIR` paths. Start with
 the pinned platform release's `configs/azure/.tflint.hcl`, without any `plugin_dir`
-setting. Missing prerequisites now block local scans. The push off-switch is read
+setting. Missing prerequisites now block local scans, and so does a scanner that
+crashes or reports no exit code (on Windows too, from v3.1.5). The push off-switch is read
 from the pushed commit, while staged configuration validation always runs.
 There is no suppression registry or baseline here to migrate to schema 2.0. The local hook also runs Trivy at its configured severity:
 
@@ -214,7 +215,7 @@ constraints.
 ## Local linter configuration
 
 The root `.tflint.hcl` is byte-identical to the scanning platform's
-`configs/azure/.tflint.hcl` at v3.1.3. Its embedded example uses the platform's
+`configs/azure/.tflint.hcl` at v3.1.5. Its embedded example uses the platform's
 standard layout; for this repository's root mirror, run:
 
 ```bash
@@ -224,5 +225,5 @@ tflint --recursive --config="$(pwd)/.tflint.hcl"
 
 Push hooks continue to require the reviewed config and plugin cache outside the
 checkout, selected by `SCAN_TFLINT_CONFIG` and `SCAN_TFLINT_PLUGIN_DIR`. Provision
-that external config from the same release. The runtime minimums in the local
-scan config remain compatibility floors, not installation pins.
+that external config from the same release. Local scanners run whatever is
+installed on PATH; the scan config no longer records version minimums.

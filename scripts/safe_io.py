@@ -53,7 +53,7 @@ def write_text(path, text, encoding='utf-8'):
     # an open descriptor from a permissive create-before-chmod window.
     descriptor, temporary = tempfile.mkstemp(prefix='.scan-write-', dir=path.parent)
     try:
-        with os.fdopen(descriptor, 'w', encoding=encoding) as stream:
+        with os.fdopen(descriptor, 'w', encoding=encoding, newline='') as stream:
             stream.write(text)
         os.chmod(temporary, mode)
         assert_safe_path(path)
@@ -66,7 +66,7 @@ def write_text(path, text, encoding='utf-8'):
 def append_text(path, text):
     path = assert_safe_path(path)
     descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0), 0o600)
-    with os.fdopen(descriptor, 'a', encoding='utf-8') as stream:
+    with os.fdopen(descriptor, 'a', encoding='utf-8', newline='') as stream:
         stream.write(text)
 
 

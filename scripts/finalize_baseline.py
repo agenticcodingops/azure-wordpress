@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from safe_io import write_text
 from scan_policy import checkov_checks, occurrence_fingerprint, scanner_path
-from scan_reports import validate_report
+from scan_reports import validate_report, normalize_severity
 
 
 def finalize(data, root, policy_root=None, base_commit=None):
@@ -32,6 +32,13 @@ def finalize(data, root, policy_root=None, base_commit=None):
                     baselined_date=report["baselined_date"]))
     # Keep repeated records: each entry authorizes one occurrence only.
     for entry in data["entries"]:
+        severity = entry.get("severity")
+        # Keep non-string metadata intact; it does not participate in identity.
+        if severity is None or isinstance(severity, str):
+            tool = entry["tool"]
+            if isinstance(severity, str):
+                severity = severity.upper() if tool == "checkov" else severity
+            entry["severity"] = normalize_severity(severity, tool)
         entry["file"] = scanner_path(entry["file"], entry["tool"], root,
                                      entry.pop("scan_directory", data.get("scan_directory", ".")))
         entry["fingerprint"] = occurrence_fingerprint(entry, root)

@@ -85,9 +85,10 @@ foreach ($dir in $scanDirs) {
             $issues = $json.issues
             if ($issues) {
                 # Severity mapping: error -> HIGH, warning -> MEDIUM, notice -> LOW
-                $totalHigh += @($issues | Where-Object { $_.rule.severity -eq 'error' }).Count
-                $totalMedium += @($issues | Where-Object { $_.rule.severity -eq 'warning' }).Count
-                $totalLow += @($issues | Where-Object { $_.rule.severity -eq 'notice' }).Count
+                $counts = Get-ScannerSeverityCounts -Findings @($issues) -Tool tflint
+                $totalHigh += $counts.HIGH
+                $totalMedium += $counts.MEDIUM
+                $totalLow += $counts.LOW
             }
         } catch {
             $totalHigh += 1
@@ -95,11 +96,9 @@ foreach ($dir in $scanDirs) {
         # Show actionable details so developers know what to fix
         Show-TflintFindings -JsonOutput ($output -join "`n")
         $overallExit = 1
-    } elseif ($exitCode -ge 3) {
-        # Runtime error — fail-open
-        $null = Get-HookExitCode -ToolExitCode 2
-    } elseif ($exitCode -eq 1) {
-        # Config errors — fail-open
+    } elseif ($exitCode -ne 0) {
+        # Any exit but 0 or 2 is a tool error, including crashes and missing codes: blocks unless SCAN_ALLOW_TOOL_ERRORS=1.
+        # TFLint reports config errors as 1, which the helper would read as findings.
         $null = Get-HookExitCode -ToolExitCode 2
     }
 }

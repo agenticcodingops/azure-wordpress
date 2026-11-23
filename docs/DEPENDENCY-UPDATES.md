@@ -4,8 +4,8 @@ Both schedules request Monday **06:00 UTC**; GitHub can delay scheduled runs.
 This repository follows the shared dependency-update template and the org-wide
 plan tracked here by [#144](https://github.com/agenticcodingops/azure-wordpress/issues/144).
 The freshness caller also supports manual dispatch. Its workflow and script
-checkout pin public auto-code-scanning `ada95d3e7654300fddf55cb65cdfc11495e96984`
-(v3.1.3). This change schedules reporting; it changes no application pin.
+checkout pin public auto-code-scanning `ea8f45ef8fed3a460b424273fbfd5ab96402e850`
+(v3.1.5). This change schedules reporting; it changes no application pin.
 
 ## Inventory and coverage
 
@@ -25,17 +25,17 @@ ignored; local module sources are not independent registry dependencies.
 
 | Surface | Selection and coverage |
 |---|---|
-| Active Actions | Dependabot reads workflows: checkout v7/v7.0.1, setup-terraform v4.0.1, Checkov action v12.3136.0, terraform-docs action v1.4.1, setup-python v5.6.0, release action v5.0.0, and reusable scan/fix callers v3.1.3. Majors arrive separately. |
+| Active Actions | Dependabot reads workflows: checkout v7/v7.0.1, setup-terraform v4.0.1, Checkov action v12.3136.0, terraform-docs action v1.4.1, setup-python v5.6.0, release action v5.0.0, and reusable scan/fix callers v3.1.5. Majors arrive separately. |
 | Review action | v1.0.276 in both review workflows, each with an explicit `--permission-mode` (the action defaults to auto mode from v1.0.276); unconditionally ignored by Dependabot. Freshness checks SHA/tag comments. The older action selection in `scan-config.yaml` has its own freshness entry because it serves a separate fix-loop role. |
 | Platform copies | Freshness compares scan/fix `uses`, both ref-input spellings, comments, runner/config header, and current guidance. Vendored `hooks/`, shared scripts and schemas move together when upgrading the platform. It does not verify their bytes. |
 | Terraform CLI | 1.17.2 in `.terraform-version`, validation env and active guidance; freshness compares upstream releases and mirrors. A second Validate job runs the consumer's 1.9.8 (`TERRAFORM_VERSION_CONSUMER`), a `minimum` entry of its own that moves when the consumer does. Compatibility floors in HCL/README are a separate `minimum` entry. All CLI/provider changes are operator-owned. |
 | Scanner/tool guidance | Freshness checks terraform-docs 0.20.0, Checkov guidance 3.4.5 and the validation action mirror, Semgrep container guidance 1.185.0, and local tflint rulesets 0.15.0/0.32.0. Existing guidance/action drift remains visible. The Checkov engine bundled by its action must be read from upstream `action.yml`, not inferred from the action version. |
-| Script-installed dependencies | PyYAML 6.0.3 and jsonschema 4.26.0 in workflows and installation guidance are freshness entries. The manifest also records Python 3.11, Lefthook 1.6.0, and scanner minimums as compatibility selections. No exact local Gitleaks, Trivy or tflint installation version is pinned here; their platform-provided versions belong to the platform release. |
+| Script-installed dependencies | PyYAML 6.0.3 and jsonschema 4.26.0 in workflows and installation guidance are freshness entries. The manifest also records Python 3.11 and Lefthook 1.6.0 as compatibility selections. No exact local Gitleaks, Trivy or tflint installation version is pinned here; their platform-provided versions belong to the platform release. |
 | Containers/runtimes | The Semgrep digest is a manual reminder, separate from its version comment. WordPress image series 8.3 and MySQL 8.0.21 defaults are manual reminders with mirror checks. Neither tool validates MCR image builds, authenticates digests, or checks Azure's supported service catalog. Follow the image and database runbooks. |
 | Review service and runners | The review model/API identifiers, REST API date, and `ubuntu-latest` labels are manual reminders. Release APIs do not validate model availability or hosted image contents. |
 | Neither: deliberate gaps | Historical changelog/upgrade evidence, example release tags and this module's own release numbers are release-managed or historical. Vendored provenance headers (verified byte-for-byte during platform upgrades), generated README provider mirrors, Bash/Python prose floors outside the explicit runtime entry, scanner rule registries, local PATH installations and transitive action-installed CLIs/SDKs require deliberate review. No freshness claim is made for these. The rolling report cannot prove a version/digest pair or installed scanner contents. |
 
-The manifest has 26 entries. `minimum` reports compatibility selections without
+The manifest has 24 entries. `minimum` reports compatibility selections without
 calling them outdated installations. `manual` keeps a selection visible and
 compares mirrors; it performs no upstream validation. This inventory is a dated
 snapshot, not another executable version mirror.
@@ -104,13 +104,13 @@ GITHUB_TOKEN="$(gh auth token)" python -I -c \
   --repository agenticcodingops/azure-wordpress --dry-run
 ```
 
-Use a separate reviewed checkout of the caller's exact v3.1.3 SHA as `PLATFORM`.
+Use a separate reviewed checkout of the caller's exact v3.1.5 SHA as `PLATFORM`.
 The preview prints the complete report without writing an issue. Outdated pins
 and drift exit 0, lookup/extraction failures exit 1, and configuration errors
 exit 2. Preserve failures in review evidence.
 
 After merge the operator dispatches the first write run; a dry run proves no
-scheduled run or issue write. Keep the rolling issue open: v3.1.3 preserves its
+scheduled run or issue write. Keep the rolling issue open: v3.1.5 preserves its
 state and does not reopen a closed issue. Successful runs replace its body, so
 put durable discussion in comments.
 
@@ -118,4 +118,4 @@ Add an entry for every new manifest directory. Add every active hand-kept pin
 and mirror to the JSON with context-specific extraction patterns and verbatim
 preconditions. Give manual selections a `review_reason`, record unsupported
 sources explicitly, and move both caller SHAs together with the reviewed template.
-See the public [pin guide](https://github.com/agenticcodingops/auto-code-scanning/blob/ada95d3e7654300fddf55cb65cdfc11495e96984/docs/PIN-FRESHNESS.md).
+See the public [pin guide](https://github.com/agenticcodingops/auto-code-scanning/blob/ea8f45ef8fed3a460b424273fbfd5ab96402e850/docs/PIN-FRESHNESS.md).
