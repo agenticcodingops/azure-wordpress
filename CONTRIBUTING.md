@@ -23,8 +23,8 @@ pull request.
    sh .githooks/install.sh
    ```
 
-   Do not install another hook manager over these hooks. Read the commit-metadata
-   policy in [AGENTS.md](AGENTS.md) before creating branches, commits, or pull requests.
+   Do not install another hook manager over these hooks. Read the AI attribution
+   policy in [AGENTS.md](AGENTS.md) before creating commits or pull requests.
    The hooks enforce that policy and dispatch the configured local scanners.
 
 Create a short-lived branch with a descriptive prefix such as `feature/`, `fix/`,

@@ -105,7 +105,7 @@ Flag any of the following anti-patterns immediately:
 | Open access (`0.0.0.0/0`) on MySQL or Storage firewalls | Restrict to App Service outbound IPs or VNet integration subnets. |
 | Unpinned provider versions or modules | Always declare upper bounds in `required_providers`. |
 | Unbounded resource names exceeding Azure character limits | Follow naming convention `{type}-{project}-{site}-{env}` (Storage accounts: 3-24 lowercase alphanumeric). |
-| Vendor/tool branding in commit metadata | Version control metadata policy (AGENTS.md) strictly forbids tool/vendor names in commit messages, trailers, and PR text. |
+| AI-assistant attribution | AGENTS.md forbids an AI assistant as commit author, committer or `Co-authored-by` co-author, and a "Generated with <AI>" byline in PR text. Naming a tool, model or file anywhere else is allowed: do not flag it. |
 
 ---
 

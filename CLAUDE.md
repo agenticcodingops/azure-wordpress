@@ -2,9 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Commit metadata policy: read [AGENTS.md](AGENTS.md) first.** No vendor or AI-tool names in
-commit messages, trailers, branch names, tags or PR text; every commit authored and committed
-by the configured git identity; never `--no-verify`. Run `sh .githooks/install.sh` once per clone.
+**AI attribution policy: read [AGENTS.md](AGENTS.md) first.** No AI assistant as a commit
+author, committer or co-author, and no AI `Co-authored-by` line or "Generated with <AI>" byline in
+PR text, issues or comments. Naming tools, models and files anywhere else is fine. Every local
+commit is authored and committed by the configured git identity; never `--no-verify`. Run
+`sh .githooks/install.sh` once per clone.
 
 ## Project Overview
 
@@ -73,7 +75,7 @@ terraform-docs --output-check fails on the default branch when measured on a Win
 
 - semgrep.yml: runs in CI only: `semgrep ci` needs SEMGREP_APP_TOKEN (semgrep 1.185.0).
 - terraform-scan.yml: runs in CI only: the shared scan workflow at v3.1.5 (Trivy IaC, Checkov, tflint) uploads SARIF.
-- commit-hygiene.yml "Commit Metadata": runs in CI only: it reads the push or pull_request_target event. The same scanner is `.githooks/branding-guard.sh`, installed with `sh .githooks/install.sh`.
+- commit-hygiene.yml "Commit Metadata": runs in CI only: it reads the push or pull_request_target event. The same checks are `.githooks/branding-guard.sh`, installed with `sh .githooks/install.sh`.
 - the automated review workflows: runs in CI only: they post a review and need a token.
 
 ## Architecture
@@ -386,36 +388,25 @@ shell commands can still print the token, which stays live until the job ends.
 Policy, prohibited items and setup live in [AGENTS.md](AGENTS.md). What follows is the
 repo-specific behaviour it does not cover.
 
-**The allow-list carries three addresses, and two of them exist only for merges made on
-github.com.** `.githooks/allowed-authors.txt` is read by the `commit-msg` and `pre-push` hooks
-*and* by the workflow, so one edit changes every layer at once.
-
-| Address | Why it is listed |
-| --- | --- |
-| `hassan.abbas@agenticcodingops.com` | The local `git config user.email`. |
-| `vibecoddingops@outlook.com` | The GitHub account's commit email. It authors every web-UI merge on `main`, and every release-please commit (`RELEASE_PLEASE_TOKEN` belongs to that account). |
-| `noreply@github.com` | GitHub's web-flow committer on every web-UI merge. |
-
-**A merge made through the API picks its author email for you,** and that address is not guaranteed to be on
-the list. Pass an allow-listed address explicitly: `mergePullRequest(input: {..., authorEmail: ...})` in
-GraphQL, with `expectedHeadOid` pinned. #63 was merged that way.
-
-Without the last two, every push to `main` fails the check: at setup, 60 of the 76 commits on
-`main` used only those two identities. Listing them would also let a local commit claim one, so
-`commit-msg` additionally requires author and committer to equal `git config user.name` /
-`user.email` exactly. `pre-push` and CI check only the allow-list — they must accept commits
-GitHub made — so a `--no-verify` commit that claims a GitHub-side identity still gets through.
+**It is a deny list.** The hooks and the workflow reject an AI assistant (`AI_NAMES` and
+`MODEL_ERE` in `.githooks/branding-guard.sh`) as author, committer or credited co-author, and
+the PR check also rejects an AI byline in the PR body. Every other identity passes: the local
+maintainer, GitHub's web-flow merges (`noreply@github.com`), the release-please commits, the
+orchestrator machine user, the fix-loop bot, the dependency-update bot and the code-quality
+bots. No address list needs maintaining. `commit-msg` additionally requires a local commit's
+author and committer to equal `git config user.name` / `user.email` exactly, so a local commit
+cannot claim another identity; `pre-push` and CI check only the deny list.
 
 **The PR check cannot be weakened from inside the PR.** It runs on `pull_request_target`, which
-takes the workflow, the guard and the allow-list from `main` and reads the PR's commits, title
-and body only as data. Two consequences: a PR that edits any of those files is judged by
+takes the workflow and the guard from `main` and reads the PR's commits and body only as
+data. Two consequences: a PR that edits any of those files is judged by
 `main`'s version until it merges, and the PR that introduced the workflow had no PR check at all
 (only the advisory push run). Never add a step to that workflow that checks out or executes the
 PR head — under `pull_request_target` that is the classic privileged-checkout hole.
 
 **Branch protection is what closes direct pushes to `main` — keep it on.** Push runs take
 everything from the pushed revision, the workflow file included, so a direct push could weaken
-the guard, the allow-list or the workflow and be judged by its own weakened copy. No workflow
+the guard or the workflow and be judged by its own weakened copy. No workflow
 change can close that. As read on 2026-11-13, two layers on the default branch require a PR, and the active repository ruleset also requires Format Check, Checkov, Documentation, terraform-scan / Aggregate Results, semgrep/ci and the 11 `Validate (modules/<name>)` checks:
 
 - the repository ruleset `required-PR` (id `23947709`): active, **no bypass actors**, and it also
@@ -431,45 +422,26 @@ bypass actors are ever added, use **pull request** mode only — `always` reopen
 gh api repos/agenticcodingops/azure-wordpress/rulesets/23947709 --jq .enforcement   # must be: active
 ```
 
-**Automated sources, and why the allow-list cannot fix them:**
+**Automated sources pass.** The dependency-update bot's commits, and the
+`Co-authored-by: dependabot[bot]` trailer GitHub's squash merge adds, name no AI assistant, so
+its PRs and their merges pass; the exact-identity exemption that used to cover them is gone.
+The same holds for the fix-loop bot (`auto-code-scanning-autofix[bot]`) and the trailer a
+squash merge of its commits adds. `release-please-config.json` still sets a neutral
+`pull-request-header` and `pull-request-footer`; they were added when the guard scanned all PR
+text (#132, #133) and are now only a style choice.
 
-- **Dependabot.** `identity_check` rejects any `[bot]` or `bot@` address *before* it reads the
-  allow-list, so listing `49699333+dependabot[bot]@users.noreply.github.com` changes nothing.
-  GitHub's squash merge also adds a `Co-authored-by: dependabot[bot]` trailer, which
-  `branding_scan` rejects on its own. Dependabot PRs fail, and so does the push to `main` when
-  one merges.
-- **release-please PRs.** release-please's default PR footer ("This PR was generated with
-  Release Please") matches `BRANDING_ERE`, so the PR check failed on every release PR up to
-  4.3.1 (#132). `release-please-config.json` now sets a neutral `pull-request-footer`; the footer
-  is what failed the check. It also sets a neutral `pull-request-header`: the default header's
-  `:robot:` shortcode does not match `BRANDING_ERE`, but GitHub renders it as the robot emoji,
-  which `AGENTS.md` prohibits in PR text. Keep both free of anything `BRANDING_ERE` matches. The release commit and its squash merge
-  (`chore(main): release X.Y.Z (#N)`) were always clean, so the push to `main` passes.
-
-Do not "fix" either by adding bot addresses to the allow-list; it cannot work.
-
-**Branches cut before the guard fail it.** Their commits carry the old attribution trailers
-(`feat/scm-network-posture` has four). They fail Commit Hygiene until reworded.
+**Branches cut before the guard fail it.** Their commits carry the old AI attribution
+trailers (`feat/scm-network-posture` has four). They fail Commit Hygiene until reworded.
 
 **Hooks vanish on those same branches.** `core.hooksPath` is per clone, not per branch. Check
 out a branch without `.githooks/` and git runs **no** hooks — not the guard, not lefthook —
 silently. Merge `main` into it before committing there. Do not unset `core.hooksPath` to get
 lefthook back: that trades the metadata guard for the scanners, and AGENTS.md forbids it.
 
-**Branded paths trip the guard.** This file, the agent settings directory, two workflows and the
-dependency-update config (`.github/` + the bot's name + `.yml`) have a vendor name in their path.
-Naming one in a commit subject or PR body is blocked, so describe it instead ("the project
-guidance file", "the dependency-update config").
-
-**The dependency-update bot's own name is on the vendor list.** `BRANDING_ERE` includes it, so
-the word cannot appear in a commit message, branch or tag name, tag message, or PR title or body
-— including a human's "revert the bot's azurerm bump" commit. Refer to the PR number instead
-("revert #29"). It is also rejected as an author or committer name.
-
 **`commit-msg` treats `#` lines as comments; `pre-push` and CI do not.** In the editor buffer
 those lines really are comments — they include the branch name and the staged-file list — but
-`git commit -m` stores them verbatim. A byline written as `# ...` therefore passes `commit-msg`
-and is caught at push.
+`git commit -m` stores them verbatim. An AI trailer written as `# Co-authored-by: ...` therefore
+passes `commit-msg` and is caught at push.
 
 ## Landing Stacked Work
 

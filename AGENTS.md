@@ -2,72 +2,61 @@
 
 Rules for every contributor and coding agent working in this repository, whatever tool
 they use. Project engineering guidance — architecture, CI, the release process — lives in
-`CLAUDE.md`; this file holds the commit-metadata policy.
+`CLAUDE.md`; this file holds the AI attribution policy.
 
-## Commit metadata policy
+## AI attribution policy
 
-Third-party vendor and AI-tool names must not appear in version-control metadata. The
-authoritative list is `BRANDING_ERE` in `.githooks/branding-guard.sh`, the single source
-of truth for every enforcement layer below.
-
-**In scope:** commit messages, commit trailers, tag messages, branch names, PR titles,
-PR bodies, and author/committer identity.
-
-**Out of scope:** file content, filenames, dependencies and documentation. This repo
-legitimately ships workflows and docs that name such products. Do not rename or edit
-files to satisfy this policy.
+An AI assistant must never be credited as a contributor. The list of AI assistants is
+`AI_NAMES` (plus `MODEL_ERE` for model names) in `.githooks/branding-guard.sh`, the single
+source of truth for every enforcement layer below. It is a deny list: any identity it does
+not name passes.
 
 ### Prohibited
 
-- Attribution trailers — `Co-Authored-By`, `Assisted-By`, `Generated-By`, session-link
-  trailers — that name a tool or model, or carry a bot or noreply address.
-- Bylines and footers such as "Generated with …", and the robot emoji.
-- A vendor or tool name anywhere in a subject, body, branch name, tag or PR text.
-  Naming a file whose path contains one trips the guard too, so describe the file
-  instead ("the agent settings file", "the project guidance file").
-- A model name used as an author, co-author or trailer identity.
-- The dependency-update bot's name. It is on the list too, so write "#29" or "the
-  automated azurerm bump", and "the dependency-update config" for its config file.
+- An AI assistant (Claude, Anthropic, Codex, OpenAI, ChatGPT, Copilot, Cursor, Gemini, Grok,
+  Antigravity, Jules, Kiro, Devin, Aider) or a model name (Opus, Sonnet, Haiku, Fable,
+  GPT-n) as a commit **author** or **committer**, by name or by address.
+- A contributor-credit trailer (`Co-authored-by`, `Assisted-by`, `Generated-by`, or a
+  session-link trailer) that names an AI assistant or model. GitHub lists every co-author
+  of a commit on `main` as a contributor.
+- In PR descriptions, issues and comments: such a trailer line, or a "Generated with/by
+  <AI assistant>" byline. The PR check enforces this for the PR body.
+
+### Allowed
+
+- Naming any tool, model, vendor or file anywhere else: commit subjects and bodies, branch
+  and tag names, tag messages, PR titles, the rest of a PR body, docs and code. Write
+  `CLAUDE.md`, `codex`, the dependency-update bot's name or a workflow path as they are;
+  do not rephrase to avoid them.
+- Humans, code-quality bots (CodeRabbit, Semgrep, SonarCloud), the dependency-update bot,
+  release bots and the fix-loop bot (`auto-code-scanning-autofix[bot]`,
+  `autofix@auto-code-scanning.invalid`) as author, committer or co-author.
+- A DCO `Signed-off-by` line. It is not contributor credit, so it is not checked.
 
 ### Identity
 
-- Every commit must be authored **and** committed by the identity in
-  `git config user.name` / `git config user.email`, and that address must be listed in
-  `.githooks/allowed-authors.txt`. The list's other entries exist only so that merges
-  made on github.com pass CI; the comments in the file say which is which.
-- Never add a bot address to the list. The guard rejects `[bot]` and `bot@` addresses
-  before it reads the list, so the entry would do nothing.
-- Names count as identity too: an author or committer name that is a vendor, bot or
-  model name is rejected even on an allow-listed address.
+- Every local commit must be authored **and** committed by the identity in
+  `git config user.name` / `git config user.email`. The `commit-msg` hook checks this
+  exactly; `pre-push` and CI check only the deny list, because they must accept commits
+  GitHub and the repository's bots make.
 - Never pass `--author`, and never set `GIT_AUTHOR_*` / `GIT_COMMITTER_*` to commit as
   anyone else.
-- Co-authors count as contributors: GitHub lists every co-author of a commit on `main`
-  as a contributor. A `Co-authored-by` line is accepted only when its address is in
-  `.githooks/allowed-authors.txt` or `.githooks/allowed-coauthors.txt`, whatever name it
-  carries. The maintainer allows CodeRabbit, Semgrep and SonarCloud as co-authors, but
-  the trailer rule above still rejects a co-author line with a bot or noreply address,
-  so the second file lists only the address that passes both: Semgrep's
-  `support@semgrep.com`. Listing does not let a tool author or commit. Tested by
-  `scripts/tests/coauthor-check.test.sh`, which also checks that every entry passes.
+- An AI assistant working here commits under the human or orchestrator identity it runs
+  as, never under its own.
 
-Merged dependency-update commits with that bot's exact author identity and GitHub's merge
-committer identity are exempt from the push scan of the default branch, so GitHub's own
-merge does not break this policy. The exact match lives in `scripts/dependency-bot-exemption.sh`,
-outside `.githooks/`, and is tested by `scripts/tests/dependency-bot-exemption.test.sh`. Pull requests from the bot remain fully scanned, and no
-other identity is exempt.
+Tested by `scripts/tests/attribution-guard.test.sh`, which the Format Check job runs.
 
 ### Never bypass the guard
 
-- Never use `--no-verify`. If a hook blocks you, rewrite the message — do not work
+- Never use `--no-verify`. If a hook blocks you, remove the attribution — do not work
   around the hook.
 - Never edit, delete or weaken anything in `.githooks/`, and never unset or repoint
-  `core.hooksPath`. The one exception is a change the maintainer asks for, made in a
-  reviewed pull request that only adds or tightens checks, as the co-author check was.
+  `core.hooksPath`, except in a reviewed pull request the maintainer asks for.
 - Never run `lefthook install --reset-hooks-path` (or `--force`): it unsets
   `core.hooksPath` and silently disables the guard.
 
 `LEFTHOOK=0` skips only the lefthook scanners (secret scan, fmt, Trivy, Checkov, tflint).
-The commit-metadata guard still runs.
+The attribution guard still runs.
 
 ## Setup — once per clone
 
@@ -84,9 +73,9 @@ fresh clone needs it. The hooks in `.githooks/` also run the lefthook scanners, 
 | Layer | Where | What it catches | What gets past it |
 | --- | --- | --- | --- |
 | Agent settings | `.claude/settings.json` (`attribution`) | Stops that agent from adding trailers, bylines or session links in the first place | Any other tool, or a human |
-| `commit-msg` hook | `.githooks/commit-msg` | Branded message; author or committer that is not exactly the configured identity, or not allow-listed — at commit time | `--no-verify`; lines starting with `#`, which it treats as comments even when `git commit -m` keeps them |
-| `pre-push` hook | `.githooks/pre-push` | Every outgoing commit's message, allow-listed addresses and names; ref names; annotated tag messages. Also scans `#` lines | `--no-verify`; a clone that never ran `install.sh` |
-| CI | `.github/workflows/commit-hygiene.yml` | The same scan on every branch and tag push and every PR, plus the PR title and body. The PR check runs `main`'s copy of the workflow and guard, so a PR cannot weaken it | Nothing done locally — the only layer `--no-verify` cannot skip. A direct push to `main` can rewrite its own check unless the `required-PR` ruleset is active |
+| `commit-msg` hook | `.githooks/commit-msg` | An AI credit trailer; an AI author or committer; an author or committer that is not exactly the configured identity — at commit time | `--no-verify`; lines starting with `#`, which it treats as comments even when `git commit -m` keeps them |
+| `pre-push` hook | `.githooks/pre-push` | Every outgoing commit's AI credit trailers and AI author or committer names and addresses. Also scans `#` lines | `--no-verify`; a clone that never ran `install.sh` |
+| CI | `.github/workflows/commit-hygiene.yml` | The same commit checks on every branch and tag push and every PR, plus AI credit trailers and AI bylines in the PR body. The PR check runs `main`'s copy of the workflow and guard, so a PR cannot weaken it | Nothing done locally — the only layer `--no-verify` cannot skip. A direct push to `main` can rewrite its own check unless the `required-PR` ruleset is active |
 
 ## Terraform conventions
 
