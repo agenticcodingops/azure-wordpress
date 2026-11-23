@@ -84,6 +84,16 @@ make_repo "$r" no no
 block_case "$r" 'co-author with no allow-list (fails closed)' "fix: x\n\nCo-authored-by: Dev <$approved>\n"
 pass_case "$r" 'no co-author with no allow-list' 'fix: x\n'
 
+# Every shipped co-author entry must pass both checks the hooks and CI run, in the
+# real repository, or the entry can never take effect.
+for addr in $(grep -v '^[[:space:]]*#' "$repo_root/.githooks/allowed-coauthors.txt" | tr -d '\r' | sed '/^[[:space:]]*$/d'); do
+    msg=$(printf 'fix: x\n\nCo-authored-by: Tool <%s>\n' "$addr")
+    (cd "$repo_root" && . ./.githooks/branding-guard.sh &&
+        printf '%s\n' "$msg" | branding_scan shipped >/dev/null 2>&1 &&
+        printf '%s\n' "$msg" | coauthor_check shipped 2>/dev/null) ||
+        fail "shipped co-author entry $addr is rejected by the guard"
+done
+
 # The shipped co-author list must hold only what AGENTS.md names.
 shipped="$repo_root/.githooks/allowed-coauthors.txt"
 [ -f "$shipped" ] || fail 'the co-author list is missing'
