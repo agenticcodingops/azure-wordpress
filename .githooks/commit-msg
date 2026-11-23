@@ -1,11 +1,12 @@
 #!/bin/sh
-# Rejects vendor/tool attribution in the commit message, and any author or committer that
-# is not exactly the configured git identity or is not in .githooks/allowed-authors.txt.
+# Rejects a contributor-credit trailer that names an AI assistant, and any author or
+# committer that is an AI assistant or is not exactly the configured git identity.
 # Policy: AGENTS.md.
 
 root=$(git rev-parse --show-toplevel) || exit 1
-allow="$root/.githooks/allowed-authors.txt"
-[ -f "$allow" ] || { printf 'BLOCKED: %s is missing; refusing to commit without it.\n' "$allow" >&2; exit 1; }
+for f in branding-guard.sh guard-helpers.sh; do
+    [ -f "$root/.githooks/$f" ] || { printf 'BLOCKED: .githooks/%s is missing; refusing to commit without it.\n' "$f" >&2; exit 1; }
+done
 . "$root/.githooks/branding-guard.sh"
 . "$root/.githooks/guard-helpers.sh"
 
@@ -13,14 +14,13 @@ ident() { git var "$1" | sed 's/ [0-9][0-9]* [-+][0-9][0-9][0-9][0-9]$//'; }   #
 email_of() { sed -n 's/^.*<\([^>]*\)>.*$/\1/p'; }
 
 fail=0
-branding_scan "commit message" <"$1" || fail=1
-coauthor_check "commit message" <"$1" || fail=1
+attribution_scan "commit message" <"$1" || fail=1
 
-# The allow-list also carries GitHub-side merge identities (for CI), so it alone would let a
-# local commit claim one of them. Local commits must be the configured identity, exactly.
+# Local commits must be the configured identity, exactly: no --author or GIT_AUTHOR_*
+# override can make a local commit claim another identity.
 want="$(git config user.name) <$(git config user.email)>"
 for var in GIT_AUTHOR_IDENT GIT_COMMITTER_IDENT; do
-    role=$(printf '%s' "$var" | sed 's/^GIT_\(.*\)_IDENT$/\1/' | tr 'A-Z' 'a-z')
+    role=$(printf '%s' "$var" | sed 's/^GIT_\(.*\)_IDENT$/\1/' | tr '[:upper:]' '[:lower:]')
     got=$(ident "$var")
     if [ "$got" != "$want" ]; then
         printf 'BLOCKED: %s "%s" is not the configured identity "%s".\n' "$role" "$got" "$want" >&2
@@ -31,7 +31,7 @@ for var in GIT_AUTHOR_IDENT GIT_COMMITTER_IDENT; do
 done
 
 if [ "$fail" -ne 0 ]; then
-    printf '\nCommit rejected. Rewrite the message, or drop the identity override; do not use --no-verify.\n' >&2
+    printf '\nCommit rejected. Remove the AI attribution trailer, or drop the identity override; do not use --no-verify.\n' >&2
     exit 1
 fi
 exit 0

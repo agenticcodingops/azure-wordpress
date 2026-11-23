@@ -1,79 +1,58 @@
 #!/bin/sh
-# Shared branding/authorship scanner. Single source of truth for the patterns.
+# Shared AI-attribution guard. Single source of truth for the patterns. Policy: AGENTS.md.
+#
+# It is a deny list. An AI assistant must not be a commit author, committer or co-author,
+# and PR text must not carry an AI attribution line. Everyone else passes: humans,
+# code-quality bots, dependency and release bots, and the fix-loop bot. Free text is never
+# scanned: a subject, body, branch, tag or PR title may name any tool, model or file.
 
-BRANDING_ERE='claude|anthropic|copilot|cursor|gemini|openai|chatgpt|codex|grok|antigravity|dependabot|claude\.ai|co-?authored[- ]with|generated with|🤖'
-TRAILER_ERE='^[[:space:]]*(co-authored-by|claude-session|assisted-by|generated-by)[[:space:]]*:'
+# AI assistants, matched as whole words. A name may run straight into "bot", "agent",
+# "code" or "ai" (claudebot, cursoragent), but not into other letters, so a word such as
+# "precursor" or "raider" does not match.
+AI_NAMES='claude|anthropic|openai|chatgpt|codex|copilot|cursor|gemini|grok|antigravity|aider|jules|devin|kiro'
+AI_ERE="(^|[^a-zA-Z])($AI_NAMES)(bot|agent|code|ai)?([^a-zA-Z]|\$)"
 # A GPT model matches on its prefix alone, so suffixed names (GPT-4o, GPT-4.1 mini) are caught.
 MODEL_ERE='(^|[^a-z])((opus|sonnet|haiku|fable)[[:space:]]*[0-9.]*[[:space:]]*(\(|<|$)|gpt-?[0-9])'
+# Contributor-credit trailers. Signed-off-by (DCO) is not contributor credit and is not listed.
+TRAILER_ERE='^[[:space:]]*(co-?authored-?by|claude-session|assisted-by|generated-by)[[:space:]]*:'
+# A "Generated with/by ..." byline at the start of a line, after optional markup or an emoji.
+BYLINE_ERE='^[^[:alnum:]]*(:robot:[^[:alnum:]]*)?generated[[:space:]]+(with|by)[[:space:]]'
 
-branding_scan() {
-    _label="$1"; _msg=$(cat); _found=0
-    _body=$(printf '%s\n' "$_msg" | sed '/^[[:space:]]*#/d')
-    _hits=$(printf '%s\n' "$_body" | grep -n -i -E "$BRANDING_ERE" 2>/dev/null)
-    if [ -n "$_hits" ]; then
-        printf '  vendor/tool name:\n%s\n' "$_hits" | sed 's/^/    /'; _found=1
-    fi
-    _tr=$(printf '%s\n' "$_body" | grep -n -i -E "$TRAILER_ERE" 2>/dev/null \
-          | grep -i -E 'noreply|no-reply|anthropic|claude|bot@|\[bot\]' 2>/dev/null)
+# Commit messages and PR text. Rejects a contributor-credit trailer that names an AI
+# assistant or model, by name or address. Lines starting with '#' are dropped (they are
+# comments in the commit-msg buffer; callers pass stored text through `uncomment` first).
+# Message on stdin; $1 = human-readable label. Returns 1 on a hit.
+attribution_scan() {
+    _label="$1"
+    _tr=$(tr -d '\r' | sed '/^[[:space:]]*#/d' | grep -n -i -E "$TRAILER_ERE" 2>/dev/null \
+          | grep -i -E "$AI_ERE|$MODEL_ERE" 2>/dev/null)
     if [ -n "$_tr" ]; then
-        printf '  tool-attribution trailer:\n%s\n' "$_tr" | sed 's/^/    /'; _found=1
-    fi
-    _md=$(printf '%s\n' "$_body" | grep -n -i -E "$TRAILER_ERE" 2>/dev/null \
-          | grep -i -E "$MODEL_ERE" 2>/dev/null)
-    if [ -n "$_md" ]; then
-        printf '  model name used as an identity:\n%s\n' "$_md" | sed 's/^/    /'; _found=1
-    fi
-    if [ "$_found" -ne 0 ]; then
-        printf '\nBLOCKED: %s contains prohibited vendor/tool attribution.\n' "$_label" >&2
+        printf '  AI attribution trailer:\n%s\n' "$_tr" | sed 's/^/    /' >&2
+        printf '\nBLOCKED: %s credits an AI assistant as a contributor.\n' "$_label" >&2
         return 1
     fi
     return 0
 }
 
-# Every co-author must be an approved identity. GitHub lists each co-author of a
-# default-branch commit as a contributor, so an unlisted co-author is rejected
-# whatever its name. Approved: .githooks/allowed-authors.txt, plus
-# .githooks/allowed-coauthors.txt when that file exists. Fails closed.
-# Message on stdin; $1 = human-readable label. Returns 1 if any co-author fails.
-# Call it as `... | coauthor_check label || fail=1`, as for branding_scan.
-coauthor_check() {
-    _label="$1"
-    _top="$(git rev-parse --show-toplevel 2>/dev/null)"
-    _lines=$(tr -d '\r' | sed '/^[[:space:]]*#/d' \
-             | grep -i -E '^[[:space:]]*co-?authored-?by[[:space:]]*:' 2>/dev/null)
-    [ -n "$_lines" ] || return 0
-    # One file at a time, each ended by a newline, so a list without a final
-    # newline cannot join its last address to the next file's first line.
-    _approved=$(for _f in "$_top/.githooks/allowed-authors.txt" \
-                          "$_top/.githooks/allowed-coauthors.txt"; do
-                    if [ -f "$_f" ]; then cat "$_f"; printf '\n'; fi
-                done | tr -d '\r' | grep -v '^[[:space:]]*#' | sed '/^[[:space:]]*$/d')
-    _cfail=0
-    while IFS= read -r _line; do
-        _addr=$(printf '%s\n' "$_line" | sed -n 's/.*<\([^<>]*\)>[[:space:]]*$/\1/p')
-        if [ -z "$_addr" ] || [ -z "$_approved" ] \
-           || ! printf '%s\n' "$_approved" | grep -q -i -x -F -e "$_addr"; then
-            printf 'BLOCKED: co-author not approved in %s:\n    %s\n' "$_label" \
-                   "$(printf '%s' "$_line" | sed 's/^[[:space:]]*//')" >&2
-            _cfail=1
-        fi
-    done <<EOF
-$_lines
-EOF
-    return "$_cfail"
+# PR and issue text only: the trailer rule above plus a "Generated with/by <AI>" byline.
+# Never used on commit messages, so a commit body may say anything outside its trailers.
+pr_text_scan() {
+    _label="$1"; _text=$(tr -d '\r'); _pfail=0
+    printf '%s\n' "$_text" | attribution_scan "$_label" || _pfail=1
+    _by=$(printf '%s\n' "$_text" | grep -n -i -E "$BYLINE_ERE" 2>/dev/null \
+          | grep -i -E "$AI_ERE|$MODEL_ERE" 2>/dev/null)
+    if [ -n "$_by" ]; then
+        printf '  AI attribution byline:\n%s\n' "$_by" | sed 's/^/    /' >&2
+        printf '\nBLOCKED: %s carries an AI attribution byline.\n' "$_label" >&2
+        _pfail=1
+    fi
+    return "$_pfail"
 }
 
-identity_check() {
-    _email="$1"; _role="$2"; _ref="$3"
-    _allow="$(git rev-parse --show-toplevel 2>/dev/null)/.githooks/allowed-authors.txt"
-    [ -f "$_allow" ] || return 0
-    if printf '%s\n' "$_email" | grep -q -i -E 'anthropic|claude|\[bot\]|bot@'; then
-        printf 'BLOCKED: %s %s of %s is a tool identity.\n' "$_role" "$_email" "${_ref:-commit}" >&2
-        return 1
-    fi
-    if ! grep -v '^[[:space:]]*#' "$_allow" | grep -q -i -x -F "$_email"; then
-        printf 'BLOCKED: %s %s of %s is not in .githooks/allowed-authors.txt\n' \
-               "$_role" "$_email" "${_ref:-commit}" >&2
+# Rejects an author or committer address that belongs to an AI assistant.
+identity_check() {  # identity_check <email> <role> <ref>
+    if printf '%s\n' "$1" | grep -q -i -E "$AI_ERE|$MODEL_ERE"; then
+        printf 'BLOCKED: %s %s of %s is an AI assistant identity.\n' "$2" "$1" "${3:-commit}" >&2
         return 1
     fi
     return 0
