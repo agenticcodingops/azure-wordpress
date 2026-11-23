@@ -19,11 +19,12 @@ PERSON_NAMES='jules|devin|kiro'
 PERSON_ERE="(^|[^a-zA-Z])($PERSON_NAMES)([-_[:space:]]?(bot|agent|ai)([^a-zA-Z]|\$)|\[bot\])|[@.](jules\.google|devin\.ai|cognition\.ai|kiro\.dev)([^a-zA-Z]|\$)|^[[:space:]]*($PERSON_NAMES)[[:space:]]*\$|:[[:space:]]*($PERSON_NAMES)[[:space:]]*(<|\$)"
 # A GPT model matches on its prefix alone, so suffixed names (GPT-4o, GPT-4.1 mini) are caught.
 MODEL_ERE='(^|[^a-z])((opus|sonnet|haiku|fable)[[:space:]]*[0-9.]*[[:space:]]*(\(|<|$)|gpt-?[0-9])'
-# For a name field: a model word counts only with a version number, so a person called Haiku
-# or Fable passes. "Claude Opus" is still caught by AI_ERE.
-# shellcheck disable=SC2034  # read by name_check in guard-helpers.sh
+# For a name or an address: a model word counts only with a version number, so a person
+# called Haiku or Fable passes, while opus-4.5@ or sonnet4@ is caught. "Claude Opus" is still
+# caught by AI_ERE. Read here by identity_check and by name_check in guard-helpers.sh.
 MODEL_NAME_ERE='(^|[^a-z])((opus|sonnet|haiku|fable)[[:space:]-]*[0-9]|gpt-?[0-9])'
-# Every assistant pattern. Trailers and addresses use this; name_check swaps in MODEL_NAME_ERE.
+# Every assistant pattern. Trailers use this; identity_check adds MODEL_NAME_ERE, and
+# name_check swaps it in for MODEL_ERE.
 DENY_ERE="$AI_ERE|$PERSON_ERE|$MODEL_ERE"
 # Contributor-credit trailers. Signed-off-by (DCO) is not contributor credit and is not listed.
 TRAILER_ERE='^[[:space:]]*(co-?authored-?by|claude-session|assisted-by|generated-by)[[:space:]]*:'
@@ -67,9 +68,11 @@ pr_text_scan() {
     return "$_pfail"
 }
 
-# Rejects an author or committer address that belongs to an AI assistant.
+# Rejects an author or committer address that belongs to an AI assistant or model. MODEL_ERE
+# needs a '(', '<' or line end after the version, which an address never has, so the
+# versioned-model pattern is added: opus-4.5@example.com is denied, haiku@example.com passes.
 identity_check() {  # identity_check <email> <role> <ref>
-    if printf '%s\n' "$1" | grep -q -i -E "$DENY_ERE"; then
+    if printf '%s\n' "$1" | grep -q -i -E "$DENY_ERE|$MODEL_NAME_ERE"; then
         printf 'BLOCKED: %s %s of %s is an AI assistant identity.\n' "$2" "$1" "${3:-commit}" >&2
         return 1
     fi

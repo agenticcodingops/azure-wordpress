@@ -118,13 +118,13 @@ for addr in dev@example.org autofix@auto-code-scanning.invalid \
     '49699333+dependabot[bot]@users.noreply.github.com' \
     '136622811+coderabbitai[bot]@users.noreply.github.com' support@semgrep.com \
     noreply@github.com '340677216+agenticcodingops-orchestrator@users.noreply.github.com' \
-    'release-bot@example.org' jules@example.com devin@example.org haiku@example.com; do
+    'release-bot@example.org' jules@example.com devin@example.org haiku@example.com     fable@example.com opus.dei@example.org; do
     pass_id identity_check "$addr"
 done
 for addr in noreply@anthropic.com codex@openai.com cursoragent@cursor.com \
     '209825114+claude[bot]@users.noreply.github.com' \
     '198982749+Copilot@users.noreply.github.com' 'devin-ai-integration[bot]@users.noreply.github.com' \
-    gpt-5@example.com x@kiro.dev; do
+    gpt-5@example.com x@kiro.dev opus-4.5@example.com sonnet4@example.com     'haiku-4-5@example.com'; do
     block_id identity_check "$addr"
 done
 for name in 'Syed Hassan Abbas' 'auto-code-scanning-autofix[bot]' 'dependabot[bot]' \
@@ -195,6 +195,13 @@ c -m 'fix: hash' -m '# Co-authored-by: Claude <noreply@anthropic.com>' ||
     fail "commit-msg: a '#' trailer line was rejected"
 if git -C "$r" push -q origin HEAD:refs/heads/feature/h 2>/dev/null; then
     fail "pre-push: a '# Co-authored-by' AI trailer was accepted"
+fi
+git -C "$r" reset -q --hard HEAD~1
+# The same trailer committed with the hooks off, as --no-verify would: pre-push still rejects it.
+git -C "$r" -c core.hooksPath=/dev/null commit -q --allow-empty -m 'fix: hash'     -m '# Co-authored-by: Claude <noreply@anthropic.com>' ||
+    fail "could not create the '#' trailer commit with the hooks off"
+if git -C "$r" push -q origin HEAD:refs/heads/feature/h2 2>/dev/null; then
+    fail "pre-push: a '# Co-authored-by' AI trailer committed with the hooks off was accepted"
 fi
 git -C "$r" reset -q --hard HEAD~1
 
