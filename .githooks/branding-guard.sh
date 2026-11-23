@@ -42,9 +42,12 @@ coauthor_check() {
     _lines=$(tr -d '\r' | sed '/^[[:space:]]*#/d' \
              | grep -i -E '^[[:space:]]*co-?authored-?by[[:space:]]*:' 2>/dev/null)
     [ -n "$_lines" ] || return 0
-    _approved=$(cat "$_top/.githooks/allowed-authors.txt" \
-                    "$_top/.githooks/allowed-coauthors.txt" 2>/dev/null \
-                | tr -d '\r' | grep -v '^[[:space:]]*#' | sed '/^[[:space:]]*$/d')
+    # One file at a time, each ended by a newline, so a list without a final
+    # newline cannot join its last address to the next file's first line.
+    _approved=$(for _f in "$_top/.githooks/allowed-authors.txt" \
+                          "$_top/.githooks/allowed-coauthors.txt"; do
+                    if [ -f "$_f" ]; then cat "$_f"; printf '\n'; fi
+                done | tr -d '\r' | grep -v '^[[:space:]]*#' | sed '/^[[:space:]]*$/d')
     _cfail=0
     while IFS= read -r _line; do
         _addr=$(printf '%s\n' "$_line" | sed -n 's/.*<\([^<>]*\)>[[:space:]]*$/\1/p')

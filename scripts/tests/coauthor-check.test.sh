@@ -72,6 +72,13 @@ make_repo "$r" yes yes
 pass_case "$r" 'tool from the co-author list' "fix: x\n\nCo-authored-by: R <$review_bot>\n"
 block_case "$r" 'tool not on the co-author list' 'fix: x\n\nCo-authored-by: Codex <codex@openai.com>\n'
 
+r="$work/no-final-newline"
+make_repo "$r" yes yes
+printf '%s' "$approved" >"$r/.githooks/allowed-authors.txt"
+printf '%s' "$review_bot" >"$r/.githooks/allowed-coauthors.txt"
+pass_case "$r" 'last author address, no final newline' "fix: x\n\nCo-authored-by: Dev <$approved>\n"
+pass_case "$r" 'first co-author address after it' "fix: x\n\nCo-authored-by: R <$review_bot>\n"
+
 r="$work/no-list"
 make_repo "$r" no no
 block_case "$r" 'co-author with no allow-list (fails closed)' "fix: x\n\nCo-authored-by: Dev <$approved>\n"
