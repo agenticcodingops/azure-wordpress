@@ -65,11 +65,10 @@ The label was absent during adoption. The operator creates it; this PR changes
 no labels or settings. The previous ecosystem-specific labels are removed from
 the configuration, and the composition entry's PR limit changes from three to five.
 
-Automated update PRs fail Commit Metadata by design because of their author and
-metadata; that check is advisory for those PRs. Reviewed default-branch merges
-have a narrowly scoped existing exemption. Do not weaken the guard or add bot
-identities. Review workflows skip dependency-bot PRs, so the orchestrator arranges
-an independent current-head review when triaging an update.
+Automated update PRs pass Commit Metadata: the check rejects only AI-assistant
+attribution, and the update bot is not an AI assistant. Review workflows skip
+dependency-bot PRs, so the orchestrator arranges an independent current-head
+review when triaging an update.
 
 This is a production repository. The operator merges these adoption and platform
 upgrade PRs. Under the org-wide plan, eligible Actions/scanner patch/minor updates

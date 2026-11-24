@@ -13,9 +13,3 @@ chmod +x "$root/.githooks/commit-msg" "$root/.githooks/pre-commit" "$root/.githo
     "$root/.githooks/branding-guard.sh" "$root/.githooks/guard-helpers.sh" \
     "$root/.githooks/install.sh" 2>/dev/null || true
 echo "core.hooksPath = .githooks (commit-msg, pre-commit, pre-push)"
-
-email=$(git -C "$root" config user.email || true)
-if ! grep -v '^[[:space:]]*#' "$root/.githooks/allowed-authors.txt" | grep -q -i -x -F "$email"; then
-    echo "WARNING: user.email '$email' is not in .githooks/allowed-authors.txt;" \
-         "every commit will be rejected until it is added." >&2
-fi

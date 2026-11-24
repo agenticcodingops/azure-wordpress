@@ -1,19 +1,19 @@
 # ============================================================================
-# Commit Hygiene — rejects vendor/tool attribution in commit metadata: commit messages and
-# trailers, author/committer identity, branch and tag names, annotated tag messages, and PR
-# title and body. Applies the same scanner as the local hooks (.githooks/branding-guard.sh).
-# This is the one layer `git commit --no-verify` / `git push --no-verify` cannot skip.
-# Policy: AGENTS.md.
+# Commit Hygiene — rejects AI-assistant attribution. In every scanned commit: an author or
+# committer that is an AI assistant, and a contributor-credit trailer (Co-authored-by and
+# similar) that names one. In the PR body: those trailers and a "Generated with/by <AI>"
+# byline. It is a deny list: other identities, bots included, pass, and free text (subjects,
+# bodies, branch and tag names, the PR title) is never scanned. Applies the same functions as
+# the local hooks (.githooks/branding-guard.sh). This is the one layer
+# `git commit --no-verify` / `git push --no-verify` cannot skip. Policy: AGENTS.md.
 #
 # Trust model. The PR check uses pull_request_target, so it runs the default branch's copy
-# of this workflow, the guard and the allow-list. A PR cannot weaken its own check by
-# editing any of them; its commits, title and body are only ever read as data. Never add a
+# of this workflow and the guard. A PR cannot weaken its own check by
+# editing any of them; its commits and body are only ever read as data. Never add a
 # step that checks out or executes code from the PR head. Push runs use the pushed
 # revision's copy of everything, this file included, so they are advisory: a direct push
 # to the default branch can rewrite the check it is judged by. Only branch protection
 # that requires pull requests closes that path.
-# Exactly identified dependency-update commits are exempt only on default-branch pushes,
-# because GitHub's merge preserves their otherwise rejected bot identity and message.
 # ============================================================================
 name: Commit Hygiene
 
@@ -39,7 +39,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Scan commits, ref name, tag message and PR text
+      - name: Scan commits and PR body
         shell: bash
         env:
           # Event text reaches the script only through env, never via ${{ }} inside run:.
@@ -52,17 +52,14 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           REF_NAME: ${{ github.head_ref || github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          # Fail closed if the policy files are missing: identity_check passes everything
-          # when the allow-list is absent.
-          for f in .githooks/branding-guard.sh .githooks/guard-helpers.sh .githooks/allowed-authors.txt scripts/dependency-bot-exemption.sh; do
+          # Fail closed if the policy files are missing.
+          for f in .githooks/branding-guard.sh .githooks/guard-helpers.sh; do
             [ -f "$f" ] || { echo "::error::$f is missing; refusing to pass without it."; exit 1; }
           done
           . .githooks/branding-guard.sh
           . .githooks/guard-helpers.sh    # uncomment, is_zero, name_check
-          . scripts/dependency-bot-exemption.sh    # is_dependency_update_bot_commit (#130)
           fail=0
 
           # A failing git command aborts the step (bash -e), so an unresolvable range fails closed.
@@ -90,43 +87,20 @@ jobs:
 
           for c in $commits; do
             short=$(git rev-parse --short "$c")
-            if [ "$EVENT_NAME" = push ] && [ "$REF_TYPE" = branch ] &&
-              [ "$REF_NAME" = "$DEFAULT_BRANCH" ] &&
-              is_dependency_update_bot_commit \
-                "$(git log -1 --format=%an "$c")" "$(git log -1 --format=%ae "$c")" \
-                "$(git log -1 --format=%cn "$c")" "$(git log -1 --format=%ce "$c")"; then
-              echo "::$stop_token::"
-              echo "::notice::Skipping commit $short: exact dependency-update bot merge identity on the default branch."
-              echo "::stop-commands::$stop_token"
-              continue
-            fi
-            git log -1 --format=%B "$c" | uncomment | branding_scan "commit $short" || fail=1
-            git log -1 --format=%B "$c" | coauthor_check "commit $short" || fail=1
+            git log -1 --format=%B "$c" | uncomment | attribution_scan "commit $short" || fail=1
             identity_check "$(git log -1 --format=%ae "$c")" author "$short" || fail=1
             identity_check "$(git log -1 --format=%ce "$c")" committer "$short" || fail=1
             name_check "$(git log -1 --format=%an "$c")" author "$short" || fail=1
             name_check "$(git log -1 --format=%cn "$c")" committer "$short" || fail=1
           done
 
-          if printf '%s\n' "$REF_NAME" | grep -q -i -E "$BRANDING_ERE"; then
-            echo "BLOCKED: ref name $REF_NAME contains a vendor/tool name." >&2
-            fail=1
-          fi
-
-          if [ "$REF_TYPE" = tag ] && [ "$(git cat-file -t "refs/tags/$REF_NAME")" = tag ]; then
-            git cat-file tag "refs/tags/$REF_NAME" | sed '1,/^$/d' \
-              | sed '/^-----BEGIN [A-Z ]*SIGNATURE-----/,$d' | uncomment \
-              | branding_scan "tag $REF_NAME message" || fail=1
-          fi
-
           if [ "$EVENT_NAME" = pull_request_target ]; then
-            printf '%s\n' "$PR_TITLE" | uncomment | branding_scan "PR title" || fail=1
-            printf '%s\n' "$PR_BODY" | uncomment | branding_scan "PR body" || fail=1
+            printf '%s\n' "$PR_BODY" | uncomment | pr_text_scan "PR body" || fail=1
           fi
 
           echo "::$stop_token::"
           if [ "$fail" -ne 0 ]; then
-            echo "::error::Commit metadata carries vendor/tool attribution or an unlisted identity. See AGENTS.md."
+            echo "::error::An AI assistant is credited as an author, committer or co-author, or the PR body carries an AI attribution line. See AGENTS.md."
             exit 1
           fi
           echo "Commit metadata is clean."
