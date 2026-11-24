@@ -4,8 +4,8 @@ This page shows what one call to `modules/wordpress-site` deploys, the order Ter
 requests, secrets and telemetry move between the parts. Read it before you choose a `cdn_provider` or change
 network settings.
 
-It describes release **v4.3.0**. Every section ends with its sources: file paths and line ranges at tag `v4.3.0`
-(commit `b592e13`), relative to the repository root. Line numbers can move in later releases. Where neither the
+It describes release **v5.0.0**. Every section ends with its sources: file paths and line ranges at tag `v5.0.0`
+(commit [`c82360b`](https://github.com/agenticcodingops/azure-wordpress/tree/c82360b26a5bb7cd588d0ca8d3bfb638ad86ace2)), relative to the repository root. Line numbers can move in later releases. Where neither the
 code nor Microsoft's documentation settles a question, the text says **UNKNOWN**.
 
 - [At a glance](#at-a-glance)
@@ -47,7 +47,7 @@ code nor Microsoft's documentation settles a question, the text says **UNKNOWN**
 - The composition creates Log Analytics and Application Insights itself. It never calls `modules/monitoring`.
 
 Sources: `modules/wordpress-site/variables.tf:532-541` (`cdn_provider`), `modules/app-service/main.tf:24`,
-`:242-245`, `:460-461`, `modules/database/main.tf:64-66`, `modules/wordpress-site/main.tf:371-393`, `:511-517`.
+`:242-245`, `:466-467`, `modules/database/main.tf:65-67`, `modules/wordpress-site/main.tf:372-394`, `:512-518`.
 
 ## Container view
 
@@ -122,9 +122,9 @@ one case. With
 `use_shared_plan = true`, the web app and its slot live in the shared plan's resource group, because Azure needs a
 web app and its plan in the same group.
 
-Sources: `modules/wordpress-site/main.tf:79`, `:179`, `:185-186`, `:197`, `:229-232`, `:371-393`, `:402-447`, `:450-501`,
-`:523-573`, `:588-686`, `:836-852`, `:959-981`, `:1062-1097`; `modules/app-service/main.tf:16`, `:178-191`,
-`:194-229`, `:460-486`, `:585-589`, `:598-613`; `modules/database/main.tf:35-104`, `:180-186`;
+Sources: `modules/wordpress-site/main.tf:81`, `:181`, `:187-188`, `:199`, `:230-233`, `:372-394`, `:403-448`, `:451-502`,
+`:524-574`, `:589-688`, `:838-854`, `:961-983`, `:1019-1053`; `modules/app-service/main.tf:16`, `:178-191`,
+`:194-229`, `:466-492`, `:586-590`, `:608-623`; `modules/database/main.tf:35-105`, `:181-187`;
 `modules/key-vault/main.tf:29-68`; `modules/storage/main.tf:15-24`, `:88-92`; `modules/storage/variables.tf:110-114`;
 `modules/front-door/main.tf:17-25`; `modules/cloudflare/main.tf:16-18`.
 
@@ -219,12 +219,12 @@ Other ordering facts, left out of the diagram:
   a replacement. See
   [The SAS: source, rotation and trade-off](../modules/wordpress-site/README.md#the-sas-source-rotation-and-trade-off).
 
-Sources: `modules/wordpress-site/main.tf:1-12`, `:229-324`, `:332-362`, `:371-393`, `:402-447`, `:450-501`,
-`:511-517`, `:523-573` (placeholder `:539`, `depends_on` `:568-572`), `:588-686` (`depends_on` `:680-685`),
-`:689-745`, `:758-816`, `:959-981`, `:1017-1055`, `:1062-1097`, `:1108-1153`, `:1187-1200`;
+Sources: `modules/wordpress-site/main.tf:1-12`, `:230-325`, `:333-363`, `:372-394`, `:403-448`, `:451-502`,
+`:512-518`, `:524-574` (placeholder `:540`, `depends_on` `:569-573`), `:589-688` (`depends_on` `:682-687`),
+`:691-747`, `:760-818`, `:961-983`, `:1019-1053`, `:1064-1109`, `:1143-1156`;
 `modules/wordpress-site/monitoring.tf:117`; `modules/app-service/main.tf:82`; `modules/key-vault/main.tf:72-84`;
-`modules/monitoring/main.tf:43-54`, `:57-59`; `modules/monitoring/variables.tf:63-66`; `modules/wordpress-site/main.tf:364-368`, `:376`,
-`:388`, `:1131`, `:1140-1144`; site module README, [Resource locks](../modules/wordpress-site/README.md#resource-locks).
+`modules/monitoring/main.tf:43-54`, `:57-59`; `modules/monitoring/variables.tf:63-66`; `modules/wordpress-site/main.tf:365-369`, `:377`,
+`:389`, `:1087`, `:1096-1100`; site module README, [Resource locks](../modules/wordpress-site/README.md#resource-locks).
 
 ## Request flow: Cloudflare
 
@@ -269,8 +269,9 @@ What the code sets up for this flow:
   app-service module falls back to a built-in list only when it is called without them. These ranges are
   Cloudflare's shared egress pool, used by every Cloudflare account, so the rules admit Cloudflare, not your zone. A
   request sent through another Cloudflare account reaches the web app and the slot without passing your zone's WAF,
-  rate-limit or page rules. One example is a Worker's `fetch()` to the app's `*.azurewebsites.net` name. The module
-  adds no header check yet; see
+  rate-limit or page rules. One example is a Worker's `fetch()` to the app's `*.azurewebsites.net` name. By default
+  the module adds no header check; `app_service.cdn_origin_header_name` with `cdn_origin_header_values` opts into
+  one (`modules/app-service/main.tf:276-281`); see
   [Binding the origin to one CDN account](security-model.md#binding-the-origin-to-one-cdn-account).
 - **Origin protocol.** Cloudflare connects to the origin over HTTP or HTTPS, as the zone's SSL/TLS mode says. The
   module sets that mode only when `enable_zone_setting_overrides` is true (off by default), and the three page
@@ -288,10 +289,10 @@ What the code sets up for this flow:
   origin lock-down and the storage allow-list still apply, but no DNS record, wait or Cloudflare rule is created.
   The hostname binding is still created, so you must create the DNS records yourself.
 
-Sources: `modules/wordpress-site/main.tf:52-54`, `:196-207`, `:652-656`, `:1062-1097`, `:1108-1153`;
-`modules/wordpress-site/variables.tf:544-559`; `modules/cloudflare/main.tf:37-40`, `:48-87`, `:111-126`,
-`:134-140`; `modules/cloudflare/variables.tf:68-72`; `modules/cloudflare/page-rules.tf:17-86` (`ssl` `:30`, `:57`, `:79`), `:97`; `modules/cloudflare/waf.tf` (`wordpress_rate_limit`, `wordpress_security`);
-`modules/wordpress-site/main.tf:205`; `modules/app-service/main.tf:32-65`, `:204`, `:262-303`, `:320`, `:503-542`, `:563`.
+Sources: `modules/wordpress-site/main.tf:54-56`, `:198-208`, `:654-658`, `:1019-1053`, `:1064-1109`;
+`modules/wordpress-site/variables.tf:544-558`; `modules/cloudflare/main.tf:37-40`, `:48-87`, `:111-126`,
+`:134-140`; `modules/cloudflare/variables.tf:62-66`; `modules/cloudflare/page-rules.tf:17-86` (`ssl` `:30`, `:57`, `:79`), `:97`; `modules/cloudflare/waf.tf` (`wordpress_rate_limit`, `wordpress_security`);
+`modules/wordpress-site/main.tf:206`; `modules/app-service/main.tf:32-65`, `:204`, `:261-302`, `:319`, `:509-548`, `:564`.
 
 ## Request flow: Azure Front Door
 
@@ -350,12 +351,15 @@ What the code sets up for this flow:
 - **WAF.** The policy uses Microsoft's Default Rule Set 2.1 and Bot Manager 1.1, with WordPress cookie exclusions.
   Rules 942230 and 941320 are set to log only. The mode is `Prevention` in production and `Detection` in nonprod
   unless you set `front_door.waf_mode`.
-- **Caching rules are attached to the route from v4.3.2.** The module creates a rule set with three rules: no cache
-  for `wp-admin/` and `wp-login.php`, and cache overrides for static file extensions and `wp-content/uploads/`, and
+- **Caching rules are attached to the route from v4.3.2.** The module creates a rule set with four rules: no cache
+  for `wp-admin/` and `wp-login.php`, separate cache overrides for static assets and fonts, and an override for
+  `wp-content/uploads/`. The upload and static rules retain query strings in their cache keys, and
   the route lists it in `cdn_frontdoor_rule_set_ids`. Microsoft applies a rule set only to the routes it is
   associated with. Through v4.3.1 the route did not list it, so none of the rules acted on requests, and the admin rule sat at
   order 0, which Azure treats as a global rule that applies to every request (#138); it is order 1 from v4.3.2.
-  Taking v4.3.2 plans in-place updates of the route and of the three rules' orders. The route also has its own `cache` block, which includes query
+  Taking v4.3.2 plans in-place updates of the route and of the original three rules' orders. v4.3.2 also
+  made the upload rule keep query strings in its cache key, and v4.3.5 split the fonts into a fourth rule (#171; see
+  [Caching Rules](../modules/front-door/README.md#caching-rules)). The route also has its own `cache` block, which includes query
   strings in the cache key and turns compression on, and applies where no rule matches.
 - **DNS is yours to create.** `module.cloudflare` runs only when `cdn_provider = "cloudflare"`, so this mode creates
   no DNS records. Use the outputs `front_door_endpoint_hostname` (the CNAME target) and
@@ -365,10 +369,10 @@ What the code sets up for this flow:
   app's domain verification ID. Both examples in this repository use `cloudflare`, so whether this mode applies
   cleanly on a first deploy is UNKNOWN.
 
-Sources: `modules/wordpress-site/main.tf:174-184`, `:637-643`, `:953-975`, `:1012-1046`, `:1075-1102`;
-`modules/wordpress-site/outputs.tf:168-186`; `modules/front-door/main.tf:17-201`, `:204-289` (route `:85-104`);
+Sources: `modules/wordpress-site/main.tf:186-192`, `:645-652`, `:960-983`, `:1019-1021`, `:1082-1109`;
+`modules/wordpress-site/outputs.tf:168-186`; `modules/front-door/main.tf:17-210`, `:220-342` (route `:85-113`);
 `modules/front-door/outputs.tf:14-17`; `modules/wordpress-site/variables.tf:519-529`;
-`modules/app-service/main.tf:32`, `:261-266`, `:305-319`, `:402-407`, `:509-514`, `:550-564`;
+`modules/app-service/main.tf:32`, `:261-266`, `:305-319`, `:402-407`, `:509-514`, `:550-564`, `:597-604`;
 `examples/basic-site/main.tf:112`; `examples/multi-site/main.tf:110`. Microsoft:
 [Secure traffic to origins](https://learn.microsoft.com/azure/frontdoor/origin-security),
 [What is a rule set?](https://learn.microsoft.com/azure/frontdoor/front-door-rules-engine).
@@ -386,8 +390,8 @@ Sources: `modules/wordpress-site/main.tf:174-184`, `:637-643`, `:953-975`, `:101
 - Media comes from the web app's `/home` storage, like every other response. Only a Blob offload plugin you install
   makes browsers fetch it from the blob endpoint instead. See [Media](#media).
 
-Sources: `modules/wordpress-site/variables.tf:532-541`; `modules/wordpress-site/main.tf:1126-1153`;
-`modules/app-service/main.tf:262-267`, `:320`, `:563`.
+Sources: `modules/wordpress-site/variables.tf:532-541`; `modules/wordpress-site/main.tf:1082-1109`;
+`modules/app-service/main.tf:261-266`, `:319`, `:564`.
 
 ## Media
 
@@ -406,7 +410,7 @@ With such a plugin installed and set as the default upload target:
    The key is a Key Vault reference to the `storage-key` secret. The settings are optional: they exist so you can
    configure such a plugin (Microsoft Azure Storage for WordPress reads them as `wp-config.php` constants). The
    container image does not read them, and this module installs no plugin. With the settings off,
-   `storage_key_secret_enabled = false` also stops writing the `storage-key` secret (`modules/wordpress-site/main.tf:511-517`);
+   `storage_key_secret_enabled = false` also stops writing the `storage-key` secret (`modules/wordpress-site/main.tf:512-518`);
    see [Retiring the `storage-key` secret](../README.md#retiring-the-storage-key-secret).
 2. **Uploads.** The web app writes to the account through the App Service subnet, which carries the
    `Microsoft.Storage` service endpoint and is always on the account's allow-list.
@@ -442,8 +446,8 @@ unsigned, at `windows-azure-storage.php:410`; both at tag 4.5.2, source at
 changes either side. **UNKNOWN:** whether another storage plugin serves SAS-signed media URLs. Check it before you
 go live.
 
-Sources: `modules/app-service/main.tf:85`, `:124-132`, `:376-378`;
-`modules/wordpress-site/variables.tf:273-282`, `:369-374`; `modules/wordpress-site/main.tf:486-495`;
+Sources: `modules/app-service/main.tf:85`, `:124-132`, `:375-377`;
+`modules/wordpress-site/variables.tf:273-282`, `:369-374`; `modules/wordpress-site/main.tf:487-496`;
 `modules/storage/main.tf:26-43`, `:88-92`; `docs/upgrading/v1-to-v2.md:116-141` (the v2.0.0 media note); `modules/storage/README.md:76-120`;
 plugin source: `plugins.svn.wordpress.org/windows-azure-storage/tags/4.5.2/`.
 
@@ -503,11 +507,11 @@ How it fits together:
 - **Extra secrets as settings.** `extra_secret_app_settings` turns secret names into Key Vault references inside
   the module, and applies them to both the web app and the slot.
 
-Sources: `modules/wordpress-site/main.tf:66-75`, `:320-324`, `:437-438`, `:511-517`, `:523-573`, `:579-582`,
-`:616-628`, `:689-745`; `modules/wordpress-site/variables.tf:231-247`, `:1016-1030`;
-`modules/database/main.tf:39-40`, `:88-103`; `modules/key-vault/main.tf:29-123` (`network_acls` `:54-59`, policies
+Sources: `modules/wordpress-site/main.tf:68-77`, `:321-325`, `:438-439`, `:512-518`, `:524-574`, `:580-583`,
+`:617-629`, `:691-747`; `modules/wordpress-site/variables.tf:231-247`, `:1015-1029`;
+`modules/database/main.tf:40-41`, `:89-104`; `modules/key-vault/main.tf:29-123` (`network_acls` `:54-59`, policies
 `:72-101`, secrets `:105-123`); `modules/key-vault/outputs.tf:24-27`; `modules/app-service/main.tf:70-83`,
-`:124-130`, `:226-229`, `:239`, `:349`, `:484-486`, `:585-589`. Microsoft:
+`:124-130`, `:226-229`, `:239`, `:348`, `:490-492`, `:586-590`. Microsoft:
 [Use Key Vault references as app settings](https://learn.microsoft.com/azure/app-service/app-service-key-vault-references),
 [Virtual network integration routes](https://learn.microsoft.com/azure/app-service/overview-vnet-integration#routes).
 
@@ -577,7 +581,7 @@ inbound requests is the web app's access restriction list:
 | `cdn_provider` | Main site allows | Default action |
 | --- | --- | --- |
 | `cloudflare` | `168.63.129.16/32`, Cloudflare IPv4 and IPv6 ranges (any Cloudflare account) | Deny |
-| `azure_front_door` | `AzureFrontDoor.Backend` with the profile's `X-Azure-FDID`, after the patch | Deny |
+| `azure_front_door` | `AzureFrontDoor.Backend` with the profile's `X-Azure-FDID` (app and slot) | Deny |
 | `direct` | `168.63.129.16/32` | Allow |
 
 **The SCM (Kudu) endpoint is a separate gate.** The web app and the slot each have one. Their rules come from
@@ -594,10 +598,10 @@ account over the VNet integration and the account can keep `Deny`; see
 [Backup & Recovery](../modules/wordpress-site/README.md#backup--recovery).
 
 Sources: `modules/networking/main.tf:14-183` (app subnet `:27-52`, db subnet `:56-72`, PE subnet `:76-84`,
-NSGs `:87-171`); `modules/dns-zones/main.tf:7-27`; `modules/database/main.tf:64-66`, `:111-116`;
-`modules/wordpress-site/main.tf:217-222`, `:332-347`, `:486-495`, `:553-558`, `:661-665`, `:1017-1055`;
-`modules/wordpress-site/variables.tf:319-355`, `:996-1005`; `modules/app-service/main.tf:89`, `:215`, `:239`,
-`:262-345`, `:565-581`; v3-to-v4 upgrade guide,
+NSGs `:87-171`); `modules/dns-zones/main.tf:7-27`; `modules/database/main.tf:65-67`, `:112-117`;
+`modules/wordpress-site/main.tf:218-223`, `:333-348`, `:487-496`, `:554-559`, `:663-667`;
+`modules/wordpress-site/variables.tf:319-355`, `:995-1004`; `modules/app-service/main.tf:89`, `:215`, `:239`,
+`:261-344`, `:566-582`; v3-to-v4 upgrade guide,
 [Hardening the SCM/Kudu endpoint](upgrading/v3-to-v4.md#hardening-the-scmkudu-endpoint); app-service module README,
 [SCM/Kudu Network Posture](../modules/app-service/README.md#scmkudu-network-posture). Microsoft:
 [Integrate your app with an Azure virtual network](https://learn.microsoft.com/azure/app-service/overview-vnet-integration),
@@ -683,9 +687,9 @@ Terraform; see
 For thresholds and examples, see [Alerting](../modules/wordpress-site/README.md#alerting) and
 [Diagnostic settings](../modules/wordpress-site/README.md#diagnostic-settings) in the site module README.
 
-Sources: `modules/wordpress-site/main.tf:210-214`, `:225`, `:242-249`, `:371-393`, `:753-816`, `:826-956`,
-`:984-1010`; `modules/wordpress-site/monitoring.tf:20-37`, `:41`, `:44-146`, `:152-274`, `:282-344`, `:351-380`,
-`:386-426`, `:433-658`; `modules/wordpress-site/variables.tf:568-704`; `modules/app-service/main.tf:82`;
+Sources: `modules/wordpress-site/main.tf:211-215`, `:226`, `:243-250`, `:372-394`, `:755-818`, `:828-958`,
+`:986-1012`; `modules/wordpress-site/monitoring.tf:20-37`, `:41`, `:44-146`, `:152-274`, `:282-344`, `:351-380`,
+`:386-426`, `:433-658`; `modules/wordpress-site/variables.tf:567-703`; `modules/app-service/main.tf:82`;
 site module README, [Failure Anomalies](../modules/wordpress-site/README.md#failure-anomalies-platform-created).
 Microsoft:
 [Set the data retention](https://learn.microsoft.com/azure/azure-monitor/app/create-workspace-resource#set-the-data-retention).
@@ -717,8 +721,8 @@ it, and the module is expected to fail partway (read from the code, not run). Cr
 plan and migrate instead; see
 [step 11 of the deployment guide](deployment-guide.md#step-11-host-several-sites-on-a-shared-plan).
 
-Sources: `modules/shared-infrastructure/main.tf:43-71`, `:160-167`; `modules/wordpress-site/main.tf:160-179`, `:595`;
-`modules/wordpress-site/monitoring.tf:390`, `:403-406`; `modules/app-service/main.tf:16-17`, `:179`, `:599`.
+Sources: `modules/shared-infrastructure/main.tf:43-71`, `:160-167`; `modules/wordpress-site/main.tf:162-181`, `:596`;
+`modules/wordpress-site/monitoring.tf:390`, `:403-406`; `modules/app-service/main.tf:16-17`, `:179`, `:609`.
 
 ## What the composition does not create
 
@@ -739,4 +743,4 @@ Sources: `modules/shared-infrastructure/main.tf:43-71`, `:160-167`; `modules/wor
   and [Passwordless database access (managed identity)](../modules/wordpress-site/README.md#passwordless-database-access-managed-identity).
 
 Sources: `modules/networking/main.tf:76-84`; `modules/cloudflare/main.tf:16-26`;
-`modules/wordpress-site/main.tf:197`, `:1062-1064`, `:1146-1149`; `modules/app-service/main.tf:124-130`.
+`modules/wordpress-site/main.tf:199`, `:1019-1021`, `:1102-1105`; `modules/app-service/main.tf:124-130`.
