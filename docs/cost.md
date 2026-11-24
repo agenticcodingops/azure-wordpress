@@ -11,8 +11,8 @@ carrying their own figures.
   [Azure Database for MySQL pricing page](https://azure.microsoft.com/en-us/pricing/details/mysql/flexible-server/), which showed East US.
 - **Month:** 730 hours, the convention the Azure pricing pages use.
 - **Code:** every `file:line` reference is at commit
-  [`b592e13`](https://github.com/agenticcodingops/azure-wordpress/tree/b592e13ad09938075b0e8f7a1dd51cfbe007320b),
-  which is release v4.3.0.
+  [`c82360b`](https://github.com/agenticcodingops/azure-wordpress/tree/c82360b26a5bb7cd588d0ca8d3bfb638ad86ace2),
+  which is release v5.0.0.
 
 East US is used because it is the examples' default `location` (`examples/basic-site/variables.tf:24`).
 Prices differ by region. Taxes, reservations, savings plans and data transfer out of Azure are not included.
@@ -36,21 +36,21 @@ None. To re-price for another region or date, you need `curl` and `jq`.
 | 1 | App Service plan, Linux **B1** | Default SKU of the shared plan (`modules/shared-infrastructure/variables.tf:28-31`) | $0.017 per hour | **$12.41** |
 | 2 | App Service plan, Linux **S1** | The SKU used by [getting started](getting-started.md) | $0.095 per hour, per instance | **$69.35** per instance; up to $346.75 at 5 instances (see note 5) |
 | 3 | App Service plan, Linux **P1v3** | Default `app_service.sku_name` for a dedicated plan (`modules/wordpress-site/variables.tf:410`) | $0.155 per hour, per instance | **$113.15** per instance; up to $565.75 at 5 instances (see note 5) |
-| 4 | Staging slot | One slot on S\* and P\* plans unless `app_service.staging_slot_enabled = false` (`modules/app-service/main.tf:24`, `:28`, `:460-461`) | No extra charge ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/app-service/deploy-staging-slots)) | $0.00 |
-| 5 | MySQL Flexible Server, Burstable **B2s** | Nonprod default `database.sku_name` (`modules/wordpress-site/main.tf:98`) | $0.068 per hour | **$49.64** |
-| 6 | MySQL Flexible Server, General Purpose **D2ds_v4** | Production default `database.sku_name` (`modules/wordpress-site/main.tf:98`) | $0.0855 per vCore-hour × 2 vCores | **$124.83** |
+| 4 | Staging slot | One slot on S\* and P\* plans unless `app_service.staging_slot_enabled = false` (`modules/app-service/main.tf:24`, `:28`, `:466-467`) | No extra charge ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/app-service/deploy-staging-slots)) | $0.00 |
+| 5 | MySQL Flexible Server, Burstable **B2s** | Nonprod default `database.sku_name` (`modules/wordpress-site/main.tf:100`) | $0.068 per hour | **$49.64** |
+| 6 | MySQL Flexible Server, General Purpose **D2ds_v4** | Production default `database.sku_name` (`modules/wordpress-site/main.tf:100`) | $0.0855 per vCore-hour × 2 vCores | **$124.83** |
 | 7 | MySQL storage | 100 GB to start (`modules/wordpress-site/variables.tf:89`); auto-grow is on (`modules/wordpress-site/variables.tf:94`), so it can grow | $0.115 per GB-month | **$11.50** at 100 GB |
 | 8 | MySQL pre-provisioned IOPS | 700 IOPS (`modules/wordpress-site/variables.tf:90`) | $0.05 per IOPS-month for additional IOPS | **UNKNOWN**, between $0.00 and $35.00 (see note 1) |
-| 9 | MySQL backup storage | 7 days nonprod, 30 days production; geo-redundant in production (`modules/wordpress-site/main.tf:101-102`) | Free up to 100% of provisioned storage, then $0.095 per GB-month; geo-redundant backup is charged at 2× | Usage |
+| 9 | MySQL backup storage | 7 days nonprod, 30 days production; geo-redundant in production (`modules/wordpress-site/main.tf:103-104`) | Free up to 100% of provisioned storage, then $0.095 per GB-month; geo-redundant backup is charged at 2× | Usage |
 | 10 | Private DNS zone | One per site, for MySQL (`modules/dns-zones/main.tf:7-8`) | $0.50 per zone-month (first 25 zones), plus $0.40 per million queries | **$0.50** + usage |
-| 11 | Virtual network and App Service VNet integration | One VNet per site (`modules/wordpress-site/main.tf:332-347`) | Free ([VNet pricing](https://azure.microsoft.com/en-us/pricing/details/virtual-network/), [VNet integration](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration)) | $0.00 |
+| 11 | Virtual network and App Service VNet integration | One VNet per site (`modules/wordpress-site/main.tf:333-348`) | Free ([VNet pricing](https://azure.microsoft.com/en-us/pricing/details/virtual-network/), [VNet integration](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration)) | $0.00 |
 | 12 | Blob storage, Standard LRS, Hot | One account per site (`modules/storage/variables.tf:88-102`) | $0.0208 per GB-month; writes $0.05 per 10,000; reads $0.004 per 10,000 | Usage |
 | 13 | Key Vault, Standard | One vault per site (`modules/key-vault/main.tf:39`) | $0.03 per 10,000 operations | Usage |
-| 14 | Log Analytics (also holds Application Insights data) | One workspace per site unless you pass your own (`modules/wordpress-site/main.tf:371-381`) | First 5 GB a month per billing account free, then $2.30 per GB ingested. Retention beyond the included period: $0.10 per GB-month (see note 2) | Usage |
-| 15 | Metric alert rules | Three baseline alerts when `alert_recipients` or `extra_action_group_ids` is set (`modules/wordpress-site/main.tf:855-956`) | First 10 time series a month $0.00, then $0.10 per time series | $0.00 to $0.30 |
-| 16 | Log search alert, 5xx rate (opt-in) | Evaluates every 5 minutes by default (`modules/wordpress-site/variables.tf:594`) | $1.50 per rule-month at a 5-minute frequency | $1.50 when enabled |
-| 17 | Standard availability test (opt-in) | Every 300 s from 5 locations by default (`modules/wordpress-site/variables.tf:900-902`) | $0.0005 per test run | $21.90 per test (43,800 runs) |
-| 18 | Azure Front Door **Standard** | **Not usable with this module at v4.3.0** (see note 4) | $35.00 per month base fee, plus requests and data transfer | n/a |
+| 14 | Log Analytics (also holds Application Insights data) | One workspace per site unless you pass your own (`modules/wordpress-site/main.tf:372-382`) | First 5 GB a month per billing account free, then $2.30 per GB ingested. Retention beyond the included period: $0.10 per GB-month (see note 2) | Usage |
+| 15 | Metric alert rules | Three baseline alerts when `alert_recipients` or `extra_action_group_ids` is set (`modules/wordpress-site/main.tf:857-958`) | First 10 time series a month $0.00, then $0.10 per time series | $0.00 to $0.30 |
+| 16 | Log search alert, 5xx rate (opt-in) | Evaluates every 5 minutes by default (`modules/wordpress-site/variables.tf:593`) | $1.50 per rule-month at a 5-minute frequency | $1.50 when enabled |
+| 17 | Standard availability test (opt-in) | Every 300 s from 5 locations by default (`modules/wordpress-site/variables.tf:899-901`) | $0.0005 per test run | $21.90 per test (43,800 runs) |
+| 18 | Azure Front Door **Standard** | **Not usable with this module at v5.0.0** (see note 4) | $35.00 per month base fee, plus requests and data transfer | n/a |
 | 19 | Azure Front Door **Premium** | The module's default Front Door SKU (`modules/wordpress-site/variables.tf:523`), and the only one that works (note 4) | $330.00 per month base fee, plus requests and data transfer | **$330.00** + usage |
 | 20 | **Total, getting started** (nonprod, S1 dedicated plan at 1 instance, no CDN) | Rows 2 + 5 + 7 + 10 | | **$130.99** + row 8 + usage |
 | 21 | **Total, production defaults** (P1v3 dedicated plan at 1 instance, no CDN) | Rows 3 + 6 + 7 + 10 | | **$249.98** + row 8 + usage |
@@ -64,11 +64,11 @@ Notes:
    Check the first invoice, or the meter in Azure Cost Management.
 2. **Log retention.** Analytics Logs include 31 days of retention, and Application Insights data includes 90 days
    ([Azure Monitor pricing](https://azure.microsoft.com/en-us/pricing/details/monitor/)). The workspace keeps
-   30 days in nonprod and 90 days in production (`modules/wordpress-site/main.tf:212`). So in production, the
+   30 days in nonprod and 90 days in production (`modules/wordpress-site/main.tf:213`). So in production, the
    App Service and MySQL log tables are charged retention for the days beyond 31.
 3. **Cloudflare** plan fees are not Azure prices, so they are not in the table. The module's Cloudflare defaults
    fit the Free plan for one site per zone. `cloudflare.enable_page_rules` defaults to `true`
-   (`modules/wordpress-site/variables.tf:553`), and every site creates its own three page rules. Their URLs are
+   (`modules/wordpress-site/variables.tf:552`), and every site creates its own three page rules. Their URLs are
    built from the zone's domain, not the site's host name, so they match every host in the zone
    (`modules/cloudflare/page-rules.tf:17-86`). Free allows three page rules per zone
    ([Page Rules](https://developers.cloudflare.com/rules/page-rules/)). A second site or environment in the same
@@ -85,12 +85,12 @@ Notes:
    until the module adds it (see the [security model](security-model.md#waf-rules-beyond-what-the-cdn-plan-provides)).
    See [Cloudflare plans](https://www.cloudflare.com/plans/).
 4. **Front Door needs Premium.** With `cdn_provider = "azure_front_door"` the module creates a **Premium** profile
-   unless you set `front_door.sku_name` (`modules/wordpress-site/main.tf:186`). Do not set it to
+   unless you set `front_door.sku_name` (`modules/wordpress-site/main.tf:188`). Do not set it to
    `Standard_AzureFrontDoor`. The module's WAF policy always carries managed rule sets
-   (`modules/front-door/main.tf:114-174`), and the azurerm provider accepts managed rules only on the Premium SKU
+   (`modules/front-door/main.tf:123-183`), and the azurerm provider accepts managed rules only on the Premium SKU
    ([provider docs](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/cdn_frontdoor_firewall_policy)).
 5. **Autoscale.** Every dedicated plan gets an autoscale setting: 1 to 5 instances, scaling out when CPU passes
-   70% or memory passes 80% (`modules/app-service/main.tf:598-682`: capacity at `:609-613`, scale-out rules at `:616-656`). Each instance costs
+   70% or memory passes 80% (`modules/app-service/main.tf:608-692`: capacity at `:619-623`, scale-out rules at `:626-666`). Each instance costs
    the row's hourly price. The totals assume one instance. A shared plan has no autoscale setting unless you set
    `enable_autoscale = true` (`modules/shared-infrastructure/variables.tf:50-53`).
 6. **v4.3.0 opt-ins.** The staging-slot opt-out (the slot is free, row 4), the `storage-key` secret opt-out and the
@@ -98,6 +98,9 @@ Notes:
    parameters) add or remove no billed resource in this table. The scheduled App Service backup adds blob storage
    (row 22); the `time` resources that schedule its SAS are free. Row 22's bound assumes every backup reaches the
    10 GB cap; a real backup is usually far smaller.
+7. **Changes since v4.3.0.** v4.3.5 makes the app and its staging slot each own the profile-specific
+   `X-Azure-FDID` restriction and adds a fourth Front Door caching rule for fonts; v5.0.0 removes two inputs that
+   nothing read. None of them adds a billed resource in this table; see the [upgrade index](upgrading/README.md).
 
 ## Steps
 
@@ -113,7 +116,7 @@ enable. Row 20 is the getting-started configuration. Row 21 is a production site
 **Who:** operator. **STOP:** no.
 
 A shared plan is paid once. Every site still pays for its own MySQL server, storage, Key Vault and DNS zone,
-because the site module creates those per site (`modules/wordpress-site/main.tf:350-362`, `:402-573`). The
+because the site module creates those per site (`modules/wordpress-site/main.tf:351-363`, `:403-574`). The
 [deployment guide](deployment-guide.md#step-11-host-several-sites-on-a-shared-plan) explains the shared plan.
 
 Worked example: three nonprod sites, each on Burstable B2s with 100 GB, with every plan at one instance,
@@ -127,7 +130,7 @@ excluding row 8 and usage.
 
 How many sites one plan can carry is **UNKNOWN**: it depends on traffic, plugins and PHP memory. The module
 sets `PHP_MEMORY_LIMIT = 256M` on every site and its staging slot, on a dedicated plan as well as a shared one
-(`modules/app-service/main.tf:91-98`, `:349`, `:585`). The container's default and maximum is 512M
+(`modules/app-service/main.tf:91-98`, `:348`, `:586`). The container's default and maximum is 512M
 ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/app-service/reference-app-settings#wordpress)), so 256M is
 a module choice, not a limit of the shared plan. Watch the plan's CPU and memory metrics after each site you add.
 
