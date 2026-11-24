@@ -53,10 +53,10 @@ attribution_scan() {
 # Prints what a lower-cased byline line credits as its generator, one candidate per line, so
 # each is matched as a whole identity. Markup goes first: HTML tags, emphasis and code ticks.
 # Each Markdown link becomes one token that cutting and splitting keep whole, and gives its
-# label and its host. The text is then cut at '(', ';', ' - ' or a sentence end, split into a
-# list at ',', '&', 'and' or 'or', and each item is cut at the first word that starts other
-# prose (for, from, in, with, by, ...). So "terraform-docs for CLAUDE.md" yields only
-# "terraform-docs", and "[terraform-docs](...) and [Claude](...)" yields both labels and hosts.
+# label and its host. The text is then cut at '(', ';', ' - ' or a sentence end, and at the
+# first word that starts other prose (for, from, in, with, by, ...), and only then split into
+# a list at ',', '&', 'and' or 'or'. So "terraform-docs for README.md and CLAUDE.md" yields
+# only "terraform-docs", and "[terraform-docs](...) and [Claude](...)" yields both labels and hosts.
 byline_generators() {
     sed -E "s/$BYLINE_ERE//; s/<[^>]*>/ /g; s/[*\`~]+//g; s/(^|[[:space:]])_+/\1/g; s/_+([[:space:]]|\$)/\1/g" |
         awk '
@@ -77,12 +77,13 @@ byline_generators() {
             }
             s = out s
             if (match(s, /[(;]|[.!?]([ \t]|$)| - /)) s = substr(s, 1, RSTART - 1)
+            s = " " s " "
+            if (match(s, /[ \t](for|from|in|on|at|via|to|of|after|under|with|by|using|as|that|which|while|then|but|so|because|when)[ \t]/))
+                s = substr(s, 1, RSTART - 1)
             gsub(/,|&|[ \t]and[ \t]|[ \t]or[ \t]/, "\n", s)
             n = split(s, part, "\n")
             for (i = 1; i <= n; i++) {
-                p = " " trim(part[i]) " "
-                if (match(p, /[ \t](for|from|in|on|at|via|to|of|after|under|with|by|using|as|that|which|while|then|but|so|because|when)[ \t]/))
-                    p = substr(p, 1, RSTART - 1)
+                p = part[i]
                 while ((a = index(p, LB)) > 0) {
                     rest = substr(p, a + 1); b = index(rest, HS); c = index(rest, EN)
                     lbl = substr(rest, 1, b - 1); gsub(SP, " ", lbl); lbl = trim(lbl)
