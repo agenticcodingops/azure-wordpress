@@ -2,6 +2,20 @@
 
 Deploy production-ready WordPress sites on Azure with Cloudflare CDN using Terraform/OpenTofu.
 
+## Documentation
+
+The [`docs/`](docs/README.md) directory is the documentation home:
+
+- [Getting started](docs/getting-started.md)
+- [Deployment guide](docs/deployment-guide.md)
+- [Cost guide](docs/cost.md)
+- [Architecture](docs/architecture.md)
+- [Security model](docs/security-model.md)
+- [Upgrading](docs/upgrading/README.md)
+- [Operations](docs/operations/README.md)
+- [Patterns](docs/patterns/)
+- [Architecture decision records](docs/adr/README.md)
+
 ## Features
 
 - **Azure App Service** (Linux) with managed WordPress container
