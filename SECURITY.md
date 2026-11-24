@@ -93,7 +93,7 @@ to you, and the code behind each control.
   `app_service_scm_ip_restrictions`, then set `app_service_scm_ip_restriction_default_action = "Deny"`. A `Deny`
   with no allow rule that covers you also cuts off the Kudu SSH console, which is how you run WP-CLI in the
   container. Terraform is unaffected, because it manages the app through the Azure Resource Manager control plane.
-  Read [Hardening the SCM/Kudu endpoint](modules/wordpress-site/README.md#hardening-the-scmkudu-endpoint) first
+  Read [Hardening the SCM/Kudu endpoint](docs/upgrading/v3-to-v4.md#hardening-the-scmkudu-endpoint) first
 - **TLS 1.2 minimum** is enforced on the web app, the storage account and the Front Door custom domain. MySQL
   does not require TLS: the module sets `require_secure_transport = OFF`
 - See [docs/architecture.md](docs/architecture.md#network) for the network design, and the
